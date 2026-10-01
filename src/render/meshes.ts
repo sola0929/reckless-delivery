@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { TRUCK, type Vec3 } from '../config';
-import type { CargoDesc, PropDesc } from '../sim/sandbox';
+import type { PropDesc } from '../sim/sandbox';
 import type { Truck } from '../sim/truck';
 
 /** Copies a physics body's transform onto a mesh, interpolating between fixed steps. */
@@ -62,45 +62,6 @@ export function propMesh(desc: PropDesc): THREE.Mesh {
   mesh.position.set(...desc.pos);
   if (desc.rot) mesh.rotation.set(...desc.rot);
   return mesh;
-}
-
-let crateTexture: THREE.Texture | undefined;
-
-function getCrateTexture(): THREE.Texture {
-  if (crateTexture) return crateTexture;
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const g = canvas.getContext('2d')!;
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, size, size);
-  g.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-  g.lineWidth = 3;
-  for (let i = 1; i < 4; i++) {
-    g.beginPath();
-    g.moveTo(0, (i * size) / 4);
-    g.lineTo(size, (i * size) / 4);
-    g.stroke();
-  }
-  // Frame and diagonal brace.
-  g.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-  g.lineWidth = 12;
-  g.strokeRect(0, 0, size, size);
-  g.lineWidth = 8;
-  g.beginPath();
-  g.moveTo(0, 0);
-  g.lineTo(size, size);
-  g.stroke();
-  crateTexture = new THREE.CanvasTexture(canvas);
-  crateTexture.colorSpace = THREE.SRGBColorSpace;
-  return crateTexture;
-}
-
-export function cargoMesh(desc: CargoDesc): THREE.Mesh {
-  return boxMesh(
-    desc.half,
-    new THREE.MeshStandardMaterial({ color: desc.color, map: getCrateTexture(), roughness: 0.85 }),
-  );
 }
 
 export class TruckMesh {

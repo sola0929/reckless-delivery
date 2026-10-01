@@ -50,10 +50,13 @@ export class ChaseCamera {
 
     const dir = FORWARD.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     // Halved under braking, or the truck slides off the bottom of the screen.
-    const lag = this.surge * CAMERA.surgeDistance * (this.surge < 0 ? 0.5 : 1);
+    const lag = this.surge * CAMERA.surgeDistance * (this.surge < 0 ? 0.5 : 1) * Math.min(1, this.zoom);
     const distance = (CAMERA.distance + this.speed * CAMERA.distancePerSpeed) * this.zoom + lag;
     const height = (CAMERA.height + this.speed * CAMERA.heightPerSpeed) * this.zoom;
-    const ahead = CAMERA.lookAhead + this.speed * CAMERA.lookAheadPerSpeed;
+    // Zoomed in, the camera sits almost over the tail, so aim at the truck itself rather
+    // than the road ahead, or the back of the bed drops out of view.
+    const closeness = THREE.MathUtils.clamp((1 - this.zoom) / (1 - CAMERA.minZoom), 0, 1);
+    const ahead = THREE.MathUtils.lerp(CAMERA.lookAhead + this.speed * CAMERA.lookAheadPerSpeed, CAMERA.closeLookAhead, closeness);
 
     this.camera.position.copy(truck.position).addScaledVector(dir, -distance);
     this.camera.position.y = truck.position.y + height;

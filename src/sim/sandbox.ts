@@ -1,4 +1,5 @@
 import { TRUCK, type Vec3 } from '../config';
+import type { CargoPlacement } from './cargo';
 
 // The sandbox test course, as plain data shared by the physics and the renderer.
 
@@ -12,14 +13,6 @@ export interface PropDesc {
   color: number;
   /** Dynamic when set, static otherwise. */
   mass?: number;
-}
-
-export interface CargoDesc {
-  half: Vec3;
-  /** Position relative to the truck chassis. */
-  pos: Vec3;
-  mass: number;
-  color: number;
 }
 
 export const GROUND_HALF: Vec3 = [300, 0.5, 300];
@@ -82,23 +75,30 @@ export function buildProps(): PropDesc[] {
   return props;
 }
 
-export function buildCargo(): CargoDesc[] {
-  const cargo: CargoDesc[] = [];
+export function buildCargo(): CargoPlacement[] {
+  const cargo: CargoPlacement[] = [];
   const floor = TRUCK.frame.pos[1] + TRUCK.frame.half[1];
+  const gap = 0.01;
+  const rowZ = (row: number) => 1.5 - row * 0.84;
+  const columns = [-0.74, 0, 0.74];
 
-  // Bottom layer: eighteen crates, three abreast, loaded from the cab backwards.
+  // Half heights of the items, to stand them on the floor.
+  // Front four rows: crates three abreast, with small crates stacked on top.
   const big = 0.35;
-  for (let row = 0; row < 6; row++) {
-    for (const x of [-0.74, 0, 0.74]) {
-      cargo.push({ half: [big, big, big], pos: [x, floor + big + 0.01, 1.5 - row * 0.84], mass: 25, color: 0xb98a55 });
-    }
-  }
-  // Top layer: eight smaller crates that stick up above the walls.
   const small = 0.25;
-  for (const z of [1.1, -0.2, -1.5, -2.6]) {
-    for (const x of [-0.4, 0.4]) {
-      cargo.push({ half: [small, small, small], pos: [x, floor + big * 2 + small + 0.03, z], mass: 10, color: 0xd9b36c });
-    }
+  for (let row = 0; row < 4; row++) {
+    for (const x of columns) cargo.push({ type: 'crate', pos: [x, floor + big + gap, rowZ(row)] });
   }
+  for (const z of [1.1, -0.2]) {
+    for (const x of [-0.4, 0.4]) cargo.push({ type: 'smallCrate', pos: [x, floor + big * 2 + small + gap * 3, z] });
+  }
+
+  // Then a row of water jars, standing upright.
+  const jar = 0.33;
+  for (const x of columns) cargo.push({ type: 'jar', pos: [x, floor + jar + gap, rowZ(4)] });
+
+  // And a skeleton lying across the back, against the tailgate.
+  cargo.push({ type: 'skeleton', pos: [0.08, floor + 0.12 + gap, rowZ(5) - 0.1], rotY: Math.PI / 2 });
+
   return cargo;
 }

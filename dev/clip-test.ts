@@ -21,7 +21,7 @@ function localCentres(): Vector3[] {
   const r = sim.truck.body.rotation();
   q.set(r.x, r.y, r.z, r.w).invert();
   return sim.cargo.map((c) => {
-    const p = c.body.translation();
+    const p = c.lastPos;
     return new Vector3(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(q);
   });
 }
@@ -40,6 +40,8 @@ function scenario(name: string, script: [number, DriveInput][]): void {
       time += 1 / 60;
       const now = localCentres();
       now.forEach((p, k) => {
+        // A destroyed or lost item no longer moves; the truck driving on would look like a crossing.
+        if (!sim.cargo[k].body || sim.cargo[k].lost) return;
         // A crate going over a wall has its centre above the wall top as it crosses the
         // wall's mid-plane. Crossing below the top means it went through.
         if (p.y > wallTop - 0.05 || p.y < 0) return;

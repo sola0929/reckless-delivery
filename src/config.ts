@@ -87,6 +87,8 @@ export const CAMERA = {
   distancePerSpeed: 0.25,
   lookAhead: 3,
   lookAheadPerSpeed: 0.4,
+  // Where the camera aims when fully zoomed in: just behind the truck's centre.
+  closeLookAhead: -1,
   yawFollow: 2.5,
   speedFollow: 2,
   // How far the camera falls behind per m/s² of acceleration, and how fast it reacts.

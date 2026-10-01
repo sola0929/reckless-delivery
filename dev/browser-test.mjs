@@ -22,7 +22,7 @@ const state = () =>
       pos: [t.x, t.y, t.z].map((v) => +v.toFixed(1)),
       speed: +sim.truck.forwardSpeed().toFixed(1),
       cargo: `${sim.cargoOnTruck()}/${sim.cargo.length}`,
-      hud: document.getElementById('speed').textContent + ' km/h, ' + document.getElementById('cargo').textContent,
+      hud: document.getElementById('speed').textContent + ' km/h, ' + document.getElementById('cargo').textContent + ', ' + document.getElementById('value').textContent,
     };
   });
 

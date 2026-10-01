@@ -41,11 +41,11 @@ run(3, idle);
 report('settled');
 // Measured as displacement: resting velocities read non-zero because the suspension
 // pushes back with an impulse every step.
-const rest = sim.cargo.map((c) => c.body.translation());
+const rest = sim.cargo.map((c) => c.lastPos.clone());
 let maxDrift = 0;
 run(10, idle, () => {
   sim.cargo.forEach((c, i) => {
-    const p = c.body.translation();
+    const p = c.lastPos;
     maxDrift = Math.max(maxDrift, Math.hypot(p.x - rest[i].x, p.y - rest[i].y, p.z - rest[i].z));
   });
 });
