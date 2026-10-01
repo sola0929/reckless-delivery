@@ -148,14 +148,17 @@ export class Sim {
   /** What is aboard is worth right now. Anything that has fallen off is left out until it is brought back. */
   cargoValue(): number {
     let sum = 0;
-    for (const c of this.cargo) if (!c.fallen) sum += c.value;
+    // A wreck has no body to fall off; its worth already follows how much of it is still aboard.
+    for (const c of this.cargo) if (c.stage === 3 || !c.fallen) sum += c.value;
     return sum;
   }
 
   /** What would be handed over if the truck delivered this instant: only what is on the bed. */
   deliverableValue(): number {
     let sum = 0;
-    for (const c of this.cargo) if (c.body && !c.held && this.truck.isOnBed(c.body.translation())) sum += c.value;
+    for (const c of this.cargo) {
+      if (c.stage === 3 || (c.body && !c.held && this.truck.isOnBed(c.body.translation()))) sum += c.value;
+    }
     return sum;
   }
 

@@ -16,6 +16,8 @@ export interface CargoPlacement {
 export interface Debris {
   desc: PartDesc;
   body: RAPIER.RigidBody;
+  /** The item it came off. */
+  owner: CargoItem;
 }
 
 export type CargoEvent =
@@ -29,7 +31,9 @@ export type CargoEvent =
   /** Came off the truck and stayed off. It can still be fetched back. */
   | { kind: 'fallen'; item: CargoItem; loss: number }
   /** Back on the truck. */
-  | { kind: 'recovered'; item: CargoItem; gain: number };
+  | { kind: 'recovered'; item: CargoItem; gain: number }
+  /** A destroyed item's salvage changed in value, as pieces of it left the truck (negative) or came back. */
+  | { kind: 'scrap'; item: CargoItem; change: number };
 
 const CARGO_GROUPS = groups(GROUP.cargo, GROUP.all);
 /** How quickly an item's steady load catches up with the force on it, per step. */
@@ -40,6 +44,8 @@ const GRACE_SECONDS = 0.75;
 const FALLEN_SECONDS = 2.5;
 /** After a thrown item lands in the bed, how long it and everything it landed on are spared. */
 const LANDING_GRACE = 0.8;
+/** How often a wreck's pieces are counted. */
+const SCRAP_INTERVAL = 0.5;
 /** One collision plays out over a few steps. It is judged once, on its strongest moment in this window. */
 const HIT_WINDOW = 0.12;
 /** Blows this close together are one incident, charged once for the worst of them. */
@@ -119,9 +125,24 @@ export class CargoItem {
     this.partColliders = type.parts.map(() => null);
   }
 
-  /** What the item is worth right now. */
+  /** Every piece that has come off it. */
+  readonly pieces: Debris[] = [];
+  /** Once destroyed: the share of its pieces still on the truck, 0 to 1. */
+  scrapShare = 0;
+  scrapCheck = 0;
+
+  /**
+   * What the item is worth right now, if it is aboard.
+   *
+   * Even a wreck is worth something as salvage, so value falls from the full price at full
+   * health to the salvage share at none, with no jump at the moment of destruction (which
+   * would make finishing off a battered item pay). After that the salvage is worth only as
+   * much as is left of it: lose half the pieces off the truck and it is worth half.
+   */
   get value(): number {
-    return this.stage === 3 ? 0 : (this.type.value * this.hp) / 100;
+    const { value, salvage } = this.type;
+    if (this.stage === 3) return value * salvage * this.scrapShare;
+    return value * (salvage + (1 - salvage) * (this.hp / 100));
   }
 }
 
@@ -208,7 +229,10 @@ export class CargoSystem {
     this.bedCalm -= dt;
     for (const item of this.items) {
       const body = item.body;
-      if (!body) continue;
+      if (!body) {
+        this.countScrap(item, truck, dt);
+        continue;
+      }
       const t = body.translation();
       item.lastPos.set(t.x, t.y, t.z);
       if (item.held) {
@@ -372,6 +396,8 @@ export class CargoSystem {
     item.hp = Math.max(0, item.hp - amount);
     const newStage = stageForHp(item.hp);
     item.stage = newStage;
+    // Destroyed where it sits: all of its wreckage starts out aboard, or none of it.
+    if (newStage === 3) item.scrapShare = item.fallen ? 0 : 1;
     // An item lying off the truck is already off the books; further damage shows when it comes back.
     const loss = item.fallen ? 0 : before - item.value;
     this.events.push({ kind: 'damage', item, loss, staged: newStage !== oldStage });
@@ -437,9 +463,35 @@ export class CargoSystem {
       shapeCollider(part.shape, part.size).setMass(part.mass).setFriction(0.7).setRestitution(0.2).setCollisionGroups(CARGO_GROUPS),
       piece,
     );
-    const debris = { desc: part, body: piece };
+    const debris = { desc: part, body: piece, owner: item };
     this.debris.push(debris);
+    item.pieces.push(debris);
     return debris;
+  }
+
+  /** For a destroyed item, keep count of how much of its wreckage is still on the truck. */
+  private countScrap(item: CargoItem, truck: Truck, dt: number): void {
+    // Twice a second is plenty, and keeps a piece bouncing on the wall from flickering the total.
+    item.scrapCheck -= dt;
+    if (item.scrapCheck > 0 || !item.pieces.length) return;
+    item.scrapCheck = SCRAP_INTERVAL;
+
+    let aboard = 0;
+    v.set(0, 0, 0);
+    for (const piece of item.pieces) {
+      const p = piece.body.translation();
+      if (truck.isOnBed(p)) aboard++;
+      v.x += p.x;
+      v.y += p.y;
+      v.z += p.z;
+    }
+    // The item itself is gone; say it is wherever its pieces are, for anything pointing at it.
+    item.lastPos.copy(v).divideScalar(item.pieces.length);
+
+    const before = item.value;
+    item.scrapShare = aboard / item.pieces.length;
+    const change = item.value - before;
+    if (change !== 0) this.events.push({ kind: 'scrap', item, change });
   }
 
   /** Seeded, so headless runs repeat exactly. */

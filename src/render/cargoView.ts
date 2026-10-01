@@ -201,6 +201,7 @@ export class CargoViews {
         break;
       case 'fallen':
       case 'recovered':
+      case 'scrap':
         break;
     }
   }

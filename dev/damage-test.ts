@@ -49,14 +49,14 @@ scenario('speed bumps at 30 km/h', [[1.5, go(1)], [5, go(0.15)], ...pulse(30)], 
 scenario('speed bumps at full throttle', [[7, go(1)], ...pulse(40)], (k) => k > 0.5);
 // One rough manoeuvre should cost something, but not most of the load.
 scenario('boost launch', [[3, go(1, 0, true)], ...pulse(40)], (k) => k > 0.7 && k < 0.95);
-scenario('emergency stop from 80', [[6, go(1)], [3, go(-1)]], (k) => k > 0.85 && k < 1);
+scenario('emergency stop from 80', [[6, go(1)], [3, go(-1)]], (k) => k > 0.85);
 scenario('hard turn at speed', [[4, go(1)], [3, go(1, 1)], [2, go(-1)]], (k) => k > 0.8, lot);
 scenario('boost into a hard turn', [[3, go(1, 0, true)], [3, go(1, 1, true)], [2, go(-1)]], (k) => k > 0.6 && k < 0.97, lot);
 scenario('ramp jump flat out', [[14, go(1)], [4, go(-1)]], (k) => k > 0.75);
 // A crash or sustained recklessness costs more, but each incident is bounded, so it adds up
 // over several mistakes rather than ending the run in one.
 scenario('reverse into the wall', [[8, go(-1)]], (k) => k > 0.5 && k < 0.95);
-scenario('boost and brake, three times', [[1.5, go(1, 0, true)], [1.2, go(-1)], [1.5, go(1, 0, true)], [1.2, go(-1)], [1.5, go(1, 0, true)], [1.5, go(-1)]], (k) => k > 0.4 && k < 0.9);
+scenario('boost and brake, three times', [[1.5, go(1, 0, true)], [1.2, go(-1)], [1.5, go(1, 0, true)], [1.2, go(-1)], [1.5, go(1, 0, true)], [1.5, go(-1)]], (k) => k > 0.4 && k < 0.97);
 
 console.log(failures ? `\n${failures} scenario(s) outside the expected range` : '\nall scenarios in the expected range');
 process.exit(failures ? 1 : 0);

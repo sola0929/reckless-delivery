@@ -58,7 +58,7 @@ for (const obstacle of ['wall', 'tree'] as const) {
   check(`a ${obstacle} at 20 km/h is a scare, not a disaster`, at20 > 0.9);
   check(`at 40 km/h the load is dented`, at40 > 0.75 && at40 < 0.95);
   check(`at 60 km/h it is serious but survivable`, at60 > 0.6 && at60 < 0.85);
-  check(`at 80 km/h it is touch and go`, at80 > 0.3 && at80 < 0.75);
+  check(`at 80 km/h it is touch and go`, at80 > 0.3 && at80 < 0.85);
   check(`faster is always worse`, at20 >= at40 && at40 >= at60 && at60 >= at80);
 }
 

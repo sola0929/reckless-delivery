@@ -97,6 +97,15 @@ function noteEvent(event: CargoEvent): void {
     if (at && event.gain >= 1) hud.popup(`+${money(event.gain)}`, at.x, at.y, 'gain');
     return;
   }
+  if (event.kind === 'scrap') {
+    // Wreckage leaving the truck takes its salvage value with it.
+    if (event.change < 0) {
+      const entry = pendingLoss.get(event.item) ?? { loss: 0, wait: 0, label: '' };
+      entry.loss -= event.change;
+      pendingLoss.set(event.item, entry);
+    }
+    return;
+  }
   if (event.kind !== 'damage' && event.kind !== 'fallen' && event.kind !== 'destroyed') return;
   const entry = pendingLoss.get(event.item) ?? { loss: 0, wait: 0, label: '' };
   if (event.kind === 'fallen') entry.label = '掉落';

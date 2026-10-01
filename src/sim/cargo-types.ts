@@ -48,6 +48,11 @@ export interface CargoType {
    * Small values make an item brittle: it takes nearly the full hit from a modest knock.
    */
   give: number;
+  /**
+   * Share of the price it is still worth as wreckage, if the wreckage stays on the truck.
+   * Value runs from the full price at full health down to this at none.
+   */
+  salvage: number;
   friction: number;
   /**
    * One collider for the whole item until it is destroyed. Without it, every part
@@ -74,9 +79,10 @@ function crate(id: string, name: string, h: number, mass: number, value: number,
     id,
     name,
     value,
-    threshold: 3.5,
+    threshold: 6,
     maxHit: 34,
     give: 18,
+    salvage: 0.2,
     friction: 0.7,
     hull: { shape: 'box', size: [h, h, h] },
     parts: [
@@ -117,9 +123,10 @@ function jar(): CargoType {
     id: 'jar',
     name: '水罐',
     value: 300,
-    threshold: 3.2,
+    threshold: 4.5,
     maxHit: 44,
     give: 14,
+    salvage: 0.2,
     friction: 0.6,
     // Squat enough to slide before it tips over.
     hull: { shape: 'cylinder', size: [0.3, 0.33, 0] },
@@ -144,9 +151,10 @@ function skeleton(): CargoType {
     id: 'skeleton',
     name: '骷髏骨架',
     value: 600,
-    threshold: 3.5,
+    threshold: 4.5,
     maxHit: 40,
     give: 16,
+    salvage: 0.2,
     friction: 0.6,
     parts: [
       // Ribcage, pelvis, skull, arms, legs.
