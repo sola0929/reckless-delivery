@@ -1,0 +1,28 @@
+// Screenshots of the driver mid-jump, standing and running, zoomed in.
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ channel: 'msedge' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(String(e)));
+await page.goto('http://localhost:5183/?level=sandbox');
+await page.waitForFunction(() => window.game, null, { timeout: 20000 });
+await page.waitForTimeout(1000);
+await page.keyboard.press('KeyC');
+await page.keyboard.down('KeyA'); await page.waitForTimeout(900); await page.keyboard.up('KeyA');
+await page.mouse.move(640, 360);
+await page.mouse.wheel(0, -700);
+await page.waitForTimeout(900);
+await page.screenshot({ path: 'dev/out/jump-0-standing.png' });
+await page.keyboard.press('Space');
+await page.waitForTimeout(230);
+await page.screenshot({ path: 'dev/out/jump-1-rising.png' });
+await page.waitForTimeout(900);
+await page.keyboard.down('KeyD'); await page.keyboard.down('ShiftLeft');
+await page.waitForTimeout(300);
+await page.screenshot({ path: 'dev/out/jump-2-running.png' });
+await page.keyboard.press('Space');
+await page.waitForTimeout(250);
+await page.screenshot({ path: 'dev/out/jump-3-running-jump.png' });
+await page.keyboard.up('KeyD'); await page.keyboard.up('ShiftLeft');
+console.log(errors.length ? errors.join('\n') : 'no page errors');
+await browser.close();

@@ -115,21 +115,25 @@ export class DriverView {
     const down = driver.mode === 'down';
     // Knocked flat on their back; otherwise upright.
     this.figure.rotation.x += ((down ? -Math.PI / 2 : 0) - this.figure.rotation.x) * (1 - Math.exp(-14 * dt));
-    this.figure.position.y = down ? 0.3 : 0;
+    // Drawn a touch lower than the physics has them, which holds their feet just clear of the ground.
+    this.figure.position.y = down ? 0.3 : -0.04;
 
     // Arms and legs swing as they walk, faster and wider when running.
     this.phase += driver.speed * dt * 2.4;
     const stride = Math.sin(this.phase) * 0.75 * Math.min(1, driver.speed / DRIVER.walkSpeed);
-    // In the air, both legs tuck back.
-    this.tuck += ((driver.airborne && !down ? 1 : 0) - this.tuck) * (1 - Math.exp(-16 * dt));
-    this.legs[0].rotation.x = stride * (1 - this.tuck) + 0.9 * this.tuck;
-    this.legs[1].rotation.x = -stride * (1 - this.tuck) + 0.9 * this.tuck;
+    // In the air they hold a leaping pose: one leg ahead, one trailing, arms thrown forward.
+    // (Negative turns a limb forward, positive back.)
+    this.tuck += ((driver.airborne && !down ? 1 : 0) - this.tuck) * (1 - Math.exp(-18 * dt));
+    this.legs[0].rotation.x = stride * (1 - this.tuck) - 0.45 * this.tuck;
+    this.legs[1].rotation.x = -stride * (1 - this.tuck) + 0.35 * this.tuck;
 
     // Carrying, both arms go straight up to hold the load overhead.
     this.lift += ((driver.held ? 1 : 0) - this.lift) * (1 - Math.exp(-12 * dt));
     const up = Math.PI * 0.97 * this.lift;
-    this.arms[0].rotation.x = -stride * (1 - this.lift) - up;
-    this.arms[1].rotation.x = stride * (1 - this.lift) - up;
+    const free = 1 - this.lift;
+    const leap = -0.9 * this.tuck;
+    this.arms[0].rotation.x = (-stride * (1 - this.tuck) + leap) * free - up;
+    this.arms[1].rotation.x = (stride * (1 - this.tuck) + leap) * free - up;
     // Leaning back as a throw is wound up.
     const wound = Math.min(1, driver.charge / 1.5);
     this.torso.rotation.x = -0.3 * wound;

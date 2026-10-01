@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { PropDesc } from '../levels/types';
 import type { Sim } from '../sim/sim';
-import { CAR_HALF } from '../sim/traffic';
+import { CAR_BODY, CAR_CABIN } from '../sim/traffic';
 import { BodySync, propMesh } from './meshes';
 
 const FADED_OPACITY = 0.16;
@@ -18,14 +18,15 @@ function carMesh(color: number): THREE.Group {
   const car = new THREE.Group();
   const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.2 });
   const glass = new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.2, metalness: 0.4 });
-  const { width, height, length } = CAR_HALF;
-
-  const body = new THREE.Mesh(new THREE.BoxGeometry(width * 2, height * 1.1, length * 2), paint);
-  body.position.y = -height * 0.45;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(width * 1.8, height * 0.9, length * 1.05), glass);
-  cabin.position.set(0, height * 0.5, -length * 0.1);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(width * 1.82, 0.06, length * 1.0), paint);
-  roof.position.set(0, height * 0.96, -length * 0.1);
+  // Drawn from the same two boxes the physics uses, so what can be stood on is what is seen.
+  const box = (half: [number, number, number]) => new THREE.BoxGeometry(half[0] * 2, half[1] * 2, half[2] * 2);
+  const body = new THREE.Mesh(box(CAR_BODY.half), paint);
+  body.position.set(...CAR_BODY.pos);
+  const cabin = new THREE.Mesh(box(CAR_CABIN.half), glass);
+  cabin.position.set(...CAR_CABIN.pos);
+  const [cw, ch, cl] = CAR_CABIN.half;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(cw * 2.02, 0.06, cl * 1.9), paint);
+  roof.position.set(CAR_CABIN.pos[0], CAR_CABIN.pos[1] + ch - 0.02, CAR_CABIN.pos[2]);
   for (const part of [body, cabin, roof]) {
     part.castShadow = true;
     part.receiveShadow = true;

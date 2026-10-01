@@ -2,6 +2,7 @@
 // throwing cargo back aboard, being run down, and overturning. npx tsx dev/foot-test.ts
 import { DRIVER } from '../src/config';
 import { city } from '../src/levels/city';
+import { sandbox } from '../src/levels/sandbox';
 import { NO_FOOT_INPUT, type FootInput } from '../src/sim/driver';
 import { Sim } from '../src/sim/sim';
 import type { DriveInput } from '../src/sim/truck';
@@ -213,7 +214,7 @@ function jumpHeight(): number {
   return top;
 }
 const empty = jumpHeight();
-check('jumps a little over a metre', empty > 1 && empty < 1.6, `${empty.toFixed(2)} m`);
+check('jumps about a metre and a half', empty > 1.45 && empty < 1.75, `${empty.toFixed(2)} m`);
 check('and comes back down', Math.abs(sim.driver.pos.y - ground) < 0.05 && !sim.driver.airborne);
 const light = sim.cargo.find((c) => c.type.id === 'smallCrate')!;
 const heavy = sim.cargo.find((c) => c.type.id === 'crate')!;
@@ -230,6 +231,63 @@ wait(1);
 step(foot({ grabPressed: true }));
 const withHeavy = jumpHeight();
 check('cannot jump carrying something heavy', sim.driver.held === heavy && withHeavy < 0.05, `${heavy.mass} kg, ${withHeavy.toFixed(2)} m`);
+step(foot({ grabPressed: true }));
+wait(0.5);
+
+// A jump should be brisk, not floaty.
+step(foot({ jumpPressed: true }));
+let airSteps = 0;
+for (let i = 0; i < 120; i++) {
+  step();
+  if (sim.driver.pos.y - ground > 0.02) airSteps++;
+}
+check('a jump is over in well under a second', airSteps / 60 > 0.4 && airSteps / 60 < 0.8, `${(airSteps / 60).toFixed(2)} s in the air`);
+
+// 13. Up onto the roof of a parked car, and able to walk about on it.
+sim = await Sim.create({ ...sandbox(), props: [], traffic: [{ from: [10, -10], to: [10, 10], cars: 1, speed: 0 }] });
+wait(1);
+step(foot({ vehiclePressed: true }));
+const roofCar = sim.traffic.cars[0];
+const carZ = roofCar.lane.from.z + roofCar.lane.dir.z * roofCar.s;
+walkTo(6.5, carZ, false, 0.3);
+wait(0.3, foot({ moveX: 1, moveZ: 0 }));
+step(foot({ moveX: 1, moveZ: 0, jumpPressed: true }));
+wait(0.5, foot({ moveX: 1, moveZ: 0 }));
+check('can jump onto a parked car', sim.driver.pos.y > 1.4 && !sim.driver.airborne, `standing at ${sim.driver.pos.y.toFixed(2)} m`);
+const onRoof = sim.driver.pos.clone();
+wait(0.1, foot({ moveX: 0, moveZ: -1 }));
+const along = sim.driver.pos.distanceTo(onRoof);
+check('and walk along its roof', along > DRIVER.walkSpeed * 0.08 && sim.driver.pos.y > 1.4, `${along.toFixed(2)} m in 0.1 s`);
+// Forward off the cabin onto the bonnet, which is lower: they should stand on it, not hover at roof height.
+wait(0.45, foot({ moveX: 0, moveZ: 1 }));
+wait(0.3);
+const bonnet = sim.driver.pos.y;
+check('stands on the bonnet at the bonnet\'s height', bonnet > 0.9 && bonnet < 1.05 && !sim.driver.airborne, `${bonnet.toFixed(2)} m`);
+wait(1.5, foot({ moveX: 1, moveZ: 0 }));
+check('and step off the far side', sim.driver.pos.y < 0.1 && sim.driver.pos.x > 11, `at x = ${sim.driver.pos.x.toFixed(1)}`);
+
+// 14. The driver weighs nothing as far as the truck is concerned. Dropped into the bed they
+// stand on top of the load; they must not sink into it, squash the truck or push it along.
+sim = await Sim.create({ ...sandbox(), props: [] });
+wait(1.5);
+step(foot({ vehiclePressed: true }));
+wait(0.5);
+const restingAt = { ...truckAt() };
+const loadBefore = sim.cargoValue();
+sim.driver.pos.set(restingAt.x + 0.3, restingAt.y + 2.6, restingAt.z + 0.2);
+let sank = 0;
+for (let i = 0; i < 120; i++) {
+  step();
+  sank = Math.max(sank, restingAt.y - truckAt().y);
+}
+check('stands on top of the cargo in the bed', sim.driver.pos.y > 1.9 && !sim.driver.airborne, `at ${sim.driver.pos.y.toFixed(2)} m`);
+check('without pressing the truck down', sank < 0.01, `${(sank * 100).toFixed(1)} cm`);
+wait(1, foot({ moveX: 0, moveZ: 1 }));
+wait(1, foot({ moveX: 0, moveZ: -1 }));
+wait(1.5);
+const shifted = Math.hypot(truckAt().x - restingAt.x, truckAt().z - restingAt.z);
+check('or pushing it along by walking on it', shifted < 0.02, `${(shifted * 100).toFixed(1)} cm`);
+check('or harming the load', sim.cargoValue() === loadBefore && sim.cargoOnTruck() === sim.cargo.length);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

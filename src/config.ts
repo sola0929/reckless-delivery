@@ -98,8 +98,14 @@ export const DRIVER = {
   /** How close to a door to climb back in, and to an item to pick it up. */
   doorReach: 2.4,
   reach: 1.8,
-  /** Take-off speed of a jump, m/s: 5 clears about 1.25 m. Loads heavier than jumpMaxLoad kg rule it out. */
-  jumpSpeed: 5,
+  /**
+   * Jumping. The driver falls under heavier gravity than everything else, m/s²: at real
+   * gravity a jump hangs in the air for a full second and feels like the moon. With these
+   * two it reaches about 1.6 m and lasts about 0.65 s. That clears a car roof (1.5 m) but not
+   * the walls of the truck bed (1.94 m). Loads over jumpMaxLoad kg rule it out.
+   */
+  gravity: 30,
+  jumpSpeed: 9.5,
   jumpMaxLoad: 12,
   /** How far from the truck the driver may wander. */
   leash: 35,

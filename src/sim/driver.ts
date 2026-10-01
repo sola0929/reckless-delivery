@@ -41,17 +41,25 @@ export interface ThrowPlan {
 
 export type DriverMode = 'driving' | 'onFoot' | 'down';
 
-const WORLD = groups(GROUP.all, GROUP.ground | GROUP.truck | GROUP.prop);
+/** What is solid to the driver: everything, loose cargo included. */
+const WORLD = groups(GROUP.all, GROUP.ground | GROUP.truck | GROUP.prop | GROUP.cargo);
 const G = -PHYSICS.gravity;
 const ANGLE = Math.PI / 4;
-/** How far below their feet the ground may drop and still be walked down, rather than fallen off. */
-const SNAP = 0.35;
+/** The tallest thing they can walk up onto without jumping: kerbs, and the gradient of a ramp. */
+const STEP = 0.35;
+/** How close they come to a wall before stopping. */
+const SKIN = 0.02;
 /** The ray that feels for the ground starts this far above the feet and reaches this far below them. */
-const PROBE_FROM = 0.3;
+const PROBE_FROM = 0.1;
 const PROBE = 0.08;
+/** How far above a surface their feet are held. */
+const CLEARANCE = 0.05;
+const UP_AXIS = { x: 0, y: 1, z: 0 };
+const DOWN_AXIS = { x: 0, y: -1, z: 0 };
 /** The fastest they can fall, m/s. */
 const TERMINAL = 30;
 const UP = new Vector3(0, 1, 0);
+const UPRIGHT = { x: 0, y: 0, z: 0, w: 1 };
 const q = new Quaternion();
 const v = new Vector3();
 
@@ -83,7 +91,6 @@ export class Driver {
 
   private readonly body: RAPIER.RigidBody;
   private readonly collider: RAPIER.Collider;
-  private readonly controller: RAPIER.KinematicCharacterController;
   private readonly shape: RAPIER.Capsule;
   private readonly velocity = new Vector3();
   /** Vertical speed, m/s. */
@@ -101,15 +108,15 @@ export class Driver {
     const halfHeight = DRIVER.height / 2 - DRIVER.radius;
     this.shape = new RAPIER.Capsule(halfHeight, DRIVER.radius);
     this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+    // The body is placed by hand each step, which to the physics engine means it has no mass
+    // limit: anything it pressed on would have to give way completely. Standing among the
+    // cargo in the bed, it drove the crates down into the truck, squashing the suspension
+    // flat, shoving the truck along and wrecking the load. So it presses on nothing at all.
+    // What stops the driver walking through things is the sweeping in move(), not this.
     this.collider = world.createCollider(
-      RAPIER.ColliderDesc.capsule(halfHeight, DRIVER.radius)
-        .setCollisionGroups(groups(GROUP.person, GROUP.ground | GROUP.truck | GROUP.prop | GROUP.cargo)),
+      RAPIER.ColliderDesc.capsule(halfHeight, DRIVER.radius).setCollisionGroups(groups(GROUP.person, 0)),
       this.body,
     );
-    this.controller = world.createCharacterController(0.02);
-    // Kerbs can be stepped onto; anything taller is a wall.
-    this.controller.enableAutostep(0.35, 0.2, false);
-    this.controller.enableSnapToGround(SNAP);
     this.body.setEnabled(false);
   }
 
@@ -223,11 +230,7 @@ export class Driver {
     const grounded = this.fallOrLand(dt);
     if (input.jumpPressed && grounded && this.charge === 0) {
       if (this.held && this.held.mass > DRIVER.jumpMaxLoad) this.tooHeavyLeft = 1.2;
-      else {
-        this.rise = DRIVER.jumpSpeed;
-        // Snapping to the ground would pull the jump straight back down.
-        this.controller.disableSnapToGround();
-      }
+      else this.rise = DRIVER.jumpSpeed;
     }
     this.move(input.moveX * scale * dt, this.rise * dt, input.moveZ * scale * dt);
 
@@ -252,43 +255,110 @@ export class Driver {
   /** Gravity, and coming back to earth. Returns whether they are standing on something. */
   private fallOrLand(dt: number): boolean {
     const grounded = this.blockedBelow && this.rise <= 0;
-    if (grounded) {
-      this.rise = 0;
-      this.controller.enableSnapToGround(SNAP);
-    } else this.rise = Math.max(this.rise - G * dt, -TERMINAL);
+    if (grounded) this.rise = 0;
+    else this.rise = Math.max(this.rise - DRIVER.gravity * dt, -TERMINAL);
     // A step or a kerb reads as a moment off the ground; only call it airborne if it lasts.
     this.airTime = grounded ? 0 : this.airTime + dt;
     this.airborne = this.airTime > 0.12;
     return grounded;
   }
 
-  /** Move by an amount, sliding along and stopping at whatever is in the way. */
+  /**
+   * Move by an amount, sliding along and stopping at whatever is in the way.
+   *
+   * This is done by hand, by sweeping their shape through the world, rather than with the
+   * physics engine's character controller. That controller jams against anything that
+   * isn't fixed scenery: walking into a parked car, standing on its roof, or landing a jump
+   * beside it could each leave them unable to move. A sweep ignores whatever they are
+   * already touching, as long as they aren't pushing further into it, so it can't.
+   */
   private move(dx: number, dy: number, dz: number): void {
-    this.controller.computeColliderMovement(this.collider, { x: dx, y: dy, z: dz }, undefined, WORLD);
-    const m = this.controller.computedMovement();
-    this.pos.set(this.pos.x + m.x, Math.max(0, this.pos.y + m.y), this.pos.z + m.z);
+    this.slide(dx, dz);
+
+    // Rising and falling: as far straight up or down as there is room for.
+    let landed = false;
+    if (dy !== 0) {
+      const up = dy > 0;
+      const hit = this.sweep(up ? UP_AXIS : DOWN_AXIS, Math.abs(dy));
+      this.pos.y += (up ? 1 : -1) * (hit ? Math.max(0, hit.time_of_impact - CLEARANCE) : Math.abs(dy));
+      if (hit) {
+        // Landed on something, or bumped their head on it.
+        landed = !up;
+        this.rise = 0;
+      }
+    }
+    this.pos.y = Math.max(0, this.pos.y);
     this.place();
-    this.blockedBelow = this.feelForGround();
+    // Standing, if the fall was stopped (even by an edge off to one side) or the ground is right underfoot.
+    this.blockedBelow = this.feelForGround() || landed;
   }
 
-  /**
-   * Whether there is something to stand on just under their feet.
-   *
-   * This is asked separately, with a ray, instead of by pressing down as they move. Any
-   * downward part in the move itself makes the controller jam against whatever they are
-   * touching sideways, so that walking into a parked car, the truck or a wall left them
-   * stuck to it.
-   */
+  /** Sweep their shape from where they stand (optionally raised) along a unit direction; the first thing hit within `distance`, if any. */
+  private sweep(dir: { x: number; y: number; z: number }, distance: number, raised = 0): RAPIER.ColliderShapeCastHit | null {
+    const centre = { x: this.pos.x, y: this.pos.y + DRIVER.height / 2 + raised, z: this.pos.z };
+    return this.world.castShape(centre, UPRIGHT, dir, this.shape, 0, distance, false, undefined, WORLD, this.collider);
+  }
+
+  /** Move across the ground: up to a wall and then along it, or up onto a low step. */
+  private slide(dx: number, dz: number): void {
+    let rx = dx;
+    let rz = dz;
+    // A second and third pass, to follow a wall and then the one it meets at a corner.
+    for (let pass = 0; pass < 3; pass++) {
+      const length = Math.hypot(rx, rz);
+      if (length < 1e-5) return;
+      const dir = { x: rx / length, y: 0, z: rz / length };
+      const hit = this.sweep(dir, length + SKIN);
+      if (!hit) {
+        this.pos.x += rx;
+        this.pos.z += rz;
+        return;
+      }
+      const travel = Math.max(0, Math.min(length, hit.time_of_impact - SKIN));
+      this.pos.x += dir.x * travel;
+      this.pos.z += dir.z * travel;
+      const left = length - travel;
+      // Stepping up is for walking. In the air it would add to how high a jump can reach.
+      if (left < 1e-5 || (this.blockedBelow && this.stepUp(dir, left))) return;
+
+      // Carry on with whatever part of the move runs along the surface.
+      const flat = Math.hypot(hit.normal2.x, hit.normal2.z);
+      if (flat < 0.3) return;
+      const nx = hit.normal2.x / flat;
+      const nz = hit.normal2.z / flat;
+      const into = dir.x * nx + dir.z * nz;
+      rx = (dir.x - into * nx) * left;
+      rz = (dir.z - into * nz) * left;
+    }
+  }
+
+  /** Try to get past something low by going over it: up a kerb, up a ramp, onto a ledge at the top of a jump. */
+  private stepUp(dir: { x: number; y: number; z: number }, distance: number): boolean {
+    // Needs headroom, and a clear way forward once raised.
+    if (this.sweep(UP_AXIS, STEP) || this.sweep(dir, distance + SKIN, STEP)) return false;
+    this.pos.x += dir.x * distance;
+    this.pos.z += dir.z * distance;
+    this.pos.y += STEP;
+    // Then back down onto whatever is there.
+    const below = this.sweep(DOWN_AXIS, STEP);
+    this.pos.y -= below ? Math.max(0, below.time_of_impact - CLEARANCE) : STEP;
+    return true;
+  }
+
+  /** Whether there is something to stand on just under their feet. If so, stand them exactly on it. */
   private feelForGround(): boolean {
     this.ray.origin.x = this.pos.x;
     this.ray.origin.y = this.pos.y + PROBE_FROM;
     this.ray.origin.z = this.pos.z;
     const hit = this.world.castRay(this.ray, PROBE_FROM + PROBE, true, undefined, WORLD, this.collider);
-    if (!hit) return false;
-    // Close enough to count as standing: settle the last few centimetres onto it, unless on the way up.
+    if (!hit || this.rise > 0) return false;
+    // Stand exactly on it. Usually that means settling the last few centimetres down. But the
+    // surface can also be a little above their feet: coming over the edge of a car roof at the
+    // top of a jump, the rounded bottom of the body clears the edge before the feet do. Left
+    // like that they would be standing half inside the car, unable to move, so lift them onto it.
     const gap = hit.timeOfImpact - PROBE_FROM;
-    if (gap > 0.025 && this.rise <= 0) {
-      this.pos.y -= gap - 0.02;
+    if (Math.abs(gap - CLEARANCE) > 0.005) {
+      this.pos.y -= gap - CLEARANCE;
       this.place();
     }
     return true;

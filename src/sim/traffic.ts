@@ -4,8 +4,20 @@ import { GROUP, TRUCK, groups } from '../config';
 import type { TrafficLane } from '../levels/types';
 import type { Truck } from './truck';
 
+/** The car's overall extent, used for following distances and for telling when something is in its way. */
 export const CAR_HALF = { width: 0.9, height: 0.65, length: 2.1 };
 const CAR_Y = 0.2 + CAR_HALF.height;
+/** The two boxes a car is made of, relative to its centre: for the physics and the drawing alike. */
+export const CAR_BODY = {
+  half: [CAR_HALF.width, CAR_HALF.height * 0.55, CAR_HALF.length] as [number, number, number],
+  pos: [0, -CAR_HALF.height * 0.45, 0] as [number, number, number],
+  massShare: 0.75,
+};
+export const CAR_CABIN = {
+  half: [CAR_HALF.width * 0.9, CAR_HALF.height * 0.45, CAR_HALF.length * 0.525] as [number, number, number],
+  pos: [0, CAR_HALF.height * 0.5, -CAR_HALF.length * 0.1] as [number, number, number],
+  massShare: 0.25,
+};
 
 /** Bumper-to-bumper distance at which a car has come to a stop. */
 const STOP_GAP = 2.5;
@@ -77,13 +89,18 @@ export class Traffic {
         const body = world.createRigidBody(
           RAPIER.RigidBodyDesc.kinematicPositionBased().setRotation(lane.facing),
         );
-        world.createCollider(
-          RAPIER.ColliderDesc.cuboid(CAR_HALF.width, CAR_HALF.height, CAR_HALF.length)
-            .setMass(CAR_MASS)
-            .setFriction(0.6)
-            .setCollisionGroups(groups(GROUP.prop, GROUP.all)),
-          body,
-        );
+        // Two boxes, a long low body and a shorter cabin on top, matching how the car is
+        // drawn. One tall box would leave anyone standing on the bonnet hovering above it.
+        for (const part of [CAR_BODY, CAR_CABIN]) {
+          world.createCollider(
+            RAPIER.ColliderDesc.cuboid(...part.half)
+              .setTranslation(...part.pos)
+              .setMass(CAR_MASS * part.massShare)
+              .setFriction(0.6)
+              .setCollisionGroups(groups(GROUP.prop, GROUP.all)),
+            body,
+          );
+        }
         const car: TrafficCar = { body, lane, s, startS: s, speed: desc.speed, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0 };
         this.place(car, true);
         this.cars.push(car);
