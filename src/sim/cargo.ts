@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
-import { GROUP, PHYSICS, groups, type Vec3 } from '../config';
-import { CARGO_TYPES, stageForHp, type CargoType, type CargoTypeId, type PartDesc, type Stage } from './cargo-types';
+import { GROUP, PHYSICS, TRUCK, groups, type Vec3 } from '../config';
+import { CARGO_TYPES, hitDamage, stageForHp, type CargoType, type CargoTypeId, type PartDesc, type Stage } from './cargo-types';
 import type { Truck } from './truck';
 
 export interface CargoPlacement {
@@ -26,18 +26,24 @@ export type CargoEvent =
   /** A new loose piece appeared where the item was. */
   | { kind: 'debris'; item: CargoItem; debris: Debris }
   | { kind: 'destroyed'; item: CargoItem }
-  /** Fell off the truck and stayed off. */
-  | { kind: 'lost'; item: CargoItem; loss: number };
+  /** Came off the truck and stayed off. It can still be fetched back. */
+  | { kind: 'fallen'; item: CargoItem; loss: number }
+  /** Back on the truck. */
+  | { kind: 'recovered'; item: CargoItem; gain: number };
 
 const CARGO_GROUPS = groups(GROUP.cargo, GROUP.all);
 /** How quickly an item's steady load catches up with the force on it, per step. */
 const LOAD_FOLLOW = 0.3;
 /** No damage while the load settles after spawning. */
 const GRACE_SECONDS = 0.75;
-/** Seconds off the truck before an item counts as lost. */
-const LOST_SECONDS = 2.5;
+/** Seconds off the truck before an item counts as fallen. */
+const FALLEN_SECONDS = 2.5;
+/** After a thrown item lands in the bed, how long it and everything it landed on are spared. */
+const LANDING_GRACE = 0.8;
 /** One collision plays out over a few steps. It is judged once, on its strongest moment in this window. */
 const HIT_WINDOW = 0.12;
+/** Blows this close together are one incident, charged once for the worst of them. */
+const INCIDENT_SECONDS = 1.0;
 /** How much of the previous steps' jolt carries over into the running total, per step. */
 const SHOCK_DECAY = 0.7;
 /** Being squeezed in a pile counts for less than being knocked about by the same force. */
@@ -47,6 +53,7 @@ const q = new Quaternion();
 const q2 = new Quaternion();
 const e = new Euler();
 const v = new Vector3();
+const UP = new Vector3(0, 1, 0);
 
 function partRotation(part: PartDesc, target: Quaternion): Quaternion {
   const [x, y, z] = part.rot ?? [0, 0, 0];
@@ -69,7 +76,16 @@ export class CargoItem {
   body: RAPIER.RigidBody | null;
   hp = 100;
   stage: Stage = 0;
-  lost = false;
+  /** Off the truck and not counted toward the load, until it is brought back. */
+  fallen = false;
+  /** Being carried by the driver: it goes where they go and nothing can hurt it. */
+  held = false;
+  /** In the air after being thrown, until it first hits something. */
+  thrown = false;
+  /** Seconds left during which impacts do no damage. */
+  immune = 0;
+  /** Not part of the original load: picked up along the way for extra value. */
+  bonus = false;
   readonly mass: number;
   /** Which parts are still on the item. */
   readonly attached: boolean[];
@@ -91,6 +107,9 @@ export class CargoItem {
   /** Strongest impact of the collision in progress (0 when there is none), and the time left to judge it. */
   hitPeak = 0;
   hitWindow = 0;
+  /** Health already taken by the incident in progress, and the time until it is over. */
+  incidentDealt = 0;
+  incidentLeft = 0;
 
   constructor(type: CargoType, body: RAPIER.RigidBody) {
     this.type = type;
@@ -102,7 +121,7 @@ export class CargoItem {
 
   /** What the item is worth right now. */
   get value(): number {
-    return this.lost || this.stage === 3 ? 0 : (this.type.value * this.hp) / 100;
+    return this.stage === 3 ? 0 : (this.type.value * this.hp) / 100;
   }
 }
 
@@ -114,11 +133,14 @@ export class CargoSystem {
   private events: CargoEvent[] = [];
   private age = 0;
   private seed = 1;
+  /** Seconds left during which nothing on the bed takes damage, after a throw lands there. */
+  private bedCalm = 0;
 
-  constructor(private readonly world: RAPIER.World) {}
+  /** `damageScale` multiplies all impact damage: below 1 for a forgiving level, above for a harsh one. */
+  constructor(private readonly world: RAPIER.World, private readonly damageScale = 1) {}
 
   /** Remove everything and load the truck afresh. */
-  load(placements: CargoPlacement[], truckPos: Vec3): void {
+  load(placements: CargoPlacement[], truckPos: Vec3, heading: number): void {
     for (const item of this.items) if (item.body) this.world.removeRigidBody(item.body);
     for (const d of this.debris) this.world.removeRigidBody(d.body);
     this.items.length = 0;
@@ -127,19 +149,23 @@ export class CargoSystem {
     this.events = [];
     this.age = 0;
     this.seed = 1;
+    this.bedCalm = 0;
 
     for (const place of placements) {
       const type: CargoType = CARGO_TYPES[place.type];
-      q.setFromEuler(e.set(0, place.rotY ?? 0, 0));
+      q.setFromEuler(e.set(0, heading + (place.rotY ?? 0), 0));
+      // Where it sits in the world, given which way the truck faces.
+      v.set(...place.pos).applyAxisAngle(UP, heading);
+      const at = { x: truckPos[0] + v.x, y: truckPos[1] + v.y, z: truckPos[2] + v.z };
       // No CCD on cargo: riding a fast-moving bed, it stalls the items in world space
       // and they slide out through the tailgate.
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(truckPos[0] + place.pos[0], truckPos[1] + place.pos[1], truckPos[2] + place.pos[2])
+          .setTranslation(at.x, at.y, at.z)
           .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
       );
       const item = new CargoItem(type, body);
-      item.lastPos.set(truckPos[0] + place.pos[0], truckPos[1] + place.pos[1], truckPos[2] + place.pos[2]);
+      item.lastPos.set(at.x, at.y, at.z);
 
       const add = (desc: RAPIER.ColliderDesc, mass: number): RAPIER.Collider => {
         desc
@@ -179,11 +205,34 @@ export class CargoSystem {
   update(truck: Truck): void {
     const dt = PHYSICS.dt;
     this.age += dt;
+    this.bedCalm -= dt;
     for (const item of this.items) {
       const body = item.body;
-      if (!body || item.lost) continue;
+      if (!body) continue;
       const t = body.translation();
       item.lastPos.set(t.x, t.y, t.z);
+      if (item.held) {
+        this.quiet(item, body);
+        continue;
+      }
+      const onBed = truck.isOnBed(t);
+
+      // A thrown item that comes down in the bed lands for free, and so does whatever it
+      // lands on. Anywhere else, the landing counts like any other impact.
+      if (item.thrown && item.force > 0) {
+        item.thrown = false;
+        if (onBed) {
+          item.immune = LANDING_GRACE;
+          this.bedCalm = LANDING_GRACE;
+        }
+      }
+      if (item.immune > 0 && !onBed) item.immune = 0;
+      item.immune -= dt;
+      if (item.immune > 0 || (onBed && this.bedCalm > 0)) {
+        this.quiet(item, body);
+        this.settle(item, onBed, dt);
+        continue;
+      }
 
       // Two things hurt an item, both measured in m/s and both added up over the last few
       // steps, because the solver spreads one collision across several.
@@ -207,26 +256,106 @@ export class CargoSystem {
       const impact = Math.max(item.knock, item.squeeze * SQUEEZE_WEIGHT);
       if (this.age > GRACE_SECONDS) {
         item.peakImpact = Math.max(item.peakImpact, impact);
-        // Damage grows with how hard the hit was, with no ceiling: a heavy crash should
-        // cost far more than a nudge.
+        // Damage grows with how hard the hit was, levelling off for the very hardest.
         if (impact > item.type.threshold) {
           if (item.hitPeak === 0) item.hitWindow = HIT_WINDOW;
           item.hitPeak = Math.max(item.hitPeak, impact);
         }
+        // One crash hits an item several times over: into the cab, back off it, then the
+        // rest of the load piling in. Charge the incident for its worst blow only, topping
+        // up if a later one turns out harder.
+        if (item.incidentLeft > 0 && (item.incidentLeft -= dt) <= 0) item.incidentDealt = 0;
         if (item.hitPeak > 0 && (item.hitWindow -= dt) <= 0) {
-          const peak = item.hitPeak;
+          const due = hitDamage(item.type, item.hitPeak) * this.damageScale;
           item.hitPeak = 0;
-          this.damage(item, (peak - item.type.threshold) * item.type.fragility);
+          if (item.incidentLeft <= 0) item.incidentLeft = INCIDENT_SECONDS;
+          if (due > item.incidentDealt) {
+            const extra = due - item.incidentDealt;
+            item.incidentDealt = due;
+            this.damage(item, extra);
+          }
         }
       }
 
-      if (!item.body) continue;
-      item.offTruckTime = truck.isOnBed(t) ? 0 : item.offTruckTime + dt;
-      if (item.offTruckTime > LOST_SECONDS) {
-        const loss = item.value;
-        item.lost = true;
-        this.events.push({ kind: 'lost', item, loss });
-      }
+      if (item.body) this.settle(item, onBed, dt);
+    }
+  }
+
+  /** Track whether an item is on the truck, and report it falling off or coming back. */
+  private settle(item: CargoItem, onBed: boolean, dt: number): void {
+    item.offTruckTime = onBed ? 0 : item.offTruckTime + dt;
+    if (!item.fallen && item.offTruckTime > FALLEN_SECONDS) {
+      item.fallen = true;
+      // Extra items found along the way were never part of the load, so losing one costs nothing.
+      this.events.push({ kind: 'fallen', item, loss: item.bonus ? 0 : item.value });
+    } else if (item.fallen && onBed && !item.thrown) {
+      item.fallen = false;
+      this.events.push({ kind: 'recovered', item, gain: item.value });
+    }
+  }
+
+  /** Forget an item's recent motion and load, so nothing that happened while it was spared counts later. */
+  private quiet(item: CargoItem, body: RAPIER.RigidBody): void {
+    const lv = body.linvel();
+    item.prevVel.set(lv.x, lv.y, lv.z);
+    item.load = item.force;
+    item.force = 0;
+    item.knock = item.squeeze = item.hitPeak = 0;
+  }
+
+  /** Hand an item to the driver: it stops being a physical object until it is put down or thrown. */
+  hold(item: CargoItem): void {
+    const body = item.body!;
+    body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    for (let i = 0; i < body.numColliders(); i++) body.collider(i).setEnabled(false);
+    item.held = true;
+    item.thrown = false;
+    if (!item.fallen) {
+      // Lifted straight off the truck.
+      item.fallen = true;
+      this.events.push({ kind: 'fallen', item, loss: item.bonus ? 0 : item.value });
+    }
+  }
+
+  /** Let go of a held item at a position, with a velocity. `thrown` marks it as in flight. */
+  release(item: CargoItem, at: Vector3, velocity: Vector3, thrown: boolean): void {
+    const body = item.body!;
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    for (let i = 0; i < body.numColliders(); i++) body.collider(i).setEnabled(true);
+    body.setTranslation(at, true);
+    body.setLinvel(velocity, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    item.held = false;
+    item.thrown = thrown;
+    // Set down by hand, it gets a moment to come to rest unharmed.
+    item.immune = thrown ? 0 : 0.6;
+    item.offTruckTime = FALLEN_SECONDS;
+    this.quiet(item, body);
+  }
+
+  /**
+   * Shove everything loose out from under the truck, to either side. Used when the truck
+   * has just been set back on its wheels: it would otherwise come down on top of its own
+   * spilled load and be left stranded there.
+   */
+  clearFootprint(truck: Truck): void {
+    const t = truck.body.translation();
+    const r = truck.body.rotation();
+    const halfWidth = TRUCK.frame.half[0] + 0.7;
+    const halfLength = TRUCK.frame.half[2] + 0.7;
+    const zero = { x: 0, y: 0, z: 0 };
+    const bodies = [...this.items.map((i) => i.body), ...this.debris.map((d) => d.body)];
+    for (const body of bodies) {
+      if (!body) continue;
+      const p = body.translation();
+      q.set(r.x, r.y, r.z, r.w);
+      v.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(q2.copy(q).invert());
+      if (Math.abs(v.x) > halfWidth || Math.abs(v.z) > halfLength || v.y > 2.5) continue;
+      v.x = (v.x < 0 ? -1 : 1) * (halfWidth + 0.6 + this.random());
+      v.applyQuaternion(q);
+      body.setTranslation({ x: t.x + v.x, y: p.y + 0.2, z: t.z + v.z }, true);
+      body.setLinvel(zero, true);
+      body.setAngvel(zero, true);
     }
   }
 
@@ -243,7 +372,9 @@ export class CargoSystem {
     item.hp = Math.max(0, item.hp - amount);
     const newStage = stageForHp(item.hp);
     item.stage = newStage;
-    this.events.push({ kind: 'damage', item, loss: before - item.value, staged: newStage !== oldStage });
+    // An item lying off the truck is already off the books; further damage shows when it comes back.
+    const loss = item.fallen ? 0 : before - item.value;
+    this.events.push({ kind: 'damage', item, loss, staged: newStage !== oldStage });
 
     // Pass through every stage on the way, so a single huge hit still sheds parts in order.
     for (let s = oldStage + 1; s <= newStage; s++) {

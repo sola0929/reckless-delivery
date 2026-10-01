@@ -11,6 +11,10 @@ const FLASH = new THREE.Color(0xff3020);
 const LEAK_SECONDS = 8;
 const LEAK_INTERVAL = 0.05;
 
+/** An arrowhead pointing down at a fallen item. Drawn over everything, so it shows behind buildings too. */
+const MARKER_SHAPE = new THREE.ConeGeometry(0.28, 0.6, 4).rotateX(Math.PI);
+const MARKER_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffd166, depthTest: false, transparent: true, opacity: 0.95 });
+
 const textures = new Map<string, THREE.Texture>();
 
 /** Surface texture for a damage stage: the base pattern with cracks drawn over it. */
@@ -114,6 +118,8 @@ interface ItemView {
   /** One per part; null once that part has come off. */
   meshes: (THREE.Mesh | null)[];
   flash: number;
+  /** A bobbing pointer shown over the item while it lies off the truck, waiting to be fetched. */
+  marker: THREE.Mesh;
   leakLeft: number;
   leakTimer: number;
 }
@@ -123,12 +129,13 @@ export class CargoViews {
   private readonly views = new Map<CargoItem, ItemView>();
   private readonly loose: { sync: BodySync; mesh: THREE.Mesh }[] = [];
   private readonly at = new THREE.Vector3();
+  private time = 0;
 
   constructor(private readonly scene: THREE.Scene, private readonly bursts: Bursts) {}
 
   /** Throw away every mesh and build the load again, e.g. after a reset. */
   rebuild(sim: Sim): void {
-    for (const view of this.views.values()) this.scene.remove(view.group);
+    for (const view of this.views.values()) this.scene.remove(view.group, view.marker);
     for (const piece of this.loose) this.scene.remove(piece.mesh);
     this.views.clear();
     this.loose.length = 0;
@@ -142,8 +149,12 @@ export class CargoViews {
         return mesh;
       });
       this.scene.add(group);
+      const marker = new THREE.Mesh(MARKER_SHAPE, MARKER_MATERIAL);
+      marker.visible = false;
+      marker.renderOrder = 9;
+      this.scene.add(marker);
       this.views.set(item, {
-        item, group, meshes,
+        item, group, meshes, marker,
         sync: new BodySync(item.body!, group),
         flash: 0, leakLeft: 0, leakTimer: 0,
       });
@@ -188,7 +199,8 @@ export class CargoViews {
         view.leakLeft = 0;
         this.bursts.emit(item.lastPos, item.type.burst, item.type.burst === 'water' ? 60 : 30, 4.5);
         break;
-      case 'lost':
+      case 'fallen':
+      case 'recovered':
         break;
     }
   }
@@ -205,7 +217,15 @@ export class CargoViews {
   }
 
   update(dt: number): void {
+    this.time += dt;
     for (const view of this.views.values()) {
+      const { item, marker } = view;
+      marker.visible = item.fallen && !item.held && !item.thrown && item.body !== null;
+      if (marker.visible) {
+        marker.position.copy(view.group.position);
+        marker.position.y += 1.5 + Math.sin(this.time * 4) * 0.15;
+        marker.rotation.y = this.time * 2;
+      }
       if (view.flash > 0) {
         view.flash = Math.max(0, view.flash - dt * 3.5);
         for (const mesh of view.meshes) {

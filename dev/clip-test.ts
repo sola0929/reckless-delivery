@@ -41,7 +41,7 @@ function scenario(name: string, script: [number, DriveInput][]): void {
       const now = localCentres();
       now.forEach((p, k) => {
         // A destroyed or lost item no longer moves; the truck driving on would look like a crossing.
-        if (!sim.cargo[k].body || sim.cargo[k].lost) return;
+        if (!sim.cargo[k].body || sim.cargo[k].fallen) return;
         // A crate going over a wall has its centre above the wall top as it crosses the
         // wall's mid-plane. Crossing below the top means it went through.
         if (p.y > wallTop - 0.05 || p.y < 0) return;

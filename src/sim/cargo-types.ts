@@ -38,8 +38,16 @@ export interface CargoType {
    * For scale, speed bumps taken flat out reach about 2.5 and landing the ramp jump about 5.
    */
   threshold: number;
-  /** Health lost per m/s of impact above the threshold. */
-  fragility: number;
+  /**
+   * The most health a single hit can take, approached but never reached: harder hits always
+   * cost more, by less and less. It keeps one crash, however fast, from writing an item off.
+   */
+  maxHit: number;
+  /**
+   * How many m/s above the threshold it takes to get about two thirds of the way to maxHit.
+   * Small values make an item brittle: it takes nearly the full hit from a modest knock.
+   */
+  give: number;
   friction: number;
   /**
    * One collider for the whole item until it is destroyed. Without it, every part
@@ -67,7 +75,8 @@ function crate(id: string, name: string, h: number, mass: number, value: number,
     name,
     value,
     threshold: 3.5,
-    fragility: 7,
+    maxHit: 34,
+    give: 18,
     friction: 0.7,
     hull: { shape: 'box', size: [h, h, h] },
     parts: [
@@ -109,7 +118,8 @@ function jar(): CargoType {
     name: '水罐',
     value: 300,
     threshold: 3.2,
-    fragility: 8,
+    maxHit: 44,
+    give: 14,
     friction: 0.6,
     // Squat enough to slide before it tips over.
     hull: { shape: 'cylinder', size: [0.3, 0.33, 0] },
@@ -135,7 +145,8 @@ function skeleton(): CargoType {
     name: '骷髏骨架',
     value: 600,
     threshold: 3.5,
-    fragility: 6,
+    maxHit: 40,
+    give: 16,
     friction: 0.6,
     parts: [
       // Ribcage, pelvis, skull, arms, legs.
@@ -159,6 +170,12 @@ export const CARGO_TYPES = {
 } satisfies Record<string, CargoType>;
 
 export type CargoTypeId = keyof typeof CARGO_TYPES;
+
+/** Health lost to an impact of a given strength (m/s). Rises steeply at first, then levels off toward maxHit. */
+export function hitDamage(type: CargoType, impact: number): number {
+  if (impact <= type.threshold) return 0;
+  return type.maxHit * (1 - Math.exp(-(impact - type.threshold) / type.give));
+}
 
 export function stageForHp(hp: number): Stage {
   if (hp <= STAGE_HP[2]) return 3;

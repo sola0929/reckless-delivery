@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { TRUCK, type Vec3 } from '../config';
-import type { PropDesc } from '../sim/sandbox';
+import type { PropDesc } from '../levels/types';
 import type { Truck } from '../sim/truck';
 
 /** Copies a physics body's transform onto a mesh, interpolating between fixed steps. */
@@ -20,6 +20,8 @@ export class BodySync {
     this.prevPos.copy(this.currPos);
     this.prevRot.copy(this.currRot);
     this.read();
+    // A teleport, such as a car looping back to the start of its lane: don't glide across the map.
+    if (this.prevPos.distanceToSquared(this.currPos) > 25) this.prevPos.copy(this.currPos);
   }
 
   /** Jump to the body's current transform with no interpolation, e.g. after a reset. */
@@ -85,10 +87,33 @@ export class TruckMesh {
 
     place(boxMesh(TRUCK.frame.half, dark), TRUCK.frame.pos);
     place(boxMesh(TRUCK.cab.half, paint), TRUCK.cab.pos);
+
+    // The bed walls are solid to the physics, but drawn as a board below and open rails
+    // above, so the load stays visible from the camera behind.
+    const wall = (half: Vec3, pos: Vec3) => {
+      const [hx, hy, hz] = half;
+      const [x, y, z] = pos;
+      const alongZ = hz > hx;
+      const boardHalf = hy * TRUCK.wallBoard;
+      const rail = 0.04;
+      place(boxMesh([hx, boardHalf, hz], paint), [x, y - hy + boardHalf, z]);
+      place(boxMesh([hx, rail, hz], paint), [x, y + hy - rail, z]);
+      // Posts from the board up to the top rail.
+      const length = alongZ ? hz : hx;
+      const posts = Math.max(2, Math.round(length / 0.7) + 1);
+      const postHalf = hy - boardHalf;
+      for (let i = 0; i < posts; i++) {
+        const at = -length + rail + (i / (posts - 1)) * (length - rail) * 2;
+        place(
+          boxMesh(alongZ ? [hx, postHalf, rail] : [rail, postHalf, hz], paint),
+          alongZ ? [x, y + hy - postHalf, z + at] : [x + at, y + hy - postHalf, z],
+        );
+      }
+    };
     const [sx, sy, sz] = TRUCK.sideWall.pos;
-    place(boxMesh(TRUCK.sideWall.half, paint), [sx, sy, sz]);
-    place(boxMesh(TRUCK.sideWall.half, paint), [-sx, sy, sz]);
-    place(boxMesh(TRUCK.tailgate.half, paint), TRUCK.tailgate.pos);
+    wall(TRUCK.sideWall.half, [sx, sy, sz]);
+    wall(TRUCK.sideWall.half, [-sx, sy, sz]);
+    wall(TRUCK.tailgate.half, TRUCK.tailgate.pos);
 
     // Cab details: windscreen, side windows, headlights.
     const [cw, ch, cl] = TRUCK.cab.half;

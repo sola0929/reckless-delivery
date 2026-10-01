@@ -15,6 +15,7 @@ export const GROUP = {
   truck: 0x0002,
   cargo: 0x0004,
   prop: 0x0008,
+  person: 0x0010,
   all: 0xffff,
 };
 
@@ -23,14 +24,15 @@ export function groups(membership: number, filter: number): number {
 }
 
 export const TRUCK = {
-  spawn: [0, 0.9, 0] as Vec3,
-
-  // Colliders, in chassis space. The bed is 2.28 m wide and 5.44 m long inside,
-  // with its floor at the top of the frame.
+  // Colliders, in chassis space. The bed is 2.28 m wide and 5.44 m long inside, with its
+  // floor at the top of the frame. The walls are 1 m high: enough to cover the lower half
+  // of a second layer of crates, so it survives ordinary driving but not rough handling.
   frame: { half: [1.3, 0.22, 3.7] as Vec3, pos: [0, 0, 0] as Vec3, density: 220 },
   cab: { half: [1.3, 0.8, 0.9] as Vec3, pos: [0, 1.02, 2.8] as Vec3, density: 60 },
-  sideWall: { half: [0.08, 0.35, 2.8] as Vec3, pos: [1.22, 0.57, -0.9] as Vec3, density: 100 },
-  tailgate: { half: [1.14, 0.35, 0.08] as Vec3, pos: [0, 0.57, -3.62] as Vec3, density: 100 },
+  sideWall: { half: [0.08, 0.5, 2.8] as Vec3, pos: [1.22, 0.72, -0.9] as Vec3, density: 100 },
+  tailgate: { half: [1.14, 0.5, 0.08] as Vec3, pos: [0, 0.72, -3.62] as Vec3, density: 100 },
+  // Share of a wall's height drawn as solid board; the rest is open rails. The collider is solid throughout.
+  wallBoard: 0.6,
   bedFriction: 0.9,
 
   // Volume that counts as "still on the truck", in chassis space.
@@ -74,9 +76,52 @@ export const TRUCK = {
   rollingDecel: 0.5,
   // Extra height, in metres, at which drive and brake forces act: exaggerates squat and dive.
   pitchLeverage: 0.5,
+  // Lying this far over (cosine of the tilt) and still for this long, the truck rights itself.
+  overturnedUp: 0.35,
+  overturnedSeconds: 1.5,
   maxSteer: 0.6,
   minSteer: 0.16,
   steerRate: 2.4,
+};
+
+/** The driver on foot. */
+export const DRIVER = {
+  radius: 0.3,
+  /** Head to toe. */
+  height: 1.7,
+  walkSpeed: 4,
+  runSpeed: 7.5,
+  /** The truck must be this slow, m/s, to get out. */
+  exitSpeed: 1,
+  /** Where the driver steps out, in chassis space, mirrored for the other side. */
+  door: [2.3, 0.2, 2.6] as Vec3,
+  /** How close to a door to climb back in, and to an item to pick it up. */
+  doorReach: 2.4,
+  reach: 1.8,
+  /** Take-off speed of a jump, m/s: 5 clears about 1.25 m. Loads heavier than jumpMaxLoad kg rule it out. */
+  jumpSpeed: 5,
+  jumpMaxLoad: 12,
+  /** How far from the truck the driver may wander. */
+  leash: 35,
+  /** Height above the feet at which a load is carried. */
+  carryHeight: 2.05,
+  /** Walking speed with a load: 1 at no weight, falling to the floor value for heavy loads. */
+  carrySlowPerKg: 0.02,
+  carrySlowest: 0.45,
+  /**
+   * Throwing: holding the button pushes the landing point outward at a steady rate, so the
+   * feel is the same whatever is being thrown. Heavier loads just top out sooner: the
+   * longest range is throwMax for a weightless load, less throwPerKg for each kg, and never
+   * below throwShortest. A 10 kg crate reaches about 9 m after 2.3 s.
+   */
+  throwMin: 1.5,
+  throwRate: 3.4,
+  throwMax: 12,
+  throwPerKg: 0.28,
+  throwShortest: 4.5,
+  /** Seconds on the ground after being run down, and of safety after getting up. */
+  downSeconds: 1.8,
+  safeSeconds: 1,
 };
 
 export const CAMERA = {
@@ -98,6 +143,12 @@ export const CAMERA = {
   // Field of view widens while boosting.
   boostFov: 8,
   fovFollow: 4,
+  // Following the driver on foot: how much closer, how fast it closes in, and how long the
+  // view takes to slide across when they get out or back in.
+  footZoom: 0.72,
+  footZoomFollow: 3,
+  handoverSeconds: 0.6,
+  handoverFollow: 9,
   minZoom: 0.5,
   maxZoom: 2.2,
 };

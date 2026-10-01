@@ -106,3 +106,170 @@ body {
   70% { opacity: 1; }
   100% { opacity: 0; margin-top: -70px; }
 }
+
+[hidden] {
+  display: none !important;
+}
+
+#value-bar {
+  position: relative;
+  overflow: visible;
+}
+
+#value-fill {
+  border-radius: 3px;
+}
+
+/* The value needed to pass. */
+#value-goal {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 11px;
+  background: #fff;
+}
+
+#nav {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A narrow arrowhead: an equilateral triangle looks the same every 120 degrees. */
+#nav-arrow {
+  width: 22px;
+  height: 30px;
+  background: #4dff88;
+  clip-path: polygon(50% 0, 92% 100%, 50% 76%, 8% 100%);
+}
+
+#nav .label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+#nav .value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#nav .unit {
+  margin-left: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+#banner {
+  position: absolute;
+  top: 22%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  animation: banner-fade 5s ease-in forwards;
+}
+
+#banner-title {
+  font-size: 40px;
+  font-weight: 800;
+}
+
+#banner-brief {
+  margin-top: 8px;
+  font-size: 18px;
+}
+
+@keyframes banner-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Kept high, so the truck and what is left of its load stay in view below. */
+#result {
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 28px 44px;
+  text-align: center;
+  background: rgba(20, 26, 34, 0.9);
+}
+
+#result-title {
+  font-size: 38px;
+  font-weight: 800;
+}
+
+#result-title.passed {
+  color: #6fd08c;
+}
+
+#result-title.failed {
+  color: #ff6b5a;
+}
+
+#result-stars {
+  margin: 6px 0 10px;
+  font-size: 46px;
+  letter-spacing: 6px;
+  color: #ffd166;
+}
+
+#result-value {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#result-detail {
+  margin-top: 6px;
+  font-size: 15px;
+  opacity: 0.85;
+}
+
+#result-hint {
+  margin-top: 18px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+#result-hint b {
+  color: #ffd166;
+}
+
+#minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 200px;
+  height: 200px;
+}
+
+/* What the nearest thing to do is, just above the key list. */
+#prompt {
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 8px;
+  background: rgba(20, 26, 34, 0.8);
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#prompt b {
+  color: #ffd166;
+}
+
+#prompt.warning {
+  color: #ff8a7a;
+}
+
+.popup.gain {
+  color: #6fd08c;
+}

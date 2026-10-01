@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
-const url = process.env.GAME_URL ?? 'http://localhost:5183/';
+const base = process.env.GAME_URL ?? 'http://localhost:5183/';
 const out = new URL('./out/', import.meta.url);
 mkdirSync(out, { recursive: true });
 
@@ -26,7 +26,8 @@ const state = () =>
     };
   });
 
-await page.goto(url);
+// The sandbox first: driving, damage and reset.
+await page.goto(base + '?level=sandbox');
 await page.waitForFunction(() => window.game, null, { timeout: 15000 });
 await page.waitForTimeout(1500);
 await shot('1-start');
@@ -63,6 +64,40 @@ await page.keyboard.press('KeyR');
 await page.waitForTimeout(800);
 await shot('6-reset');
 console.log('after reset', await state());
+
+// Then the city level: the start, a stretch of driving, and the result screen.
+await page.goto(base);
+await page.waitForFunction(() => window.game, null, { timeout: 15000 });
+await page.waitForTimeout(1500);
+await shot('7-city-start');
+// A short run that stops before the first busy street.
+await page.keyboard.down('KeyW');
+await page.waitForTimeout(2500);
+await page.keyboard.up('KeyW');
+await shot('8-city-street');
+console.log('city drive ', await state());
+// Stop, then carry the truck and its load to the delivery bay to check the result screen.
+for (let i = 0; i < 12 && (await state()).speed > 0.3; i++) {
+  await page.keyboard.down('KeyS');
+  await page.waitForTimeout(150);
+  await page.keyboard.up('KeyS');
+  await page.waitForTimeout(150);
+}
+await page.waitForTimeout(800);
+await page.evaluate(() => {
+  const { sim } = window.game;
+  const t = sim.truck.body.translation();
+  const [fx, fz] = sim.level.finish.pos;
+  const move = (body) => {
+    const p = body.translation();
+    body.setTranslation({ x: p.x + fx - t.x, y: p.y, z: p.z + fz - t.z }, true);
+  };
+  for (const c of sim.cargo) if (c.body) move(c.body);
+  move(sim.truck.body);
+});
+await page.waitForTimeout(2500);
+await shot('9-city-result');
+console.log('result     ', await page.evaluate(() => ({ ...window.game.sim.result, shown: !document.getElementById('result').hidden })));
 
 const fps = await page.evaluate(
   () => new Promise((resolve) => {

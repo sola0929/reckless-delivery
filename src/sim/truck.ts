@@ -28,17 +28,18 @@ export class Truck {
   brakeLevel = 0;
   private steer = 0;
   private brakeTime = 0;
+  /** Seconds spent lying still on its side or roof. */
+  private overturned = 0;
 
   private readonly q = new Quaternion();
   private readonly q2 = new Quaternion();
   private readonly v = new Vector3();
   private readonly v2 = new Vector3();
 
-  constructor(world: RAPIER.World) {
-    const [x, y, z] = TRUCK.spawn;
-    this.body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z).setCanSleep(false),
-    );
+  /** `heading` is the starting direction: radians about Y, 0 = toward +Z. */
+  constructor(world: RAPIER.World, private readonly spawn: Vec3, private readonly heading: number) {
+    this.body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setCanSleep(false));
+    this.reset();
 
     const box = (part: { half: Vec3; pos: Vec3; density: number }, mirrorX = false) => {
       const desc = RAPIER.ColliderDesc.cuboid(...part.half)
@@ -183,16 +184,54 @@ export class Truck {
     body.addTorque({ x: dw.x, y: dw.y, z: dw.z }, true);
   }
 
+  /** True once the truck has lain still on its side or roof for long enough to call it overturned. */
+  isOverturned(dt: number): boolean {
+    const r = this.body.rotation();
+    this.q.set(r.x, r.y, r.z, r.w);
+    const up = this.v.set(0, 1, 0).applyQuaternion(this.q).y;
+    const lv = this.body.linvel();
+    const still = Math.hypot(lv.x, lv.y, lv.z) < 1;
+    this.overturned = up < TRUCK.overturnedUp && still ? this.overturned + dt : 0;
+    return this.overturned >= TRUCK.overturnedSeconds;
+  }
+
+  /** Set the truck back on its wheels where it lies, facing the way it was. */
+  setUpright(): void {
+    const r = this.body.rotation();
+    this.q.set(r.x, r.y, r.z, r.w);
+    const forward = this.v.set(0, 0, 1).applyQuaternion(this.q);
+    const yaw = Math.atan2(forward.x, forward.z);
+    const t = this.body.translation();
+    const zero = { x: 0, y: 0, z: 0 };
+    this.body.setTranslation({ x: t.x, y: t.y + 1, z: t.z }, true);
+    this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+    this.body.setLinvel(zero, true);
+    this.body.setAngvel(zero, true);
+    this.overturned = 0;
+  }
+
   reset(): void {
-    const [x, y, z] = TRUCK.spawn;
+    const [x, y, z] = this.spawn;
     this.body.setTranslation({ x, y, z }, true);
-    this.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    this.body.setRotation({ x: 0, y: Math.sin(this.heading / 2), z: 0, w: Math.cos(this.heading / 2) }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steer = 0;
     this.brakeTime = 0;
+    this.overturned = 0;
     this.brakeLevel = 0;
     this.boosting = false;
+  }
+
+  /** True if a point on the ground plan lies over the inside of the bed, whatever its height. */
+  isOverBed(x: number, z: number): boolean {
+    const t = this.body.translation();
+    const r = this.body.rotation();
+    this.v.set(x - t.x, 0, z - t.z).applyQuaternion(this.q.set(r.x, r.y, r.z, r.w).invert());
+    const side = TRUCK.sideWall.pos[0] - TRUCK.sideWall.half[0];
+    const back = TRUCK.tailgate.pos[2] + TRUCK.tailgate.half[2];
+    const front = TRUCK.cab.pos[2] - TRUCK.cab.half[2];
+    return Math.abs(this.v.x) < side && this.v.z > back && this.v.z < front;
   }
 
   /** True if a world-space point lies inside the cargo bed zone. */

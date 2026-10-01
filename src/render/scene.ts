@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA } from '../config';
-import { GROUND_HALF } from '../sim/sandbox';
+import type { LevelDef } from '../levels/types';
 
 export interface View {
   renderer: THREE.WebGLRenderer;
@@ -12,7 +12,7 @@ export interface View {
 const SKY = 0x9fc4e0;
 const SUN_OFFSET = new THREE.Vector3(-25, 45, -18);
 
-function groundTexture(): THREE.Texture {
+function groundTexture(ground: LevelDef['ground']): THREE.Texture {
   const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -25,20 +25,23 @@ function groundTexture(): THREE.Texture {
     g.fillStyle = `rgba(${shade}, ${shade + 6}, ${shade + 12}, 0.5)`;
     g.fillRect(Math.random() * size, Math.random() * size, 2, 2);
   }
-  g.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-  g.lineWidth = 4;
-  g.strokeRect(0, 0, size, size);
+  // A 10 m grid for the test course, to judge speed and distance by.
+  if (ground.style === 'grid') {
+    g.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+    g.lineWidth = 4;
+    g.strokeRect(0, 0, size, size);
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   // One tile per 10 m.
-  tex.repeat.set(GROUND_HALF[0] / 5, GROUND_HALF[2] / 5);
+  tex.repeat.set(ground.half[0] / 5, ground.half[1] / 5);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
 }
 
-export function createView(canvas: HTMLCanvasElement): View {
+export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -64,10 +67,11 @@ export function createView(canvas: HTMLCanvasElement): View {
   scene.add(sun, sun.target);
 
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(GROUND_HALF[0] * 2, GROUND_HALF[2] * 2),
-    new THREE.MeshStandardMaterial({ map: groundTexture(), roughness: 0.95 }),
+    new THREE.PlaneGeometry(level.ground.half[0] * 2, level.ground.half[1] * 2),
+    new THREE.MeshStandardMaterial({ map: groundTexture(level.ground), roughness: 0.95 }),
   );
   ground.rotation.x = -Math.PI / 2;
+  ground.position.set(level.ground.center[0], 0, level.ground.center[1]);
   ground.receiveShadow = true;
   scene.add(ground);
 

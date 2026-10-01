@@ -1,23 +1,10 @@
-import { TRUCK, type Vec3 } from '../config';
-import type { CargoPlacement } from './cargo';
+import { TRUCK } from '../config';
+import type { CargoPlacement } from '../sim/cargo';
+import type { LevelDef, PropDesc } from './types';
 
-// The sandbox test course, as plain data shared by the physics and the renderer.
+// The sandbox: a flat test course with no goal, used for tuning and by the headless checks.
 
-export interface PropDesc {
-  shape: 'box' | 'cylinder' | 'cone';
-  /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. */
-  size: Vec3;
-  pos: Vec3;
-  /** Euler XYZ, radians. */
-  rot?: Vec3;
-  color: number;
-  /** Dynamic when set, static otherwise. */
-  mass?: number;
-}
-
-export const GROUND_HALF: Vec3 = [300, 0.5, 300];
-
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -27,7 +14,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export function buildProps(): PropDesc[] {
+function buildProps(): PropDesc[] {
   const props: PropDesc[] = [];
   const rand = mulberry32(7);
 
@@ -75,7 +62,8 @@ export function buildProps(): PropDesc[] {
   return props;
 }
 
-export function buildCargo(): CargoPlacement[] {
+/** The standard mixed load: crates, small crates, water jars and a skeleton. */
+export function standardLoad(): CargoPlacement[] {
   const cargo: CargoPlacement[] = [];
   const floor = TRUCK.frame.pos[1] + TRUCK.frame.half[1];
   const gap = 0.01;
@@ -101,4 +89,21 @@ export function buildCargo(): CargoPlacement[] {
   cargo.push({ type: 'skeleton', pos: [0.08, floor + 0.12 + gap, rowZ(5) - 0.1], rotY: Math.PI / 2 });
 
   return cargo;
+}
+
+export function sandbox(): LevelDef {
+  return {
+    id: 'sandbox',
+    name: '測試場',
+    brief: '自由駕駛，沒有終點',
+    ground: { center: [0, 0], half: [300, 300], style: 'grid' },
+    bounds: [[-150, -150], [150, 250]],
+    spawn: [0, 0.9, 0],
+    heading: 0,
+    props: buildProps(),
+    decals: [],
+    cargo: standardLoad(),
+    traffic: [],
+    stars: [0.6, 0.8, 0.95],
+  };
 }

@@ -68,7 +68,7 @@ run(2, { throttle: 0.6, steer: 1, handbrake: false });
 report('steer left 2s');
 check('steering left moves toward +X', sim.truck.body.translation().x > before + 1);
 check('truck stays upright in a hard turn', upY() > 0.8);
-check('a hard turn at speed throws some cargo off', sim.cargoOnTruck() < sim.cargo.length);
+check('a hard turn on W alone keeps the lower layer', sim.cargoOnTruck() >= sim.cargo.length - 4);
 
 // 4. Emergency stop.
 run(3, { throttle: -1, steer: 0, handbrake: false });
@@ -89,6 +89,20 @@ run(4, { throttle: -1, steer: 0, handbrake: false }, trackPeak);
 report('landed and braked');
 console.log(`  peak chassis height ${peakY.toFixed(2)} m`);
 check('truck gets airborne off the ramp', peakY > 1.5);
+
+// 6. Rolled onto its roof and left there, the truck rights itself.
+sim.reset();
+run(1, idle);
+const at = sim.truck.body.translation();
+sim.truck.body.setTranslation({ x: at.x, y: at.y + 1.5, z: at.z }, true);
+sim.truck.body.setRotation({ x: 0, y: 0, z: 1, w: 0 }, true);
+run(1, idle);
+check('truck is on its roof', upY() < -0.9);
+run(4, idle);
+report('after righting');
+check('an overturned truck rights itself', upY() > 0.95 && sim.rightings === 1);
+run(1, { throttle: 1, steer: 0, handbrake: false });
+check('and can drive on', sim.truck.forwardSpeed() > 2);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
