@@ -1,0 +1,20 @@
+// The built game, as it will be published: the menu comes up, a level starts, the sounds are found, and nothing complains.
+import { chromium } from 'playwright-core';
+const base = process.argv[2] ?? 'http://localhost:5190/';
+const browser = await chromium.launch({ channel: 'msedge' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const errors = [];
+const missing = [];
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+page.on('pageerror', (e) => errors.push(String(e)));
+page.on('response', (r) => r.status() >= 400 && missing.push(`${r.status()} ${r.url()}`));
+await page.goto(base);
+await page.waitForSelector('#menu-start', { timeout: 20000 });
+await page.click('#menu-start');
+await page.waitForFunction(() => document.getElementById('banner-title')?.textContent, null, { timeout: 30000 });
+await page.keyboard.down('KeyW');
+await page.waitForTimeout(6000);
+await page.keyboard.up('KeyW');
+const speedSeen = await page.evaluate(() => document.getElementById('speed').textContent);
+console.log('level:', await page.evaluate(() => document.getElementById('banner-title').textContent), '| speed shown after holding W:', speedSeen, '| missing files:', missing.length ? missing.join(', ') : 'none', '| errors:', errors.length ? errors.join(' / ') : 'none');
+await browser.close();
