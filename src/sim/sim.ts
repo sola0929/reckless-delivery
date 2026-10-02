@@ -3,13 +3,13 @@ import { Euler, Quaternion } from 'three';
 import { GROUP, PHYSICS, groups } from '../config';
 import { sandbox } from '../levels/sandbox';
 import { groundTiles } from '../levels/ground';
-import type { LevelDef, PropDesc, TrackDesc } from '../levels/types';
+import type { LevelDef, PitDesc, PropDesc, TrackDesc } from '../levels/types';
 import { CargoSystem, type CargoEvent, type CargoItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
 import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
 import { Pedestrians, type Pedestrian, type Vehicle } from './pedestrians';
 import { Riders, SCOOTER_MASS, type Rider } from './riders';
-import { CAR_MASS, Traffic } from './traffic';
+import { Traffic } from './traffic';
 import { Trains } from './trains';
 import { Truck, type DriveInput } from './truck';
 import { Water, type Splash } from './water';
@@ -132,6 +132,7 @@ export class Sim {
   private stalled = 0;
   private strikes: { x: number; y: number; z: number }[] = [];
   private blasts: Blast[] = [];
+  private pileups: { x: number; z: number; speed: number }[] = [];
   private readonly eventQueue: RAPIER.EventQueue;
   private readonly startPoses: Pose[] = [];
 
@@ -197,6 +198,7 @@ export class Sim {
     this.water = new Water(level.pits ?? []);
     this.trains = new Trains(this.world, level.tracks ?? [], level.bounds[0][0], level.bounds[1][0]);
     this.objects = new ObjectSystem(this.world, level.objects ?? []);
+    this.follow();
     this.pedestrians = new Pedestrians(level.crowds ?? []);
     this.cargoSystem = new CargoSystem(this.world, level.damageScale ?? 1);
     this.cargoSystem.load(level.cargo, level.spawn, level.heading);
@@ -229,6 +231,7 @@ export class Sim {
     }
     const walkers = this.pedestrians.inRoad().map((p) => p.pos);
     this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
+    this.pileups.push(...this.traffic.pileups);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
     this.world.step(this.eventQueue);
     this.eventQueue.drainContactForceEvents((event) => {
@@ -243,6 +246,7 @@ export class Sim {
     for (const blast of this.objects.blasts) this.blast(blast);
     this.shake();
     this.soak();
+    this.follow();
     this.pedestrians.update(PHYSICS.dt, this.truck, this.vehicles());
     if (!this.started) this.started = this.pastStart();
     if (!this.result) {
@@ -270,6 +274,13 @@ export class Sim {
   drainStrikes(): { x: number; y: number; z: number }[] {
     const out = this.strikes;
     this.strikes = [];
+    return out;
+  }
+
+  /** Cars run into by other cars since the last call: where, and how fast. */
+  drainPileups(): { x: number; z: number; speed: number }[] {
+    const out = this.pileups;
+    this.pileups = [];
     return out;
   }
 
@@ -375,7 +386,21 @@ export class Sim {
     this.stalled = 0;
     this.strikes = [];
     this.blasts = [];
+    this.pileups = [];
     this.result = null;
+  }
+
+  /** Keep those who go after a vehicle at its tail: the patch they wander in is moved along behind it. */
+  private follow(): void {
+    for (const crowd of this.level.crowds ?? []) {
+      if (!crowd.follows) continue;
+      const car = this.traffic.cars.find((c) => c.kind === crowd.follows && c.knocked <= 0);
+      if (!car) continue;
+      const back = car.spec.half.length + 2.6;
+      const x = car.lane.from.x + car.lane.dir.x * (car.s - back);
+      const z = car.lane.from.z + car.lane.dir.z * (car.s - back);
+      crowd.area = [x - 2, z - 2, x + 2, z + 2];
+    }
   }
 
   /** Everything driven or ridden along the roads, the truck apart. */
@@ -468,7 +493,7 @@ export class Sim {
     // A car or a scooter, by however fast the two came together: it may have run into a truck
     // that was standing. The heavier it is, the more of that the load feels.
     let jolt = 0;
-    for (const car of this.traffic.fresh) jolt = Math.max(jolt, ((car.impact * CAR_MASS) / (truckMass + CAR_MASS)) * CAR_JOLT);
+    for (const car of this.traffic.fresh) jolt = Math.max(jolt, ((car.impact * car.spec.mass) / (truckMass + car.spec.mass)) * CAR_JOLT);
     for (const rider of this.riders.fresh) jolt = Math.max(jolt, ((rider.impact * SCOOTER_MASS) / (truckMass + SCOOTER_MASS)) * SCOOTER_JOLT);
     if (jolt > 0) this.cargoSystem.jolt(jolt * JOLT_PER_SPEED_LOST, this.truck);
     if (!this.objects.fresh.length) return;
@@ -487,6 +512,14 @@ export class Sim {
 
   /** Whatever has gone into the water sinks; a driver who has is hauled out beside the truck. */
   private soak(): void {
+    // Lost to the river but hung up on the lip of it: off it comes, toward the middle of the water.
+    const t = this.truck.body.translation();
+    const pool = this.result?.failure === 'water' && !this.water.under(t) ? this.water.poolAt(t.x, t.z) ?? this.nearestPool(t) : null;
+    if (pool) {
+      const dz = Math.sign(pool.pos[1] - t.z) || 1;
+      const mass = this.truck.body.mass();
+      this.truck.body.applyImpulse({ x: 0, y: 0, z: dz * 6 * PHYSICS.dt * mass }, true);
+    }
     this.water.soak(this.truck.body);
     for (const item of this.cargo) if (item.body && !item.held) this.water.soak(item.body);
     for (const piece of this.cargoSystem.debris) this.water.soak(piece.body);
@@ -496,6 +529,16 @@ export class Sim {
     if (this.driver.mode !== 'driving' && this.water.under({ x: this.driver.pos.x, y: this.driver.pos.y + 1, z: this.driver.pos.z })) {
       this.driver.fishOut(this.truck, this.cargoSystem);
     }
+  }
+
+  /** The water nearest to a point, if the level has any. */
+  private nearestPool(p: { x: number; z: number }): PitDesc | null {
+    let best: PitDesc | null = null;
+    for (const pit of this.level.pits ?? []) {
+      if (pit.water === undefined) continue;
+      if (!best || Math.abs(pit.pos[1] - p.z) < Math.abs(best.pos[1] - p.z)) best = pit;
+    }
+    return best;
   }
 
   private fail(failure: Failure): void {

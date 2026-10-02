@@ -1,5 +1,6 @@
 import type { Vec3 } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
+import type { VehicleKind } from '../sim/vehicles';
 import type { ObjectDesc } from './objects';
 
 // A level, as plain data shared by the physics and the renderer.
@@ -33,6 +34,8 @@ export interface PropDesc {
   fade?: boolean;
   /** Drawn but not solid: rooftops, foliage, awnings. */
   ghost?: boolean;
+  /** A pavement: drawn laid in bricks rather than as a plain slab. Boxes only, unrotated. */
+  paving?: boolean;
   /** Drawn as a building, with windows, shopfronts and a roof, rather than as a bare box. */
   building?: BuildingLook;
   /** Colour of its footprint on the minimap. Left off the map when unset. */
@@ -61,6 +64,8 @@ export interface TrafficLane {
   cars: number;
   /** Cruising speed, m/s. */
   speed: number;
+  /** What its first few vehicles are, in order. The rest are a mix of cars, taxis, small trucks and buses. */
+  kinds?: VehicleKind[];
 }
 
 /** A patch of ground with people wandering about on it. */
@@ -70,6 +75,10 @@ export interface CrowdDesc {
   count: number;
   /** Height of the ground there. */
   y: number;
+  /** People at work: in a hard hat and an orange vest. */
+  workers?: boolean;
+  /** Set for people who go after a vehicle of this kind, wherever it goes: those with their rubbish, after the refuse lorry. */
+  follows?: VehicleKind;
   /**
    * Set where the patch lies across a road, to the axis the road is crossed along. People
    * there go from one end of it to the other and back, and stop only at the ends, on the
@@ -142,6 +151,17 @@ export interface SignalDesc {
   panel?: Vec2;
 }
 
+/** The arm of a level-crossing gate: down across the road while its track's signal is red, up otherwise. Driven through, it snaps. */
+export interface GateDesc {
+  /** Where it is hinged. */
+  pos: Vec3;
+  /** The way it reaches when down: 1 toward +X, -1 toward -X. */
+  reach: 1 | -1;
+  length: number;
+  /** Index into the level's tracks. */
+  track: number;
+}
+
 export interface FinishZone {
   pos: Vec2;
   half: Vec2;
@@ -167,12 +187,15 @@ export interface LevelDef {
   signs?: SignDesc[];
   tracks?: TrackDesc[];
   signals?: SignalDesc[];
+  gates?: GateDesc[];
   /** The intended way through, as points along the road, for the minimap. */
   route?: Vec2[];
   decals: DecalDesc[];
   cargo: CargoPlacement[];
   traffic: TrafficLane[];
   riders?: RiderLane[];
+  /** Where water plays: the top of each fountain's jet. */
+  fountains?: Vec3[];
   /**
    * Where the run begins: the clock starts once the middle of the truck has crossed the
    * line through `pos`, going the way of `dir`. Without one it starts at once.

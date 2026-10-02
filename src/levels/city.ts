@@ -1,11 +1,11 @@
 import type { Vec3 } from '../config';
-import type { ObjectDesc, ObjectKindId } from './objects';
+import { POLE_SPACING, type ObjectDesc, type ObjectKindId } from './objects';
 import { TRUCK } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
 import { buildingMarks } from '../render/buildings';
 import { mulberry32 } from './sandbox';
 import { tilesAround, type Tile } from './ground';
-import type { BuildingLook, CrowdDesc, DecalDesc, LevelDef, PitDesc, PropDesc, RiderLane, SignDesc, SignalDesc, SlickDesc, TrackDesc, TrafficLane, Vec2 } from './types';
+import type { BuildingLook, CrowdDesc, DecalDesc, GateDesc, LevelDef, PitDesc, PropDesc, RiderLane, SignDesc, SignalDesc, SlickDesc, TrackDesc, TrafficLane, Vec2 } from './types';
 
 // Level 1: a delivery run across a city, drawn as a map of characters. Each one is a 16 m
 // square; north is at the top. To add a road, change the map.
@@ -133,6 +133,8 @@ const MIN_Z = -HALF;
 const MAX_Z = zOf(ROWS - 1) + HALF;
 
 const PAVEMENT = 0x9aa0a8;
+/** What the pavements of each kind of district are laid in: red brick in the old town, grey elsewhere. */
+const PAVING: Record<string, number> = { o: 0xb58d78, w: 0x8f9499, q: 0xb8b0a0 };
 const DOWNTOWN = [0xa8b5c2, 0x8f9aa6, 0x7f8c9a, 0xb9c2ca, 0x9aa7b5, 0xc5c9cc];
 const OLD_TOWN = [0xc9a27e, 0xd4c4a8, 0xbf8f6f, 0xd9b99a, 0xb7a58c, 0xc7b29a];
 const SHEDS = [0x7d8a94, 0x8a5a44, 0x5f7f8f, 0x9a9a8c, 0x6f7a6a];
@@ -182,8 +184,10 @@ class Builder {
   readonly pits: PitDesc[] = [];
   readonly tracks: TrackDesc[] = [];
   readonly signals: SignalDesc[] = [];
+  readonly gates: GateDesc[] = [];
   readonly slicks: SlickDesc[] = [];
   readonly signs: SignDesc[] = [];
+  readonly fountains: Vec3[] = [];
   /** Rectangles to leave free of scattered clutter: [minX, minZ, maxX, maxZ]. */
   readonly keepClear: Tile[] = [];
   readonly rand = mulberry32(21);
@@ -260,13 +264,13 @@ function buildBlocks(b: Builder): void {
     const d = z1 - z0;
     b.props.push({
       shape: 'box', size: [w / 2, KERB / 2, d / 2], pos: [cx, KERB / 2, cz],
-      color: kind === 'q' ? 0xb8b0a0 : PAVEMENT, mapColor: kind === 'q' ? MAP_PLAZA : MAP_BLOCK, mapUnder: true,
+      color: PAVING[kind] ?? PAVEMENT, mapColor: kind === 'q' ? MAP_PLAZA : MAP_BLOCK, mapUnder: true, paving: true,
     });
 
     if (kind === 'p') {
       b.decals.push({ pos: [cx, cz], size: [w - 3, d - 3], color: 0x6fa862, y: KERB + 0.02, mapColor: MAP_PARK });
       const big = w > CELL * 2 && d > CELL * 2;
-      if (big) b.decals.push({ pos: [cx + 6, cz - 4], size: [18, 12], color: 0x5a9bd4, y: KERB + 0.04, mapColor: MAP_WATER });
+      if (big) pond(b, cx + 6, cz - 4);
       const trees = Math.round((w * d) / 110);
       for (let i = 0; i < trees; i++) {
         const x = b.span(x0 + 3, x1 - 3);
@@ -281,8 +285,7 @@ function buildBlocks(b: Builder): void {
 
     if (kind === 'q') {
       // A square: a fountain in the middle, café tables around it, and a crowd.
-      b.props.push({ shape: 'cylinder', size: [3.2, 0.3, 0], pos: [cx, KERB + 0.3, cz], color: 0x8fb4c8, mapColor: MAP_WATER });
-      b.props.push({ shape: 'cylinder', size: [0.5, 1.1, 0], pos: [cx, KERB + 1.1, cz], color: 0xb8a070 });
+      fountain(b, cx, cz);
       for (let i = 0; i < Math.round((w * d) / 170); i++) {
         const x = b.span(x0 + 4, x1 - 4);
         const z = b.span(z0 + 4, z1 - 4);
@@ -432,6 +435,378 @@ function buildHazards(b: Builder): void {
   }
 }
 
+/** A colour made lighter or darker. */
+function shade(hex: number, by: number): number {
+  const channel = (shift: number) => Math.min(255, Math.round(((hex >> shift) & 255) * by)) << shift;
+  return channel(16) | channel(8) | channel(0);
+}
+
+/**
+ * A shipping container standing on `y`, lying along Z or, `turned`, along X: ribbed sides,
+ * a frame at the corners and along the top, and doors with their locking bars at one end.
+ */
+function container(b: Builder, x: number, y: number, z: number, turned: boolean, color: number): void {
+  const [hw, hh, hl] = [1.2, 1.3, 3];
+  /** A box given by where it is along the container, across it and up it. */
+  const part = (along: number, across: number, up: number, sa: number, sc: number, su: number, tint: number, ghost = true) =>
+    b.props.push({ shape: 'box', size: turned ? [sa, su, sc] : [sc, su, sa], pos: turned ? [x + along, y + up, z + across] : [x + across, y + up, z + along], color: tint, ghost, mapColor: ghost ? undefined : MAP_BUILDING });
+  part(0, 0, hh, hl, hw, hh, color, false);
+  const dark = shade(color, 0.74);
+  for (const side of [-1, 1]) {
+    for (let i = -5; i <= 5; i++) part(i * 0.5, side * (hw + 0.02), hh, 0.09, 0.025, hh - 0.18, dark);
+    part(0, side * (hw + 0.03), hh * 2 - 0.08, hl, 0.04, 0.08, dark);
+    part(0, side * (hw + 0.03), 0.08, hl, 0.04, 0.08, dark);
+    for (const end of [-1, 1]) part(end * (hl - 0.08), side * (hw - 0.06), hh, 0.1, 0.1, hh + 0.01, dark);
+  }
+  // The doors: two leaves, and four bars from top to bottom to lock them.
+  part(hl + 0.02, 0, hh, 0.02, hw - 0.12, hh - 0.14, shade(color, 1.12));
+  part(hl + 0.04, 0, hh, 0.025, 0.02, hh - 0.14, dark);
+  for (const across of [-0.8, -0.3, 0.3, 0.8]) part(hl + 0.05, across, hh, 0.03, 0.03, hh - 0.2, 0xb9c0c6);
+}
+
+/** A digger: tracks, a cab and engine house that turn on them, and an arm in two lengths with a bucket on the end. */
+function digger(b: Builder, x: number, y: number, z: number): void {
+  const yellow = 0xe0a020;
+  const dark = 0x2a2e34;
+  const put = (size: Vec3, pos: Vec3, color: number, extra: Partial<PropDesc> = {}) => b.props.push({ shape: 'box', size, pos: [x + pos[0], y + pos[1], z + pos[2]], color, ...extra });
+  for (const side of [-1, 1]) {
+    put([0.36, 0.34, 2.2], [side * 1.05, 0.34, 0], dark);
+    for (const end of [-1, 1]) b.props.push({ shape: 'cylinder', size: [0.34, 0.36, 0], pos: [x + side * 1.05, y + 0.34, z + end * 2.2], rot: [0, 0, Math.PI / 2], color: dark, ghost: true });
+    put([0.38, 0.04, 2.3], [side * 1.05, 0.7, 0], 0x4a4f57, { ghost: true });
+  }
+  put([0.9, 0.16, 1.2], [0, 0.6, 0], dark, { ghost: true });
+  // The house: engine and counterweight behind, the cab at the front on one side.
+  put([1.25, 0.55, 1.75], [0, 1.4, -0.35], yellow);
+  put([1.27, 0.3, 0.45], [0, 1.25, -1.9], dark, { ghost: true });
+  put([0.55, 0.5, 0.75], [-0.6, 2.45, 0.6], 0x30363d, { ghost: true });
+  put([0.6, 0.06, 0.8], [-0.6, 2.98, 0.6], yellow, { ghost: true });
+  put([0.5, 0.2, 0.6], [0.55, 2.12, -0.9], shade(yellow, 0.8), { ghost: true });
+  b.props.push({ shape: 'cylinder', size: [0.07, 0.35, 0], pos: [x + 0.9, y + 2.5, z - 1.4], color: dark, ghost: true });
+  // The arm: up and out from the house, then down to the bucket.
+  put([0.2, 0.22, 2.3], [0.45, 2.95, 2.5], yellow, { rot: [-0.55, 0, 0], ghost: true });
+  put([0.16, 0.18, 1.5], [0.45, 3.2, 5.5], yellow, { rot: [0.8, 0, 0], ghost: true });
+  put([0.07, 0.07, 1.2], [0.45, 3.55, 3.7], 0xc9ced2, { rot: [-0.15, 0, 0], ghost: true });
+  put([0.5, 0.32, 0.4], [0.45, 2.0, 6.6], dark, { rot: [0.5, 0, 0], ghost: true });
+  for (const tooth of [-0.36, -0.12, 0.12, 0.36]) put([0.06, 0.12, 0.06], [0.45 + tooth, 1.58, 6.9], 0xc9ced2, { rot: [0.5, 0, 0], ghost: true });
+}
+
+const STONE = 0xc9c5bc;
+const STONE_DARK = 0xa9a59b;
+const WATER = 0x5fa8d8;
+const BRONZE = 0x6f7a5a;
+
+/**
+ * A pond in a park: a stone edge, water in the shape of three pools run together, lily
+ * pads, rocks at the water's edge, and a wooden jetty out over it. About 18 m by 12.
+ */
+function pond(b: Builder, x: number, z: number): void {
+  const pools: [number, number, number][] = [[-4.2, 0.6, 4.6], [1.2, -0.4, 5.6], [5.6, 1.2, 3.6]];
+  for (const [dx, dz, radius] of pools) disc(b, x + dx, KERB + 0.01, z + dz, radius + 0.5, 0xb9b39f);
+  for (const [dx, dz, radius] of pools) disc(b, x + dx, KERB + 0.05, z + dz, radius, 0x5a9bd4, MAP_WATER);
+  for (const [dx, dz, radius] of pools) disc(b, x + dx * 0.9, KERB + 0.07, z + dz * 0.9, radius * 0.55, 0x4a88c4);
+  for (const [dx, dz, radius] of [[-5.6, 2.2, 0.5], [-3.8, -1.6, 0.42], [0.2, 2.6, 0.55], [3, -3, 0.45], [6.2, 2.4, 0.4], [1.8, 0.4, 0.35]]) disc(b, x + dx, KERB + 0.1, z + dz, radius, 0x4f9a55);
+  for (const [dx, dz, size] of [[-8.6, -1.4, 0.7], [-7.6, 3.9, 0.5], [7.4, -2.6, 0.6], [9, 2.2, 0.8], [2.4, 5.4, 0.45]]) {
+    b.props.push({ shape: 'cone', size: [size, size * 0.45, 0], pos: [x + dx, KERB + size * 0.45, z + dz], color: 0x8b8f92 });
+  }
+  // The jetty: boards on posts, out from the south bank.
+  b.props.push({ shape: 'box', size: [0.8, 0.05, 2.6], pos: [x - 0.6, KERB + 0.4, z - 4.6], color: 0x9a7448, ghost: true });
+  for (const side of [-0.7, 0.7]) for (const along of [-6.6, -4.6, -2.4]) b.props.push({ shape: 'cylinder', size: [0.07, 0.25, 0], pos: [x - 0.6 + side, KERB + 0.25, z + along], color: 0x6b4a2e, ghost: true });
+}
+
+/** A thin round layer laid on something, for show: grass, water, a bed of flowers. */
+function disc(b: Builder, x: number, y: number, z: number, radius: number, color: number, mapColor?: number): void {
+  b.props.push({ shape: 'cylinder', size: [radius, 0.02, 0], pos: [x, y + 0.02, z], color, ghost: true, mapColor });
+}
+
+/**
+ * The fountain in the square: a wide stone basin with water in it, a second bowl raised on
+ * a stem out of the middle, and a jet from the top of that.
+ */
+function fountain(b: Builder, x: number, z: number): void {
+  const y = KERB;
+  const stone = (radius: number, from: number, to: number, color = STONE) =>
+    b.props.push({ shape: 'cylinder', size: [radius, (to - from) / 2, 0], pos: [x, y + (from + to) / 2, z], color, mapColor: radius > 3 ? MAP_WATER : undefined });
+  // A step up to it, the basin's wall, and the water inside the wall.
+  stone(4.6, 0, 0.14, STONE_DARK);
+  stone(3.9, 0.14, 0.62);
+  disc(b, x, y + 0.5, z, 3.55, WATER);
+  stone(1.25, 0.14, 0.9, STONE_DARK);
+  // The stem, the upper bowl with its own water, and the spout.
+  stone(0.4, 0.9, 1.9);
+  b.props.push({ shape: 'cone', size: [1.5, 0.3, 0], pos: [x, y + 1.85, z], rot: [Math.PI, 0, 0], color: STONE, ghost: true });
+  stone(1.5, 2.15, 2.3);
+  disc(b, x, y + 2.3, z, 1.3, WATER);
+  stone(0.16, 2.3, 2.9, BRONZE);
+  b.fountains.push([x, y + 2.95, z]);
+}
+
+/**
+ * The island in the middle of the roundabout: a kerb, a lawn with flowers round its edge,
+ * and on three steps in the middle a column with a bronze figure on top.
+ */
+function island(b: Builder, x: number, z: number): void {
+  const stone = (radius: number, from: number, to: number, color = STONE, mapColor?: number) =>
+    b.props.push({ shape: 'cylinder', size: [radius, (to - from) / 2, 0], pos: [x, (from + to) / 2, z], color, mapColor });
+  stone(5.6, 0, 0.32, STONE, MAP_BLOCK);
+  disc(b, x, 0.32, z, 5.15, 0x6fa862, MAP_PARK);
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2 + 0.2;
+    disc(b, x + Math.cos(angle) * 3.3, 0.36, z + Math.sin(angle) * 3.3, 0.42, i % 2 ? 0xe2485a : 0xf2c12e);
+  }
+  // Three steps, a plinth with a plaque round it, the column, and whoever it is on top.
+  stone(2.3, 0.32, 0.6, STONE_DARK);
+  stone(1.8, 0.6, 0.88);
+  stone(1.3, 0.88, 1.16, STONE_DARK);
+  b.props.push({ shape: 'box', size: [0.8, 0.7, 0.8], pos: [x, 1.86, z], color: STONE });
+  b.props.push({ shape: 'box', size: [0.84, 0.22, 0.84], pos: [x, 1.86, z], color: BRONZE, ghost: true });
+  b.props.push({ shape: 'box', size: [0.95, 0.08, 0.95], pos: [x, 2.64, z], color: STONE_DARK, ghost: true });
+  stone(0.36, 2.72, 5.6);
+  b.props.push({ shape: 'box', size: [0.55, 0.1, 0.55], pos: [x, 5.7, z], color: STONE_DARK, ghost: true });
+  // The figure: legs, a coat, shoulders, a head, one arm held out.
+  b.props.push({ shape: 'cone', size: [0.34, 0.6, 0], pos: [x, 6.4, z], color: BRONZE, ghost: true });
+  b.props.push({ shape: 'box', size: [0.26, 0.3, 0.16], pos: [x, 7.1, z], color: BRONZE, ghost: true });
+  b.props.push({ shape: 'cylinder', size: [0.14, 0.15, 0], pos: [x, 7.56, z], color: BRONZE, ghost: true });
+  b.props.push({ shape: 'box', size: [0.08, 0.08, 0.34], pos: [x + 0.22, 7.28, z + 0.36], rot: [-0.35, 0, 0], color: BRONZE, ghost: true });
+
+  // Round the island the road is marked in two rings: a broken line between the lanes, and arrows of a sort at the way in.
+  for (let i = 0; i < 28; i++) {
+    const angle = (i / 28) * Math.PI * 2;
+    b.decals.push({ pos: [x + Math.cos(angle) * 9.6, z + Math.sin(angle) * 9.6], size: [0.16, 1.3], rotY: -angle, color: WHITE });
+  }
+  for (let i = 0; i < 40; i++) {
+    const angle = (i / 40) * Math.PI * 2;
+    b.decals.push({ pos: [x + Math.cos(angle) * 6.1, z + Math.sin(angle) * 6.1], size: [0.2, 0.7], rotY: -angle, color: YELLOW });
+  }
+}
+
+/**
+ * What else there is in the square besides the fountain and the café tables: bands of
+ * darker paving round the fountain and out to the corners, trees in stone planters with
+ * benches beside them, lamps, benches facing the water, a bandstand at one end, flags, and
+ * pigeons. Nothing is put where something already stands.
+ */
+function buildSquare(b: Builder): void {
+  const room = (x: number, z: number, radius: number) => b.objects.every((o) => Math.hypot(o.pos[0] - x, o.pos[2] - z) > radius);
+  const put = (kind: ObjectKindId, x: number, z: number, rotY: number, radius: number, y = KERB) => {
+    if (room(x, z, radius)) b.object(kind, x, z, y, rotY);
+  };
+  for (const { c0, r0, c1, r1, kind } of blockRects()) {
+    if (kind !== 'q') continue;
+    const x0 = xOf(c1) - HALF;
+    const x1 = xOf(c0) + HALF;
+    const z0 = zOf(r0) - HALF;
+    const z1 = zOf(r1) + HALF;
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
+    const reach = Math.min(x1 - x0, z1 - z0) / 2;
+    if (reach < 20) continue;
+    const band = 0x9c9484;
+    const paint = (x: number, z: number, w: number, d: number, rotY = 0) => b.decals.push({ pos: [x, z], size: [w, d], rotY, color: band, y: KERB + 0.02 });
+
+    // Paving: two square bands round the fountain, and a path from each corner in to it.
+    for (const half of [8.5, 17]) {
+      for (const side of [-1, 1]) {
+        paint(cx, cz + side * half, half * 2 + 1.2, 1.2);
+        paint(cx + side * half, cz, 1.2, half * 2 - 1.2);
+      }
+    }
+    for (const turn of [Math.PI / 4, -Math.PI / 4]) for (const side of [-1, 1]) paint(cx + side * Math.cos(turn) * 12.6, cz - side * Math.sin(turn) * 12.6, 1.2, 12, turn);
+
+    // Benches round the fountain, facing it; lamps at the corners of the inner band.
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      put('bench', cx + Math.cos(angle) * 6.3, cz + Math.sin(angle) * 6.3, Math.atan2(-Math.cos(angle), -Math.sin(angle)), 1.3);
+    }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) put('lamp', cx + sx * 8.5, cz + sz * 8.5, Math.atan2(-sx, -sz), 1);
+
+    // A tree in a stone planter toward each corner, a bench against two sides of it.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const x = cx + sx * 17;
+        const z = cz + sz * 17;
+        if (!room(x, z, 2.6)) continue;
+        b.props.push({ shape: 'box', size: [1.5, 0.28, 1.5], pos: [x, KERB + 0.28, z], color: STONE });
+        b.props.push({ shape: 'box', size: [1.25, 0.03, 1.25], pos: [x, KERB + 0.57, z], color: 0x6a5238, ghost: true });
+        b.object('treeTall', x, z, KERB + 0.56, 0);
+        put('bench', x - sx * 2.4, z, sx > 0 ? -Math.PI / 2 : Math.PI / 2, 1.2);
+        put('bench', x, z - sz * 2.4, sz > 0 ? Math.PI : 0, 1.2);
+      }
+    }
+
+    // A bandstand at the north end: a low stage, a wall behind it, a roof on four posts.
+    const sz = z1 - 7;
+    if (room(cx, sz, 5.5)) {
+      b.props.push({ shape: 'box', size: [4.2, 0.3, 2.6], pos: [cx, KERB + 0.3, sz], color: STONE_DARK, mapColor: MAP_BUILDING });
+      b.props.push({ shape: 'box', size: [4.2, 1.5, 0.2], pos: [cx, KERB + 2.1, sz + 2.4], color: 0xb5533c });
+      for (const sx of [-1, 1]) for (const dz of [-2.3, 2.3]) b.props.push({ shape: 'cylinder', size: [0.14, 1.6, 0], pos: [cx + sx * 3.9, KERB + 2.2, sz + dz], color: 0xe8e2d4 });
+      b.props.push({ shape: 'box', size: [4.6, 0.12, 3], pos: [cx, KERB + 3.92, sz], color: 0x4f8d68, ghost: true });
+      b.props.push({ shape: 'box', size: [4.7, 0.2, 0.08], pos: [cx, KERB + 3.7, sz - 2.95], color: 0xc8372d, ghost: true });
+    }
+    // Flags along the south end, and pigeons wherever there is open paving.
+    const flags: ObjectKindId[] = ['flagOrange', 'flagPurple', 'flagTeal'];
+    for (let i = 0; i < 9; i++) put(flags[i % 3], cx - 12 + i * 3, z0 + 4.5, 0, 0.6);
+    for (let i = 0; i < 9; i++) {
+      const x = cx + (b.dice() - 0.5) * (reach * 2 - 10);
+      const z = cz + (b.dice() - 0.5) * (reach * 2 - 10);
+      if (Math.hypot(x - cx, z - cz) > 5.5) put('pigeons', x, z, b.dice() * 6, 1.1);
+    }
+  }
+}
+
+const RED_LINE = 0xc8372d;
+
+/** Whether a square is a junction: road, with road beyond it both ways. */
+function junction(c: number, r: number): boolean {
+  return at(c, r) === '.' && (drivable(c, r + 1) || drivable(c, r - 1)) && (drivable(c + 1, r) || drivable(c - 1, r));
+}
+
+/**
+ * What is painted on the roads, and let into them: crossings at every junction, a box ahead
+ * of the stop line for scooters to wait in, another inside the junction for those turning
+ * left in two goes, yellow hatching where nobody is to stop, red and yellow lines along the
+ * kerbs, covers, and the patches where the road has been dug up and put back.
+ */
+function buildMarkings(b: Builder): void {
+  const line = (x: number, z: number, alongX: boolean, length: number, width: number, color: number) =>
+    b.decals.push({ pos: [x, z], size: alongX ? [length, width] : [width, length], color });
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const kind = at(c, r);
+      const x = xOf(c);
+      const z = zOf(r);
+      if (!['.', 'b', 'R'].includes(kind) || !nearRoute(x, z, 90)) continue;
+
+      if (!junction(c, r)) {
+        // No parking: a line along the kerb, red or yellow.
+        if (kind !== 'R') {
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (!BLOCKS.has(at(c + dc, r + dr))) continue;
+            const color = b.dice() < 0.6 ? RED_LINE : YELLOW;
+            line(x - dc * (HALF - 0.22), z + dr * (HALF - 0.22), dc === 0, CELL, 0.14, color);
+          }
+        }
+        // A cover or two, and somewhere the surface has been patched.
+        if (b.dice() < 0.4) b.props.push({ shape: 'cylinder', size: [0.42, 0.012, 0], pos: [x + (b.dice() - 0.5) * 9, 0.012, z + (b.dice() - 0.5) * 9], color: 0x3d4248, ghost: true });
+        if (b.dice() < 0.45) {
+          const size: Vec2 = [1.4 + b.dice() * 3, 1 + b.dice() * 2.4];
+          b.decals.push({ pos: [x + (b.dice() - 0.5) * 9, z + (b.dice() - 0.5) * 9], size: b.dice() < 0.5 ? size : [size[1], size[0]], color: b.dice() < 0.6 ? 0x50555c : 0x687078 });
+        }
+        continue;
+      }
+
+      const hatched = b.dice() < 0.3;
+      if (hatched) {
+        // Keep clear: yellow hatching across the middle.
+        for (const turn of [Math.PI / 4, -Math.PI / 4]) {
+          for (let k = -3; k <= 3; k++) {
+            const off = k * 1.5;
+            b.decals.push({ pos: [x + Math.cos(turn) * off, z - Math.sin(turn) * off], size: [0.14, 2 * (6.2 - Math.abs(off))], rotY: turn, color: YELLOW });
+          }
+        }
+      }
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const beside = at(c + dc, r + dr);
+        if (!['.', 'b', 'R', 'S'].includes(beside) || junction(c + dc, r + dr)) continue;
+        // Out toward that arm of the junction; and to the right of whoever is coming in along it.
+        const dx = -dc;
+        const dz = dr;
+        const rx = dz;
+        const rz = -dx;
+        const alongX = dx !== 0;
+        const out = (d: number, across: number): Vec2 => [x + dx * d + rx * across, z + dz * d + rz * across];
+        // The crossing.
+        for (let k = -6.5; k <= 6.5; k += 1) line(...out(HALF - 1.8, k), alongX, 3, 0.5, WHITE);
+        // The scooters' box, and behind it the line the cars stop at.
+        for (const d of [HALF + 0.3, HALF + 3.1]) line(...out(d, 3.55), !alongX, 6.5, 0.12, WHITE);
+        for (const across of [0.3, 6.8]) line(...out(HALF + 1.7, across), alongX, 2.8, 0.12, WHITE);
+        line(...out(HALF + 1.7, 3.55), alongX, 1.1, 0.5, WHITE);
+        line(...out(HALF + 3.7, 3.55), !alongX, 6.5, 0.4, WHITE);
+        if (hatched) continue;
+        // And inside the junction, where those turning left wait for the other light.
+        for (const d of [-2.2, -4.4]) line(...out(d, 2.7), !alongX, 3.4, 0.12, WHITE);
+        for (const across of [1, 4.4]) line(...out(-3.3, across), alongX, 2.2, 0.12, WHITE);
+      }
+    }
+  }
+}
+
+/**
+ * What stands about the streets besides trees and lamps: a flashing light at each junction,
+ * power poles down the old streets with their wires and the odd transformer box, bus
+ * shelters, betel-nut stands, rows of claw machines, and candidates' flags. All of it can
+ * be driven through, and none of it is put where something already stands.
+ */
+function buildFurnishings(b: Builder): void {
+  const standing = b.props.filter((p) => !p.ghost && p.mass === undefined && !p.building && !p.paving && p.pos[1] + p.size[1] > KERB + 0.3);
+  const clear = (x: number, z: number) => standing.every((p) => Math.abs(x - p.pos[0]) > p.size[0] + 0.8 || Math.abs(z - p.pos[2]) > (p.shape === 'box' ? p.size[2] : p.size[0]) + 0.8);
+  const room = (x: number, z: number, radius: number) => b.objects.every((o) => Math.hypot(o.pos[0] - x, o.pos[2] - z) > radius);
+  const fits = (x: number, z: number, radius: number) => nearRoute(x, z, 50) && b.free(x, z) && clear(x, z) && room(x, z, radius);
+  const put = (kind: ObjectKindId, x: number, z: number, rotY: number, radius: number): boolean => {
+    if (!fits(x, z, radius)) return false;
+    b.object(kind, x, z, KERB, rotY);
+    return true;
+  };
+  const poles: { at: Vec2; along: Vec2; facing: number; box: Vec2 }[] = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const kind = at(c, r);
+      if (junction(c, r)) {
+        // A mast at two corners, each with its arm out over one of the roads.
+        for (const [sx, sz] of [[1, 1], [-1, -1]]) {
+          if (!BLOCKS.has(at(c - sx, r + sz))) continue;
+          put('signalMast', xOf(c) + sx * (HALF + 0.9), zOf(r) + sz * (HALF + 0.9), (-sx * Math.PI) / 2, 1.2);
+        }
+        continue;
+      }
+      if (kind !== '#' && kind !== 'o') continue;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const beside = at(c + dc, r + dr);
+        if (beside !== '.' && beside !== 'b') continue;
+        const dx = -dc;
+        const dz = dr;
+        const facing = Math.atan2(dx, dz);
+        /** A spot on this pavement: so far in from the kerb, so far along it. */
+        const spot = (inset: number, along: number): Vec2 => [xOf(c) + dx * (HALF - inset) + dz * along, zOf(r) + dz * (HALF - inset) + dx * along];
+        // A power pole at the corner of the square, on the old streets: so that they stand in
+        // a row down the street, a square apart, with their wires meeting in between.
+        // Not where the street ends at a corner: there it would stand in the way of the road across.
+        if (kind === 'o' && BLOCKS.has(at(c - dz, r + dx)) && DRIVABLE.has(at(c - dz + dc, r + dx + dr))) poles.push({ at: spot(0.55, HALF), along: [dz, dx], facing, box: spot(0.95, 6.3) });
+        if (kind === 'o' && b.dice() < 0.08) put('betelBooth', ...spot(2.75, -6.2), facing, 1.5);
+        if (b.dice() < 0.09) for (let i = 0; i < 3; i++) put(i % 2 ? 'clawBlue' : 'clawPink', ...spot(2.95, 5.4 + i * 0.95), facing, 0.8);
+        if (b.dice() < 0.14) {
+          const flags: ObjectKindId[] = ['flagOrange', 'flagPurple', 'flagTeal'];
+          const flag = flags[Math.floor(b.dice() * flags.length)];
+          for (let i = 0; i < 5; i++) put(flag, ...spot(0.4, -7.2 + i * 0.75), facing, 0.45);
+        }
+      }
+    }
+  }
+
+  // The poles, now that it is known where all of them could stand: each carries wires
+  // toward whichever of its neighbours is there to take them.
+  const standingPoles = poles.filter(({ at: [x, z] }, i) => fits(x, z, 1) && !poles.slice(0, i).some((other) => Math.hypot(other.at[0] - x, other.at[1] - z) < 2));
+  const there = (x: number, z: number) => standingPoles.some(({ at }) => Math.hypot(at[0] - x, at[1] - z) < 0.5);
+  for (const { at: [x, z], along, facing, box } of standingPoles) {
+    const ahead = there(x + along[0] * POLE_SPACING, z + along[1] * POLE_SPACING);
+    const behind = there(x - along[0] * POLE_SPACING, z - along[1] * POLE_SPACING);
+    b.object(ahead && behind ? 'utilityPole' : ahead ? 'utilityPoleAhead' : behind ? 'utilityPoleBehind' : 'utilityPoleBare', x, z, KERB, Math.atan2(along[0], along[1]));
+    if (b.dice() < 0.3) put('transformerBox', ...box, facing, 0.9);
+  }
+
+  // Bus shelters, on the two roads the buses run along.
+  const through = throughRoads()[0];
+  const boulevard: number[] = [];
+  for (let r = 0; r < ROWS; r++) if (at(0, r) === 'b') boulevard.push(r);
+  const stops: [number, number, number][] = [[24, through + 1, -1], [26, through - 1, 1], [20, boulevard[1] + 1, -1], [21, boulevard[0] - 1, 1]];
+  for (const [c, r, dr] of stops) {
+    if (!BLOCKS.has(at(c, r))) continue;
+    // Wherever along that pavement there is room for one.
+    [0, 5, -5, 2.5, -2.5].some((along) => put('busStop', xOf(c) + along, zOf(r) + dr * (HALF - 2.8), Math.atan2(0, dr), 2));
+  }
+}
+
 /** The rows of the map that are road from one edge to the other. */
 function throughRoads(): number[] {
   const rows: number[] = [];
@@ -553,9 +928,7 @@ function buildRoads(b: Builder): void {
       if (at(c, r) !== 'O' || at(c + 1, r) !== 'O' || at(c, r + 1) !== 'O') continue;
       const x = xOf(c) - HALF;
       const z = zOf(r) + HALF;
-      b.props.push({ shape: 'cylinder', size: [5.5, 0.2, 0], pos: [x, 0.2, z], color: PAVEMENT, mapColor: MAP_BLOCK });
-      b.props.push({ shape: 'box', size: [0.9, 2, 0.9], pos: [x, 2.4, z], color: 0xb8a070 });
-      b.props.push({ shape: 'cone', size: [1.2, 0.9, 0], pos: [x, 5.3, z], color: 0x8f7a4a, ghost: true });
+      island(b, x, z);
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
         b.object(i % 2 ? 'bollard' : 'treeSmall', x + Math.cos(a) * 4.3, z + Math.sin(a) * 4.3, 0.4);
@@ -677,11 +1050,7 @@ function buildClosedRoad(b: Builder): void {
   const floor = -pit.depth;
   const dx = x + 2.5;
   const dz = pit.pos[1] - 4;
-  b.props.push({ shape: 'box', size: [1.5, 0.4, 2.3], pos: [dx, floor + 0.4, dz], color: 0x2a2e34 });
-  b.props.push({ shape: 'box', size: [1.3, 0.7, 1.9], pos: [dx, floor + 1.5, dz], color: 0xe0a020 });
-  b.props.push({ shape: 'box', size: [0.7, 0.6, 0.8], pos: [dx + 0.5, floor + 2.8, dz - 0.8], color: 0x30363d, ghost: true });
-  b.props.push({ shape: 'box', size: [0.22, 0.22, 2.4], pos: [dx - 0.6, floor + 3.1, dz + 2.6], rot: [-0.55, 0, 0], color: 0xe0a020, ghost: true });
-  b.props.push({ shape: 'box', size: [0.2, 0.2, 1.5], pos: [dx - 0.6, floor + 3.2, dz + 5.6], rot: [0.75, 0, 0], color: 0xe0a020, ghost: true });
+  digger(b, dx, floor, dz);
   for (const [ox, oz, size] of [[-4.5, 8, 2.4], [-3, -12, 2], [4.5, 12, 1.8], [-5, -2, 1.6]]) {
     b.props.push({ shape: 'cone', size: [size, size * 0.45, 0], pos: [x + ox, floor + size * 0.45, pit.pos[1] + oz], color: 0x6a5238 });
   }
@@ -712,6 +1081,110 @@ function railBend(b: Builder, cx: number, cz: number, radius: number): void {
 }
 
 /**
+ * A steel road plate over a trench: thick enough to stand clear of the road and whatever is
+ * painted on it, grey and rust-streaked, its tread raised in rows that slant one way and
+ * then the other, with a lifting hole near each corner.
+ */
+function steelPlate(b: Builder, x: number, z: number, hx: number, hz: number): void {
+  const top = 0.11;
+  b.props.push({ shape: 'box', size: [hx, 0.08, hz], pos: [x, top - 0.08, z], color: 0x6a6e73, mapColor: MAP_BARRIER });
+  for (let i = 0; i * 0.62 < hx * 2 - 0.5; i++) {
+    for (let j = 0; j * 0.62 < hz * 2 - 0.5; j++) {
+      b.props.push({
+        shape: 'box', size: [0.2, 0.012, 0.035], pos: [x - hx + 0.4 + i * 0.62, top + 0.012, z - hz + 0.4 + j * 0.62],
+        rot: [0, (i + j) % 2 ? Math.PI / 4 : -Math.PI / 4, 0], color: 0x8a8f95, ghost: true,
+      });
+    }
+  }
+  for (const [dx, dz, w, d] of [[-0.5, 0.3, 1.3, 0.5], [0.35, -0.5, 0.9, 0.7], [0.7, 0.55, 0.6, 0.3], [-0.75, -0.6, 0.5, 0.4]]) {
+    b.props.push({ shape: 'box', size: [w, 0.004, d], pos: [x + dx * hx, top + 0.004, z + dz * hz], color: 0x7a5a48, ghost: true });
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.props.push({ shape: 'cylinder', size: [0.09, 0.006, 0], pos: [x + sx * (hx - 0.35), top + 0.006, z + sz * (hz - 0.35)], color: 0x1c1d20, ghost: true });
+}
+
+/**
+ * What stands in the middle of the roadworks, between its two lanes: a building going up
+ * inside its scaffolding, a tower crane over it, the site office, and in the yard by the
+ * way out the materials, the plant and the men. `west` to `east` and `south` to `north`
+ * are the ground there is to put it on.
+ */
+function furnishSite(b: Builder, west: number, east: number, south: number, north: number): void {
+  const mid = (south + north) / 2;
+  const concrete = 0xa9a59b;
+  const tube = 0x8f979d;
+  const solid = (size: Vec3, pos: Vec3, color: number) => b.props.push({ shape: 'box', size, pos, color });
+  const show = (size: Vec3, pos: Vec3, color: number, rot?: Vec3) => b.props.push({ shape: 'box', size, pos, color, rot, ghost: true });
+
+  // The building: columns, two floors poured and a third begun, rods standing out of the tops of the columns.
+  const bx = west + 9.5;
+  const [hx, hz] = [6, 5];
+  for (const dx of [-hx, 0, hx]) {
+    for (const dz of [-hz, 0, hz]) {
+      solid([0.3, 4.6, 0.3], [bx + dx, 4.6, mid + dz], concrete);
+      for (const [ox, oz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) show([0.02, 0.5, 0.02], [bx + dx + ox, 9.7, mid + dz + oz], 0x7a4a32);
+    }
+  }
+  for (const y of [3.3, 6.6]) solid([hx + 0.5, 0.14, hz + 0.5], [bx, y, mid], concrete);
+  show([hx * 0.5, 0.1, hz + 0.5], [bx - hx * 0.5, 9.2, mid], 0xb98a55);
+  // Scaffolding up the south and east sides: standards, ledgers, boards to walk on, braces, and netting over the upper part.
+  const scaffold = (alongX: boolean, at: number, from: number, to: number) => {
+    const place = (along: number, y: number, out: number): Vec3 => (alongX ? [along, y, at + out] : [at + out, y, along]);
+    for (let along = from; along <= to + 0.01; along += 2) {
+      for (const out of [0, 1]) b.props.push({ shape: 'cylinder', size: [0.04, 4.9, 0], pos: place(along, 4.9, out), color: tube, ghost: true });
+    }
+    const half = (to - from) / 2;
+    for (const y of [2, 4, 6, 8]) {
+      show(alongX ? [half, 0.03, 0.5] : [0.5, 0.03, half], place(from + half, y, 0.5), 0xb98a55);
+      for (const out of [0, 1]) show(alongX ? [half, 0.03, 0.03] : [0.03, 0.03, half], place(from + half, y + 1, out), tube);
+    }
+    for (let along = from; along < to - 0.01; along += 4) show(alongX ? [1.42, 0.03, 0.03] : [0.03, 0.03, 1.42], place(along + 1, 3, 1), tube, alongX ? [0, 0, Math.PI / 4] : [-Math.PI / 4, 0, 0]);
+    show(alongX ? [half, 2.4, 0.02] : [0.02, 2.4, half], place(from + half, 7.4, 1.06), 0x3f8f5a);
+  };
+  scaffold(true, mid - hz - 1.6, bx - hx - 0.5, bx + hx + 0.5);
+  scaffold(false, bx + hx + 0.6, mid - hz - 0.5, mid + hz + 0.5);
+
+  // The crane: a mast beside the building, the jib out over it, a counterweight behind, and something on the hook.
+  const cx = bx + hx + 4.5;
+  const cz = mid + 4;
+  const yellow = 0xe0a020;
+  solid([1, 0.3, 1], [cx, 0.3, cz], concrete);
+  solid([0.4, 12, 0.4], [cx, 12.6, cz], yellow);
+  for (let y = 2; y < 24; y += 2) show([0.44, 0.04, 0.44], [cx, y, cz], 0x2a2e34);
+  show([0.7, 0.6, 0.7], [cx + 0.2, 25.2, cz], 0xf2efe6);
+  show([9.5, 0.25, 0.3], [cx - 8, 26, cz], yellow);
+  show([3, 0.25, 0.3], [cx + 4.5, 26, cz], yellow);
+  show([1, 0.6, 0.5], [cx + 6.5, 25.4, cz], 0x4a4f57);
+  show([0.3, 1.6, 0.3], [cx, 27.4, cz], yellow);
+  show([5, 0.04, 0.04], [cx - 4.8, 27.6, cz], 0x2a2e34, [0, 0, -0.3]);
+  show([0.03, 5.5, 0.03], [cx - 11, 20.3, cz], 0x2a2e34);
+  show([1.6, 0.25, 0.4], [cx - 11, 14.6, cz], 0x7a4a32);
+
+  // By the way out: the office, two cabins high, with its steps; and the yard.
+  const ox = east - 3.6;
+  container(b, ox, 0, mid - 5.5, false, 0xe8e4da);
+  container(b, ox, 2.6, mid - 5.5, false, 0x3f6fa8);
+  for (let i = 0; i < 6; i++) show([0.5, 0.04, 0.2], [ox - 1.9, 0.4 + i * 0.4, mid - 3.2 - i * 0.42], 0x8f979d);
+  for (const [dx, dz, size] of [[-17, -5, 1.8], [-14.5, -5.6, 1.3]]) b.props.push({ shape: 'cone', size: [size, size * 0.5, 0], pos: [east + dx, size * 0.5, mid + dz], color: dx < -16 ? 0xc9b27a : 0x8b8f92 });
+  const yard: [ObjectKindId, number, number, number][] = [
+    ['pipe', -9, 1.2, 0], ['pipe', -9, 1.95, 0], ['pipe', -9, 2.7, 0],
+    ['bricks', -13, 4.5, 0], ['bricks', -14.4, 4.6, 0.1], ['bricks', -13.6, 6, 0],
+    ['rebar', -10, -2.4, 0.05], ['rebar', -10.2, -1.7, -0.04],
+    ['mixer', -6.5, 5.6, 2.4], ['wheelbarrow', -8.2, 5, 0.8], ['wheelbarrow', -12, -4.5, 3],
+    ['toilet', -2.4, 6.4, 0], ['barrel', -5, 2.5, 0], ['barrel', -5.9, 2.2, 0], ['paintYellow', -7.4, -3.6, 0],
+  ];
+  // Not on top of whatever was already lying about there.
+  const already = b.objects.slice();
+  for (const [kind, dx, dz, rotY] of yard) if (already.every((o) => Math.hypot(o.pos[0] - east - dx, o.pos[2] - mid - dz) > 1.2)) b.object(kind, east + dx, mid + dz, 0, rotY);
+  b.object('pipe', east - 9, mid + 1.58, 0.6, 0);
+  b.object('pipe', east - 9, mid + 2.32, 0.6, 0);
+
+  // The men: about the yard, and a few out in the lanes, where they have no business to be.
+  b.crowds.push({ area: [east - 19, south + 1.5, east - 2, north - 1.5], count: 7, y: 0, workers: true });
+  b.crowds.push({ area: [west + 3, south - 6, east - 8, south - 1.4], count: 3, y: 0, workers: true });
+  b.crowds.push({ area: [west + 3, north + 1.4, east - 22, north + 6], count: 2, y: 0, workers: true });
+}
+
+/**
  * The roadworks: one narrow lane between a hoarding and a guard rail, out along the south
  * side, round a tight bend and back along the north. A trench cuts across both lengths,
  * with a steel plate over it in each.
@@ -731,7 +1204,8 @@ function buildSite(b: Builder): void {
   const mouth = x1 - 20;
   const depth = 1.4;
 
-  const trench: PitDesc = { pos: [xOf(24.6875), mid], half: [2.5, (z1 - z0) / 2], depth };
+  // Too long to be skipped over at speed: longer than the truck is between its axles.
+  const trench: PitDesc = { pos: [xOf(24.6875), mid], half: [4.2, (z1 - z0) / 2], depth };
   // What is being dug, in the middle of it all.
   const dig: PitDesc = { pos: [bend + 14, mid], half: [9, mid - south - 2.5], depth };
   b.pits.push(trench, dig);
@@ -750,11 +1224,10 @@ function buildSite(b: Builder): void {
   rail(b, x1, south, x1, z1);
 
   // The plates, hard against the inner rail: not much wider than the truck.
-  const plateHalf = 2.1;
-  for (const z of [south - plateHalf - 0.1, north + plateHalf + 0.1]) {
-    b.props.push({ shape: 'box', size: [trench.half[0] + 1.1, 0.05, plateHalf], pos: [trench.pos[0], 0.01, z], color: 0xd9a520, mapColor: MAP_BARRIER });
-  }
-  b.keepClear.push([trench.pos[0] - 10, z0, trench.pos[0] + 10, z1]);
+  const plateHalf = 1.95;
+  for (const z of [south - plateHalf - 0.1, north + plateHalf + 0.1]) steelPlate(b, trench.pos[0], z, trench.half[0] + 1.1, plateHalf);
+  b.keepClear.push([trench.pos[0] - 12, z0, trench.pos[0] + 12, z1]);
+  furnishSite(b, trench.pos[0] + trench.half[0], x1, south, north);
 
   // Broken slabs in the lanes, to jolt over.
   for (let i = 0; i < 12; i++) {
@@ -909,9 +1382,22 @@ function buildSlick(b: Builder): void {
 
   // Where it came from: a tanker on its side against the kerb, where the oil begins.
   const spill = corner - 31;
-  b.props.push({ shape: 'cylinder', size: [1.1, 2.6, 0], pos: [spill, 1.1, z - 6.2], rot: [0, 0, Math.PI / 2], color: 0xb9c0c8, mapColor: MAP_BARRIER });
-  b.props.push({ shape: 'box', size: [1, 1, 1.1], pos: [spill - 3.8, 1, z - 6.2], rot: [0.5, 0, 0], color: 0xc8443a });
-  for (const end of [-1, 1]) b.props.push({ shape: 'cylinder', size: [1.14, 0.12, 0], pos: [spill + end * 2.3, 1.1, z - 6.2], rot: [0, 0, Math.PI / 2], color: 0x30363d, ghost: true });
+  const tz = z - 6.2;
+  const lying: Vec3 = [0, 0, Math.PI / 2];
+  b.props.push({ shape: 'cylinder', size: [1.1, 2.6, 0], pos: [spill, 1.1, tz], rot: lying, color: 0xb9c0c8, mapColor: MAP_BARRIER });
+  // Bands round the tank, its two ends, the hatches along what was the top, and a split where it is leaking.
+  for (const along of [-1.6, 0, 1.6]) b.props.push({ shape: 'cylinder', size: [1.13, 0.06, 0], pos: [spill + along, 1.1, tz], rot: lying, color: 0x8f979d, ghost: true });
+  for (const end of [-1, 1]) b.props.push({ shape: 'cylinder', size: [1.06, 0.1, 0], pos: [spill + end * 2.62, 1.1, tz], rot: lying, color: 0x8f979d, ghost: true });
+  for (const along of [-1.2, 1]) b.props.push({ shape: 'cylinder', size: [0.3, 0.1, 0], pos: [spill + along, 1.1, tz + 1.12], rot: [Math.PI / 2, 0, 0], color: 0x4a4f57, ghost: true });
+  b.props.push({ shape: 'box', size: [0.5, 0.5, 0.02], pos: [spill + 2.74, 1.1, tz], rot: [0, 0, Math.PI / 4], color: 0xe07a28, ghost: true });
+  // What it rode on: a frame along what was its underside, and the wheels, which now face the sky.
+  b.props.push({ shape: 'box', size: [2.9, 0.5, 0.12], pos: [spill - 0.4, 1.1, tz - 1.2], color: 0x30363d });
+  for (const along of [-2, 1.2, 2.1]) for (const up of [0.55, 1.65]) b.props.push({ shape: 'cylinder', size: [0.48, 0.16, 0], pos: [spill + along, up, tz - 1.5], rot: [Math.PI / 2, 0, 0], color: 0x1c1d20, ghost: true });
+  // The cab, over on its side with the tank: red, a windscreen, a bumper, a lamp still lit.
+  b.props.push({ shape: 'box', size: [1, 1.05, 1.15], pos: [spill - 3.9, 1.05, tz], color: 0xc8443a });
+  b.props.push({ shape: 'box', size: [0.03, 0.8, 0.5], pos: [spill - 4.92, 1.15, tz + 0.45], color: 0x1b2a3a, ghost: true });
+  b.props.push({ shape: 'box', size: [0.08, 1.05, 0.12], pos: [spill - 4.98, 1.05, tz - 1.0], color: 0xc9ced2, ghost: true });
+  b.props.push({ shape: 'box', size: [0.03, 0.14, 0.14], pos: [spill - 4.93, 0.4, tz - 0.6], color: 0xfff2c0, ghost: true });
 
   // Signs facing whoever is coming, well before the oil and again at its edge.
   for (const back of [26, 8]) for (const side of [-1, 1]) {
@@ -930,12 +1416,7 @@ function buildCanyon(b: Builder): void {
   for (const side of [-1, 1]) {
     [43.3, 43.72, 44.14].forEach((r, i) => {
       const stack = (i + (side > 0 ? 1 : 0)) % 2 ? 2 : 1;
-      for (let level = 0; level < stack; level++) {
-        b.props.push({
-          shape: 'box', size: half, pos: [x + side * (gap + half[0]), half[1] + level * half[1] * 2, zOf(r)],
-          color: b.pick(CONTAINERS), mapColor: MAP_BUILDING,
-        });
-      }
+      for (let level = 0; level < stack; level++) container(b, x + side * (gap + half[0]), level * half[1] * 2, zOf(r), false, b.pick(CONTAINERS));
     });
   }
 }
@@ -958,11 +1439,28 @@ function buildGateway(b: Builder): void {
   const z = zOf(41);
   const gapHalf = 2.4;
   const reach = 14;
+  // Over the way through, high enough to drive under: a beam from post to post, and a tiled roof on it.
+  b.props.push({ shape: 'box', size: [0.35, 0.22, gapHalf + 1.2], pos: [x, 4.45, z], color: 0x7a2a22, ghost: true });
+  for (const side of [-1, 1]) b.props.push({ shape: 'box', size: [0.85, 0.06, gapHalf + 1.5], pos: [x + side * 0.62, 4.98, z], rot: [0, 0, -side * 0.42], color: 0xb8674a, ghost: true });
+  b.props.push({ shape: 'box', size: [0.1, 0.1, gapHalf + 1.6], pos: [x, 5.3, z], color: 0x2f7a5a, ghost: true });
   for (const side of [-1, 1]) {
     const inner = gapHalf + 1;
-    b.props.push({ shape: 'box', size: [0.4, 0.9, (reach - inner) / 2], pos: [x, 0.9, z + (side * (inner + reach)) / 2], color: 0xa0523a, mapColor: MAP_BARRIER });
-    b.props.push({ shape: 'box', size: [0.55, 1.3, 0.55], pos: [x, 1.3, z + side * (gapHalf + 0.55)], color: 0xd4c4a8, mapColor: MAP_BARRIER });
-    b.props.push({ shape: 'cone', size: [0.7, 0.35, 0], pos: [x, 2.95, z + side * (gapHalf + 0.55)], color: 0x8a5a44, ghost: true });
+    const brick = 0xa0523a;
+    const coping = 0xd4c4a8;
+    const length = (reach - inner) / 2;
+    const middle = z + (side * (inner + reach)) / 2;
+    // The wall: brick on a stone footing, a coping along the top, and battlements on that.
+    b.props.push({ shape: 'box', size: [0.45, 1.1, length], pos: [x, 1.1, middle], color: brick, mapColor: MAP_BARRIER });
+    b.props.push({ shape: 'box', size: [0.5, 0.18, length], pos: [x, 0.18, middle], color: 0x8b8f92, ghost: true });
+    b.props.push({ shape: 'box', size: [0.52, 0.07, length], pos: [x, 2.27, middle], color: coping, ghost: true });
+    for (let d = -length + 0.5; d < length; d += 1.1) b.props.push({ shape: 'box', size: [0.4, 0.22, 0.3], pos: [x, 2.56, middle + d], color: brick, ghost: true });
+    // The gatepost: tall, banded in stone, with a tiled cap and a lantern hung on the inner face.
+    const post = z + side * (gapHalf + 0.6);
+    b.props.push({ shape: 'box', size: [0.6, 2.1, 0.6], pos: [x, 2.1, post], color: brick, mapColor: MAP_BARRIER });
+    for (const up of [0.25, 2.2, 4.1]) b.props.push({ shape: 'box', size: [0.66, 0.12, 0.66], pos: [x, up, post], color: coping, ghost: true });
+    b.props.push({ shape: 'cone', size: [1.05, 0.45, 0], pos: [x, 4.7, post], color: 0xb8674a, ghost: true });
+    b.props.push({ shape: 'cylinder', size: [0.2, 0.26, 0], pos: [x, 3.2, post - side * 0.85], color: 0xd0302a, ghost: true });
+    b.props.push({ shape: 'box', size: [0.04, 0.04, 0.2], pos: [x, 3.55, post - side * 0.72], color: 0x2a2e34, ghost: true });
   }
 }
 
@@ -1014,15 +1512,22 @@ function buildRailway(b: Builder): void {
     }
     // A stop line on each side.
     for (const side of [-1, 1]) b.decals.push({ pos: [crossing, z + side * 2.7], size: [CELL - 1.4, 0.4], color: WHITE, y: 0.06 });
+    // A gate on each side of the track, each across the half of the road that comes up to it,
+    // hinged on the signal's post: its works in a box on the post, and a cross above them.
+    for (const reach of [1, -1] as const) {
+      const px = crossing - reach * (HALF + 0.5);
+      const pz = z - reach * 2.5;
+      b.gates.push({ pos: [px + reach * 0.25, 1.05, pz], reach, length: 7.6, track });
+      b.props.push({ shape: 'box', size: [0.28, 0.4, 0.24], pos: [px, 1.05, pz], color: YELLOW, ghost: true });
+      for (const turn of [Math.PI / 4, -Math.PI / 4]) b.props.push({ shape: 'box', size: [0.7, 0.08, 0.03], pos: [px, 2.25, pz - reach * 0.14], rot: [0, 0, turn], color: i % 2 ? 0xf2efe6 : YELLOW, ghost: true });
+    }
   }
 
   // A barrier across each approach, on the side traffic arrives from.
   for (const side of [-1, 1]) {
     const gz = (side < 0 ? south : north) + side * 5.5;
-    b.object('post', crossing + side * 7.4, gz, 0, 0);
-    b.object('post', crossing + side * 0.9, gz, 0, 0);
-    b.object('gateArm', crossing + side * 4.15, gz, 1.0, 0);
     b.object('signWarn', crossing - side * 7.2, gz, 0, 0);
+    b.object('signWarn', crossing + side * 7.2, gz, 0, 0);
     // And a fence along the outside of the outermost tracks.
     const fz = (side < 0 ? south : north) + side * 3.6;
     for (let c = 0; c < COLS; c++) {
@@ -1041,13 +1546,10 @@ function buildYard(b: Builder, c: number, r: number): void {
   const laneSide = ['.', 'S'].includes(at(c + 1, r)) ? 1 : ['.', 'S'].includes(at(c - 1, r)) ? -1 : 0;
   if (laneSide === 0 && b.rand() < 0.75) {
     const turned = b.rand() < 0.5;
-    const half: Vec3 = turned ? [3, 1.3, 1.2] : [1.2, 1.3, 3];
     const ox = b.span(-3, 3);
     const oz = b.span(-3, 3);
     const stack = b.rand() < 0.4 ? 2 : 1;
-    for (let i = 0; i < stack; i++) {
-      b.props.push({ shape: 'box', size: half, pos: [x + ox, 1.3 + i * 2.6, z + oz], color: b.pick(CONTAINERS), mapColor: MAP_BUILDING });
-    }
+    for (let i = 0; i < stack; i++) container(b, x + ox, i * 2.6, z + oz, turned, b.pick(CONTAINERS));
     return;
   }
   // Loose stock, kept to the far side of the square from the lane. The lane is at a higher
@@ -1062,8 +1564,11 @@ function buildYard(b: Builder, c: number, r: number): void {
  * and tilted up toward the middle, with open water between their tips. Taken at a run the
  * truck clears the gap; taken slowly it goes in.
  */
+/** How long each leaf of the lifting bridge is. The river is 32 m across: what the two leaves don't span is the jump. */
+const LEAF = 8.8;
+
 function liftingBridge(b: Builder, x: number, z0: number, z1: number): void {
-  const length = 12;
+  const length = LEAF;
   const angle = 0.18;
   // The road starts to climb before the hinge, at half the slope, so the leaf isn't hit as a kerb.
   const apron = 6;
@@ -1098,6 +1603,29 @@ function liftingBridge(b: Builder, x: number, z0: number, z1: number): void {
       b.props.push({ shape: 'box', size: [0.2, 0.5, length / 2], pos: [x + edge * (half + 0.2), parapet[1], parapet[2]], rot: [side * angle, 0, 0], color: CONCRETE });
       // The bank's railing, closed up to the side of the bridge.
       b.props.push({ shape: 'box', size: [0.5, 0.55, 0.3], pos: [x + edge * (HALF - 0.5), 0.55, hinge + side * 0.3], color: CONCRETE });
+    }
+    for (const edge of [-1, 1]) {
+      // A steel rail on the parapet, a girder under each edge of the leaf, and the tower the leaf is hinged on.
+      const rail = place(length / 2, 1.25);
+      b.props.push({ shape: 'box', size: [0.05, 0.05, length / 2], pos: [x + edge * (half + 0.2), rail[1], rail[2]], rot: [side * angle, 0, 0], color: 0x3f6fa8, ghost: true });
+      for (let along = 1; along < length; along += 2) {
+        const post = place(along, 1.1);
+        b.props.push({ shape: 'box', size: [0.05, 0.16, 0.05], pos: [x + edge * (half + 0.2), post[1], post[2]], rot: [side * angle, 0, 0], color: 0x3f6fa8, ghost: true });
+      }
+      const girder = place(length / 2, -0.85);
+      b.props.push({ shape: 'box', size: [0.18, 0.4, length / 2], pos: [x + edge * (half - 0.3), girder[1], girder[2]], rot: [side * angle, 0, 0], color: 0x3f6fa8, ghost: true });
+      b.props.push({ shape: 'box', size: [0.7, 2.6, 0.9], pos: [x + edge * (HALF + 0.3), 2.2, hinge + side * 1.1], color: CONCRETE });
+      b.props.push({ shape: 'box', size: [0.8, 0.5, 1], pos: [x + edge * (HALF + 0.3), 5.3, hinge + side * 1.1], color: 0x3f6fa8, ghost: true });
+      b.props.push({ shape: 'box', size: [0.5, 0.1, 0.5], pos: [x + edge * (HALF + 0.3), 5.9, hinge + side * 1.1], color: 0xd03a2a, ghost: true });
+    }
+    // A broken white line up the middle of the leaf, and red and white boards across its end.
+    for (let along = 1.5; along < length - 2; along += 3) {
+      const dash = place(along, 0.02);
+      b.props.push({ shape: 'box', size: [0.1, 0.01, 0.8], pos: [x, dash[1], dash[2]], rot: [side * angle, 0, 0], color: WHITE, ghost: true });
+    }
+    for (let i = -3; i <= 3; i++) {
+      const board = place(length - 0.1, 0.45);
+      b.props.push({ shape: 'box', size: [0.5, 0.4, 0.04], pos: [x + i * 1.9, board[1], board[2]], rot: [side * angle, 0, 0], color: i % 2 ? WHITE : 0xd03a2a, ghost: true });
     }
     // Warnings on the way up to it.
     for (const edge of [-1, 1]) b.object('signWarn', x + edge * (half + 0.4), hinge + side * 6, 0, 0);
@@ -1232,6 +1760,9 @@ export function city(): LevelDef {
   buildScooters(b);
   buildPeople(b);
   buildHazards(b);
+  buildFurnishings(b);
+  buildSquare(b);
+  buildMarkings(b);
   buildEdges(b);
 
   const [sc, sr] = find('S');
@@ -1269,15 +1800,17 @@ export function city(): LevelDef {
     signs: b.signs,
     tracks: b.tracks,
     signals: b.signals,
+    gates: b.gates,
     route: ROUTE.map(([c, r]): Vec2 => [xOf(c), zOf(r)]),
     decals: b.decals,
     cargo: cityLoad(),
     traffic: buildTraffic(),
     riders: buildRiders(),
+    fountains: b.fountains,
     finish: { pos: finish, half: [3.4, 6.4] },
     // The first level: mistakes cost less here than they will later.
     damageScale: 0.8,
     stars: [0, 0.6],
-    par: 270,
+    par: 180,
   };
 }

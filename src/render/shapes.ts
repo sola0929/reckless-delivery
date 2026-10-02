@@ -194,6 +194,23 @@ export class Shapes {
     }
   }
 
+  /** A wheel on an axle along X: the tyre, and a hub showing on both faces. */
+  wheel(cx: number, cy: number, cz: number, radius: number, halfWidth: number, tyre: number, hub: number, sides = 10): void {
+    const rim = (i: number, x: number, r = radius): P => {
+      const angle = (i / sides) * Math.PI * 2;
+      return [x, cy + Math.cos(angle) * r, cz + Math.sin(angle) * r];
+    };
+    const x0 = cx - halfWidth;
+    const x1 = cx + halfWidth;
+    for (let i = 0; i < sides; i++) {
+      this.quad(rim(i + 1, x0), rim(i + 1, x1), rim(i, x1), rim(i, x0), tyre);
+      this.tri([x1, cy, cz], rim(i, x1), rim(i + 1, x1), tyre);
+      this.tri([x0, cy, cz], rim(i + 1, x0), rim(i, x0), tyre);
+      this.tri([x1 + 0.01, cy, cz], rim(i, x1 + 0.01, radius * 0.5), rim(i + 1, x1 + 0.01, radius * 0.5), hub);
+      this.tri([x0 - 0.01, cy, cz], rim(i + 1, x0 - 0.01, radius * 0.5), rim(i, x0 - 0.01, radius * 0.5), hub);
+    }
+  }
+
   cone(cx: number, y: number, cz: number, radius: number, height: number, color: number, sides = 8): void {
     for (let i = 0; i < sides; i++) {
       const a0 = (i / sides) * Math.PI * 2;

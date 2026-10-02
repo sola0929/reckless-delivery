@@ -91,6 +91,7 @@ const BURST_STYLES = {
   leaves: { colors: [0x4f8a4a, 0x5d9a52, 0x447d44, 0x7fae5a], size: [0.07, 0.14], stretch: 1.6, life: [1.0, 1.9] },
   sparks: { colors: [0xffe9a0, 0xfff6cf, 0xffc24a], size: [0.03, 0.05], stretch: 3, life: [0.25, 0.55] },
   feathers: { colors: [0xf6f3ea, 0xe6dcc6, 0xc98a4a], size: [0.04, 0.08], stretch: 2.6, life: [1.2, 2.2] },
+  toys: { colors: [0xe86a9a, 0xf2c12e, 0x5f8fd0, 0x4f9f7a, 0xf2efe6, 0xd85a4a], size: [0.09, 0.16], stretch: 1, life: [1.2, 2.2] },
   fire: { colors: [0xffb030, 0xff7a1a, 0xffe07a, 0xe8401a], size: [0.1, 0.24], stretch: 1.4, life: [0.3, 0.75] },
   // Whatever colour it is given: fruit, paint.
   juice: { colors: [0xffffff], size: [0.06, 0.13], stretch: 1, life: [0.7, 1.4] },

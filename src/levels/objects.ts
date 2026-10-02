@@ -16,10 +16,12 @@ export interface ObjectPart {
   ghost?: boolean;
   /** Its share of the object's mass, relative to the other solid parts. Defaults to 1. */
   weight?: number;
+  /** A lamp that flashes: lit and dark by turns. */
+  flash?: boolean;
 }
 
 /** What is thrown up when the object is first knocked. */
-export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers';
+export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers' | 'toys';
 
 export interface ObjectKind {
   mass: number;
@@ -214,6 +216,43 @@ function tent(): ObjectKind {
   };
 }
 
+/** How far it is from one power pole to the next, metres: they stand at the corners of the map's squares. */
+export const POLE_SPACING = 16;
+
+/**
+ * A power pole. Its wires hang in a curve to half way to the next pole, `ahead` of it and
+ * `behind`, where they meet the wires of that one; and they come down with it.
+ */
+function pole(ahead: boolean, behind: boolean): ObjectKind {
+  const wire = 0x1c1d20;
+  const half = POLE_SPACING / 2;
+  /** One wire from the pole out to the middle of the span, in three straight lengths, each a little flatter than the last. */
+  const hang = (x: number, top: number, sag: number, way: number): ObjectPart[] => {
+    const drops = [0, 0.56, 0.89, 1].map((share) => top - sag * share);
+    return [0, 1, 2].map((n) => {
+      const length = half / 3;
+      const fall = drops[n] - drops[n + 1];
+      return box([0.02, 0.02, Math.hypot(length, fall) / 2], [x, (drops[n] + drops[n + 1]) / 2, way * length * (n + 0.5)], wire, { ghost: true, rot: [way * Math.atan2(fall, length), 0, 0] });
+    });
+  };
+  const ways = [...(ahead ? [1] : []), ...(behind ? [-1] : [])];
+  return {
+    mass: 700,
+    effect: 'sparks',
+    parts: [
+      foot(0.34, 0x8a8880),
+      cyl(0.14, 3.6, [0, 3.6, 0], 0x9a9892),
+      box([0.95, 0.05, 0.05], [0, 6.7, 0], 0x6a5a48, { ghost: true }),
+      ...[-0.85, 0, 0.85].map((x) => cyl(0.05, 0.09, [x, 6.84, 0], 0xe6e2d8, { ghost: true })),
+      cyl(0.28, 0.4, [0.36, 5.3, 0], 0x8f979d, { ghost: true }),
+      box([0.3, 0.04, 0.04], [0.2, 5.8, 0], 0x6a5a48, { ghost: true }),
+      // Three thin wires along the top, and one thick cable slung lower down.
+      ...ways.flatMap((way) => [-0.85, 0, 0.85].flatMap((x) => hang(x, 6.92, 0.5, way))),
+      ...ways.flatMap((way) => hang(-0.18, 5.9, 0.6, way).map((part) => ({ ...part, size: [0.04, 0.04, part.size[2]] as Vec3 }))),
+    ],
+  };
+}
+
 const crate = (color: number): ObjectKind => ({ mass: 12, effect: 'splinters', parts: [box([0.22, 0.2, 0.22], [0, 0.2, 0], color)] });
 
 export const OBJECT_KINDS = {
@@ -341,6 +380,126 @@ export const OBJECT_KINDS = {
     crackle: true,
     parts: [foot(0.22, DARK), cyl(0.035, 1.2, [0, 1.2, 0], 0x9a7448), box([0.3, 0.02, 0.02], [0.28, 2.36, 0], 0x9a7448, { ghost: true }), box([0.07, 0.6, 0.07], [0.52, 1.74, 0], 0xd0302a, { ghost: true })],
   },
+  /**
+   * The light at a junction: a mast at the corner with an arm out over the road. It only
+   * ever flashes amber, and nobody takes any notice of it.
+   */
+  signalMast: {
+    mass: 380,
+    effect: 'sparks',
+    parts: [
+      foot(0.32, DARK),
+      cyl(0.09, 2.7, [0, 2.7, 0], 0x6a7078),
+      box([0.06, 0.06, 2.2], [0, 5.3, 2.1], 0x6a7078, { ghost: true }),
+      box([0.2, 0.5, 0.18], [0, 4.95, 4.1], 0x24262a, { ghost: true }),
+      box([0.13, 0.13, 0.03], [0, 5.1, 4.3], 0xffb020, { ghost: true, flash: true }),
+      box([0.2, 0.5, 0.18], [0.35, 3.2, 0], 0x24262a, { ghost: true }),
+      box([0.03, 0.13, 0.13], [0.56, 3.35, 0], 0xffb020, { ghost: true, flash: true }),
+    ],
+  },
+  utilityPole: pole(true, true),
+  /** The last pole of a run: wires on one side of it only. */
+  utilityPoleAhead: pole(true, false),
+  utilityPoleBehind: pole(false, true),
+  utilityPoleBare: pole(false, false),
+  /** The green box the power company leaves on the pavement. */
+  transformerBox: {
+    mass: 300,
+    effect: 'sparks',
+    parts: [box([0.6, 0.62, 0.32], [0, 0.72, 0], 0x4f7a5a), box([0.64, 0.05, 0.36], [0, 0.05, 0], 0x8b8f92), box([0.03, 0.5, 0.01], [0, 0.72, 0.33], 0x3a5a44, { ghost: true }), box([0.2, 0.12, 0.01], [-0.3, 1.05, 0.33], 0xf2c12e, { ghost: true })],
+  },
+  /** A bus shelter: a bench under a roof, and the sign with the routes on it. */
+  busStop: {
+    mass: 220,
+    effect: 'sparks',
+    parts: [
+      box([1.5, 0.05, 0.25], [0, 0.45, -0.2], 0x8a8f96),
+      box([0.06, 0.22, 0.2], [-1.2, 0.22, -0.2], DARK), box([0.06, 0.22, 0.2], [1.2, 0.22, -0.2], DARK),
+      box([1.9, 1.0, 0.03], [0, 1.4, -0.55], 0xa9c8d2, { ghost: true }),
+      cyl(0.04, 1.25, [-1.85, 1.25, -0.5], DARK, { ghost: true }), cyl(0.04, 1.25, [1.85, 1.25, -0.5], DARK, { ghost: true }),
+      box([2.05, 0.05, 0.75], [0, 2.52, -0.1], 0x2f62a8, { ghost: true }),
+      cyl(0.04, 1.3, [2.5, 1.3, 0.3], DARK, { ghost: true }),
+      cyl(0.3, 0.03, [2.5, 2.75, 0.3], 0x2f62a8, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+    ],
+  },
+  /** A betel-nut stand: a glass box edged in neon. What it sells is red, and so is what is left of it. */
+  betelBooth: {
+    mass: 190,
+    effect: 'sparks',
+    juice: 0x9a1f2a,
+    parts: [
+      box([0.95, 0.2, 0.7], [0, 0.2, 0], 0x8b8f92),
+      box([0.9, 0.85, 0.65], [0, 1.25, 0], 0xbfe3d8),
+      box([0.98, 0.06, 0.73], [0, 2.16, 0], 0x33383e, { ghost: true }),
+      box([0.98, 0.05, 0.03], [0, 2.02, 0.68], 0xff4fa0, { ghost: true }), box([0.98, 0.05, 0.03], [0, 0.48, 0.68], 0x4fe08a, { ghost: true }),
+      box([0.03, 0.8, 0.03], [-0.93, 1.25, 0.68], 0x4fe08a, { ghost: true }), box([0.03, 0.8, 0.03], [0.93, 1.25, 0.68], 0xff4fa0, { ghost: true }),
+    ],
+  },
+  /** A claw machine, full of toys nobody has ever won. */
+  clawPink: {
+    mass: 95,
+    effect: 'toys',
+    parts: [
+      box([0.42, 0.45, 0.42], [0, 0.45, 0], 0xe86a9a),
+      box([0.4, 0.42, 0.4], [0, 1.32, 0], 0xcfe6ee),
+      box([0.44, 0.1, 0.44], [0, 1.84, 0], 0xe86a9a, { ghost: true }),
+      ...[[-0.18, 0xf2c12e], [0.02, 0x5f8fd0], [0.2, 0x4f9f7a]].map(([x, color]) => box([0.11, 0.11, 0.11], [x, 1.02, 0.1], color, { ghost: true })),
+    ],
+  },
+  clawBlue: {
+    mass: 95,
+    effect: 'toys',
+    parts: [
+      box([0.42, 0.45, 0.42], [0, 0.45, 0], 0x3f7fc8),
+      box([0.4, 0.42, 0.4], [0, 1.32, 0], 0xcfe6ee),
+      box([0.44, 0.1, 0.44], [0, 1.84, 0], 0xf2c12e, { ghost: true }),
+      ...[[-0.18, 0xe86a9a], [0.02, 0xf2efe6], [0.2, 0xd85a4a]].map(([x, color]) => box([0.11, 0.11, 0.11], [x, 1.02, 0.1], color, { ghost: true })),
+    ],
+  },
+  /** A length of concrete pipe, lying on its side: it rolls. */
+  pipe: { mass: 90, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
+  /** Bricks on a pallet. */
+  bricks: {
+    mass: 110,
+    parts: [box([0.6, 0.07, 0.5], [0, 0.07, 0], WOOD), box([0.55, 0.3, 0.45], [0, 0.44, 0], 0xb5533c), box([0.57, 0.02, 0.47], [0, 0.44, 0], 0x8a3f2c, { ghost: true }), box([0.4, 0.1, 0.45], [-0.1, 0.84, 0], 0xb5533c, { ghost: true })],
+  },
+  /** A bundle of reinforcing rods. */
+  rebar: {
+    mass: 70,
+    effect: 'sparks',
+    parts: [box([2.6, 0.08, 0.2], [0, 0.08, 0], 0x7a4a32), ...[-1.6, 0, 1.6].map((x) => box([0.04, 0.09, 0.22], [x, 0.09, 0], 0x2a2e34, { ghost: true }))],
+  },
+  wheelbarrow: {
+    mass: 16,
+    parts: [
+      box([0.3, 0.14, 0.42], [0, 0.42, 0], 0x4f8d68),
+      box([0.26, 0.02, 0.38], [0, 0.55, 0], 0x9c9a94, { ghost: true }),
+      cyl(0.17, 0.05, [0, 0.17, 0.5], 0x1c1d20, { rot: [0, 0, Math.PI / 2] }),
+      box([0.03, 0.03, 0.5], [0.28, 0.4, -0.55], DARK, { ghost: true, rot: [0.25, 0, 0] }), box([0.03, 0.03, 0.5], [-0.28, 0.4, -0.55], DARK, { ghost: true, rot: [0.25, 0, 0] }),
+      box([0.03, 0.14, 0.03], [0.25, 0.14, -0.3], DARK), box([0.03, 0.14, 0.03], [-0.25, 0.14, -0.3], DARK),
+    ],
+  },
+  /** A cement mixer: a drum tipped on a frame, on two wheels. */
+  mixer: {
+    mass: 130,
+    parts: [
+      box([0.45, 0.25, 0.6], [0, 0.45, 0], 0xe07a28),
+      cyl(0.45, 0.5, [0, 1.15, 0.1], 0xe0a020, { rot: [0.6, 0, 0], ghost: true }),
+      cyl(0.3, 0.06, [0, 1.6, 0.42], 0x30363d, { rot: [0.6, 0, 0], ghost: true }),
+      cyl(0.2, 0.05, [0.48, 0.2, -0.3], 0x1c1d20, { rot: [0, 0, Math.PI / 2] }), cyl(0.2, 0.05, [-0.48, 0.2, -0.3], 0x1c1d20, { rot: [0, 0, Math.PI / 2] }),
+      box([0.05, 0.2, 0.05], [0, 0.2, 0.5], DARK),
+    ],
+  },
+  /** Pigeons, pecking about until something comes at them. */
+  pigeons: {
+    mass: 2,
+    effect: 'feathers',
+    parts: [[-0.3, 0.1], [0.1, -0.25], [0.35, 0.2], [-0.05, 0.3], [0, 0]].map(([x, z], n) => box([0.07, 0.06, 0.11], [x, 0.06, z], n % 2 ? 0x8a8f96 : 0xb9bcc0, { rot: [0, x * 5, 0] })),
+  },
+  /** A candidate's banner on a bamboo pole. */
+  flagOrange: { mass: 6, parts: [foot(0.18, DARK), cyl(0.025, 1.5, [0, 1.5, 0], 0xc9b27a), box([0.02, 0.85, 0.28], [0, 2.05, 0.3], 0xe07a28, { ghost: true })] },
+  flagPurple: { mass: 6, parts: [foot(0.18, DARK), cyl(0.025, 1.5, [0, 1.5, 0], 0xc9b27a), box([0.02, 0.85, 0.28], [0, 2.05, 0.3], 0x7a3fa0, { ghost: true })] },
+  flagTeal: { mass: 6, parts: [foot(0.18, DARK), cyl(0.025, 1.5, [0, 1.5, 0], 0xc9b27a), box([0.02, 0.85, 0.28], [0, 2.05, 0.3], 0x3f9a94, { ghost: true })] },
   scooterRed: scooter(0xc8372d),
   scooterBlue: scooter(0x2f62a8),
   scooterWhite: scooter(0xe6e6e0),

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../levels/sandbox';
-import type { PropDesc, SignDesc, SlickDesc } from '../levels/types';
+import type { GateDesc, PropDesc, SignDesc, SlickDesc } from '../levels/types';
 import type { Sim } from '../sim/sim';
-import { CAR_BODY, CAR_CABIN } from '../sim/traffic';
 import { TRAIN_HALF } from '../sim/trains';
 import { buildingMesh } from './buildings';
 import { BodySync, propMesh } from './meshes';
+import { Shapes } from './shapes';
+import { vehicleMesh } from './vehicles';
 
 const FADED_OPACITY = 0.16;
 const FADE_RATE = 8;
@@ -15,27 +16,6 @@ interface Fader {
   material: THREE.MeshStandardMaterial;
   box: THREE.Box3;
   opacity: number;
-}
-
-function carMesh(color: number): THREE.Group {
-  const car = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.2 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.2, metalness: 0.4 });
-  // Drawn from the same two boxes the physics uses, so what can be stood on is what is seen.
-  const box = (half: [number, number, number]) => new THREE.BoxGeometry(half[0] * 2, half[1] * 2, half[2] * 2);
-  const body = new THREE.Mesh(box(CAR_BODY.half), paint);
-  body.position.set(...CAR_BODY.pos);
-  const cabin = new THREE.Mesh(box(CAR_CABIN.half), glass);
-  cabin.position.set(...CAR_CABIN.pos);
-  const [cw, ch, cl] = CAR_CABIN.half;
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(cw * 2.02, 0.06, cl * 1.9), paint);
-  roof.position.set(CAR_CABIN.pos[0], CAR_CABIN.pos[1] + ch - 0.02, CAR_CABIN.pos[2]);
-  for (const part of [body, cabin, roof]) {
-    part.castShadow = true;
-    part.receiveShadow = true;
-    car.add(part);
-  }
-  return car;
 }
 
 const LIVERIES = [0xd8483a, 0x2f6fb0, 0xe0a020, 0x3f8f5f, 0x8a4fa0, 0xd06a2a];
@@ -211,6 +191,101 @@ function staticProps(props: PropDesc[]): THREE.InstancedMesh[] {
   });
 }
 
+/** Paving: rows of bricks laid end to end, each a little lighter or darker than the next. Two metres of it to a side. */
+function pavingTexture(): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d')!;
+  const rand = mulberry32(31);
+  const rows = 8;
+  const columns = 4;
+  for (let row = 0; row < rows; row++) {
+    for (let column = -1; column < columns; column++) {
+      const shade = Math.round(214 + rand() * 41);
+      g.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
+      // Each row set off by half a brick from the last.
+      g.fillRect((column + (row % 2) * 0.5) * (size / columns), row * (size / rows), size / columns, size / rows);
+    }
+  }
+  g.fillStyle = 'rgba(70, 70, 70, 0.5)';
+  for (let row = 0; row < rows; row++) {
+    g.fillRect(0, row * (size / rows), size, 2);
+    for (let column = 0; column < columns; column++) g.fillRect((column + (row % 2) * 0.5) * (size / columns), row * (size / rows), 2, size / rows);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/** All the pavements as one mesh, the bricks running on from one slab to the next. */
+function pavedMesh(props: PropDesc[]): THREE.Mesh {
+  const position: number[] = [];
+  const normal: number[] = [];
+  const uv: number[] = [];
+  const colors: number[] = [];
+  const index: number[] = [];
+  const tint = new THREE.Color();
+  const face = (corners: [number, number, number][], n: [number, number, number]) => {
+    const first = position.length / 3;
+    for (const [x, y, z] of corners) {
+      position.push(x, y, z);
+      normal.push(...n);
+      // By where it is in the world; up the side of a kerb, by its height.
+      uv.push((n[0] ? z : x) / 2, (n[1] ? z : y) / 2);
+      colors.push(tint.r, tint.g, tint.b);
+    }
+    index.push(first, first + 1, first + 2, first, first + 2, first + 3);
+  };
+  for (const p of props) {
+    const [hx, hy, hz] = p.size;
+    const [x0, x1, y0, y1, z0, z1] = [p.pos[0] - hx, p.pos[0] + hx, p.pos[1] - hy, p.pos[1] + hy, p.pos[2] - hz, p.pos[2] + hz];
+    tint.set(p.color);
+    face([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0]);
+    face([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0]);
+    face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0]);
+    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
+    face([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, -1]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(index);
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: pavingTexture(), vertexColors: true, roughness: 0.9 }));
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+/** How far up a crossing gate's arm stands when it is open, radians, and how fast it swings. */
+const GATE_UP = 1.4;
+const GATE_RATE = 1.6;
+const gateMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+
+/** The arm of a crossing gate, hinged at the origin and reaching along +X: yellow and black by turns, with a weight behind the hinge. */
+function gateArm(length: number): THREE.Mesh {
+  const shapes = new Shapes();
+  const pieces = Math.round(length / 0.6);
+  for (let i = 0; i < pieces; i++) shapes.box(((i + 0.5) * length) / pieces, 0, 0, length / pieces / 2, 0.06, 0.06, i % 2 ? 0x1c1d20 : 0xf2c12e, undefined, 0);
+  shapes.box(-0.45, 0, 0, 0.45, 0.16, 0.1, 0x30363d);
+  // A red lamp at the tip, and one half way.
+  for (const at of [length - 0.15, length / 2]) shapes.box(at, 0.11, 0, 0.07, 0.05, 0.07, 0xd0302a);
+  const mesh = new THREE.Mesh(shapes.geometry(), gateMaterial);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+interface Gate {
+  desc: GateDesc;
+  pivot: THREE.Group;
+  angle: number;
+  broken: boolean;
+}
+
 /** Draws everything in the level that isn't the truck or its cargo. */
 export class LevelView {
   private readonly syncs: BodySync[] = [];
@@ -218,6 +293,8 @@ export class LevelView {
   private readonly finishGlow: THREE.Mesh | null = null;
   /** One pair of materials per railway track: the lamps and the panels that show its signal. */
   private readonly signals: { lamp: THREE.MeshBasicMaterial; panel: THREE.MeshBasicMaterial }[] = [];
+  private readonly gates: Gate[] = [];
+  private broken: THREE.Vector3[] = [];
   private readonly ray = new THREE.Ray();
   private readonly hit = new THREE.Vector3();
   private time = 0;
@@ -225,7 +302,9 @@ export class LevelView {
   constructor(scene: THREE.Scene, private readonly sim: Sim) {
     const { props, decals, finish } = sim.level;
 
-    scene.add(...staticProps(props.filter((p) => p.mass === undefined && !p.fade)));
+    scene.add(...staticProps(props.filter((p) => p.mass === undefined && !p.fade && !p.paving)));
+    const paved = props.filter((p) => p.paving);
+    if (paved.length) scene.add(pavedMesh(paved));
     for (const desc of props) {
       if (!desc.fade) continue;
       const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
@@ -239,8 +318,8 @@ export class LevelView {
       this.syncs.push(new BodySync(prop.body, mesh));
     }
 
-    for (const car of sim.traffic.cars) {
-      const mesh = carMesh(car.color);
+    for (const [n, car] of sim.traffic.cars.entries()) {
+      const mesh = vehicleMesh(car.kind, car.color, n);
       scene.add(mesh);
       this.syncs.push(new BodySync(car.body, mesh));
     }
@@ -251,6 +330,15 @@ export class LevelView {
       this.syncs.push(new BodySync(train.body, mesh));
     }
     this.addSignals(scene);
+    for (const desc of sim.level.gates ?? []) {
+      const pivot = new THREE.Group();
+      pivot.position.set(...desc.pos);
+      if (desc.reach < 0) pivot.rotation.y = Math.PI;
+      pivot.rotation.z = GATE_UP;
+      pivot.add(gateArm(desc.length));
+      scene.add(pivot);
+      this.gates.push({ desc, pivot, angle: GATE_UP, broken: false });
+    }
     if (sim.level.slicks?.length) scene.add(slickMesh(sim.level.slicks));
     if (sim.level.signs?.length) scene.add(signMeshes(sim.level.signs));
 
@@ -274,6 +362,18 @@ export class LevelView {
 
   snap(): void {
     for (const s of this.syncs) s.snap();
+    // A reset mends the gates.
+    for (const gate of this.gates) {
+      gate.broken = false;
+      gate.pivot.visible = true;
+    }
+  }
+
+  /** Where a gate has been driven through since the last call. */
+  takeBroken(): THREE.Vector3[] {
+    const out = this.broken;
+    this.broken = [];
+    return out;
   }
 
   apply(alpha: number): void {
@@ -296,6 +396,23 @@ export class LevelView {
       panel.color.set(red ? 0xff2a1a : 0x30d868);
       panel.opacity = red ? 0.6 : 0.22;
     });
+
+    // The gates: down while their track's signal is red. One driven through while it is down is gone.
+    const at = this.sim.truck.body.translation();
+    const moving = Math.abs(this.sim.truck.forwardSpeed()) > 1;
+    for (const gate of this.gates) {
+      const target = this.sim.trains.warning(gate.desc.track) ? 0 : GATE_UP;
+      gate.angle += Math.max(-GATE_RATE * dt, Math.min(GATE_RATE * dt, target - gate.angle));
+      gate.pivot.rotation.z = gate.angle;
+      if (gate.broken || gate.angle > 0.35 || !moving) continue;
+      const [x, y, z] = gate.desc.pos;
+      const along = (at.x - x) * gate.desc.reach;
+      if (along > -1.3 && along < gate.desc.length + 1.3 && Math.abs(at.z - z) < 3.9) {
+        gate.broken = true;
+        gate.pivot.visible = false;
+        this.broken.push(new THREE.Vector3(at.x, y, z));
+      }
+    }
 
     const reach = camera.position.distanceTo(truck);
     this.ray.origin.copy(camera.position);

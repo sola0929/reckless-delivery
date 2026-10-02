@@ -26,6 +26,8 @@ export interface Pedestrian {
   alarm: number;
   /** At a crossing: which end of it they are at, or are making for. */
   far: boolean;
+  /** The colour of what is on their head, if anything is. */
+  hat: number | null;
 }
 
 /** How far back from each end of a crossing people wait: the width of pavement they stand on. */
@@ -42,6 +44,7 @@ export interface Vehicle {
 }
 
 const CLOTHES = [0x3a6fb3, 0xb33a3a, 0x4a8f5a, 0xe0c341, 0x8a5fb3, 0xd9792b, 0x2f3b4a, 0xd9d9d9, 0x3aa6a6];
+const VEST = 0xf07a1a;
 const DASH_SPEED = 5;
 /** The truck has to be going at least this fast to send someone flying, or to scare them. */
 const HIT_SPEED = 1.5;
@@ -82,7 +85,8 @@ export class Pedestrians {
           yaw: this.random() * Math.PI * 2,
           state: 'wait',
           speed: 0,
-          color: CLOTHES[n++ % CLOTHES.length],
+          color: crowd.workers ? VEST : CLOTHES[n++ % CLOTHES.length],
+          hat: crowd.workers ? (i % 4 ? 0xf2c12e : 0xf2efe6) : null,
           crowd,
           home: pos.clone(),
           target: this.pointIn(crowd, far),
@@ -165,14 +169,15 @@ export class Pedestrians {
         continue;
       }
 
-      const pace = p.state === 'flee' ? DASH_SPEED : p.pace;
+      // Those going after something keep up with it.
+      const pace = p.state === 'flee' ? DASH_SPEED : p.crowd.follows ? p.pace * 2 : p.pace;
       const dx = p.target.x - p.pos.x;
       const dz = p.target.z - p.pos.z;
       const left = Math.hypot(dx, dz);
       const arrived = left < 0.3 || (p.state === 'flee' && (p.timer -= dt) <= 0);
       if (arrived) {
         p.state = 'wait';
-        p.timer = p.crowd.crossing ? 3 + this.random() * 16 : 0.4 + this.random() * 2.5;
+        p.timer = p.crowd.crossing ? 3 + this.random() * 16 : p.crowd.follows ? 0.1 : 0.4 + this.random() * 2.5;
         continue;
       }
       p.pos.x += (dx / left) * pace * dt;

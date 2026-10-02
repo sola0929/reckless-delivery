@@ -3,6 +3,7 @@ import { Quaternion, Vector3 } from 'three';
 import { GROUP, TRUCK, groups } from '../config';
 import type { TrafficLane } from '../levels/types';
 import type { Truck } from './truck';
+import { CLEARANCE, VEHICLES, type VehicleKind, type VehicleSpec } from './vehicles';
 
 /** The car's overall extent, used for following distances and for telling when something is in its way. */
 export const CAR_HALF = { width: 0.9, height: 0.65, length: 2.1 };
@@ -56,6 +57,19 @@ export interface TrafficCar {
   knocked: number;
   /** How fast it and the truck came together when they last collided, m/s. */
   impact: number;
+  kind: VehicleKind;
+  /** Its size and weight. */
+  spec: VehicleSpec;
+  /** The speed it keeps to with the road clear. */
+  cruise: number;
+}
+
+/** What the vehicles of a lane are, where the level doesn't say: mostly cars. Nothing long is left parked. */
+function kindOf(n: number, moving: boolean): VehicleKind {
+  if (moving && n % 11 === 4) return 'bus';
+  if (n % 5 === 2) return 'taxi';
+  if (n % 7 === 3) return 'pickup';
+  return 'car';
 }
 
 /** How far a car's edges are rounded off, metres. */
@@ -78,6 +92,8 @@ export class Traffic {
   readonly cars: TrafficCar[] = [];
   /** Cars that ran into the truck, or were run into by it, during the latest step. */
   fresh: TrafficCar[] = [];
+  /** Cars that a wreck was shoved into during the latest step: where, and how fast the two met. */
+  pileups: { x: number; z: number; speed: number }[] = [];
   private lanes = 0;
 
   constructor(world: RAPIER.World, lanes: TrafficLane[]) {
@@ -99,7 +115,9 @@ export class Traffic {
         );
         // Two boxes, a long low body and a shorter cabin on top, matching how the car is
         // drawn. One tall box would leave anyone standing on the bonnet hovering above it.
-        for (const part of [CAR_BODY, CAR_CABIN]) {
+        const kind = desc.kinds?.[i] ?? kindOf(n, desc.speed > 0);
+        const spec = VEHICLES[kind];
+        for (const part of spec.boxes) {
           // Rounded off at the edges. The road is laid in slabs, and a square-edged box
           // shoved along it catches its leading edge on the join between two of them and
           // stops dead, as if it had hit a wall: with whatever is pushing it stopped behind.
@@ -107,7 +125,7 @@ export class Traffic {
           world.createCollider(
             RAPIER.ColliderDesc.roundCuboid(hx - CAR_ROUND, hy - CAR_ROUND, hz - CAR_ROUND, CAR_ROUND)
               .setTranslation(...part.pos)
-              .setMass(CAR_MASS * part.massShare)
+              .setMass(spec.mass * part.massShare)
               // A car is on wheels: once it has been hit it rolls away from a shove. With an
               // ordinary box's grip, two wrecks against the bumper are more than the truck can push.
               .setFriction(0.15)
@@ -116,7 +134,8 @@ export class Traffic {
             body,
           );
         }
-        const car: TrafficCar = { body, lane, s, startS: s, speed: desc.speed, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0 };
+        const cruise = desc.speed > 0 && spec.crawl ? spec.crawl : desc.speed;
+        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise };
         this.place(car, true);
         this.cars.push(car);
         n++;
@@ -137,6 +156,7 @@ export class Traffic {
     const tv = truck.body.linvel();
     const truckSpeed = Math.hypot(tv.x, tv.z);
     this.fresh = [];
+    this.pileups = [];
     // Cars already knocked loose, wherever the crash has left them.
     const wrecks = this.cars.filter((car) => car.knocked > 0).map((car) => car.body.translation());
 
@@ -152,24 +172,25 @@ export class Traffic {
         continue;
       }
       let gap = LOOKAHEAD;
+      const { half } = car.spec;
 
       // The car ahead in the same lane, wrapping around the loop.
       for (const other of this.cars) {
         if (other === car || other.lane !== lane) continue;
         const ahead = (other.s - car.s + lane.length) % lane.length;
-        gap = Math.min(gap, ahead - CAR_HALF.length * 2);
+        gap = Math.min(gap, ahead - other.spec.half.length - half.length);
       }
 
       // Someone on foot is given room on both sides: they are on their way across the lane.
       for (const walker of walkers) {
         v.set(walker.x - lane.from.x, 0, walker.z - lane.from.z);
         const ahead = v.dot(lane.dir) - car.s;
-        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < CAR_HALF.width + 2.4) gap = Math.min(gap, ahead - CAR_HALF.length);
+        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < half.width + 2.4) gap = Math.min(gap, ahead - half.length);
       }
       for (const scooter of scooters) {
         v.set(scooter.x - lane.from.x, 0, scooter.z - lane.from.z);
         const ahead = v.dot(lane.dir) - car.s;
-        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < CAR_HALF.width + 0.5) gap = Math.min(gap, ahead - CAR_HALF.length - 0.85);
+        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < half.width + 0.5) gap = Math.min(gap, ahead - half.length - 0.85);
       }
 
       // The truck, if any part of it is in this lane ahead and it is going their way: then it
@@ -184,26 +205,27 @@ export class Traffic {
       const reachAlong = alongF * TRUCK_HALF_LENGTH + alongS * TRUCK_HALF_WIDTH;
       const reachAcross = alongS * TRUCK_HALF_LENGTH + alongF * TRUCK_HALF_WIDTH;
       const sameWay = truckForward.dot(lane.dir) > SAME_WAY;
-      if (sameWay && across < reachAcross + CAR_HALF.width + 0.4 && along > -reachAlong) {
-        gap = Math.min(gap, along - reachAlong - CAR_HALF.length);
+      if (sameWay && across < reachAcross + half.width + 0.4 && along > -reachAlong) {
+        gap = Math.min(gap, along - reachAlong - half.length);
       }
 
       // About to be touched by a car that has been knocked loose: it is knocked loose too.
       // A car still driven by hand cannot be moved by anything, so a wreck shoved into the
       // back of one, with the truck behind it, stops the truck like a wall.
       v.copy(lane.from).addScaledVector(lane.dir, car.s);
-      if (wrecks.some((w) => Math.abs((w.x - v.x) * lane.dir.x + (w.z - v.z) * lane.dir.z) < CAR_HALF.length * 2 + 0.5 && Math.abs((w.x - v.x) * lane.dir.z - (w.z - v.z) * lane.dir.x) < CAR_HALF.width + CAR_HALF.length)) {
+      if (wrecks.some((w) => Math.abs((w.x - v.x) * lane.dir.x + (w.z - v.z) * lane.dir.z) < half.length + CAR_HALF.length + 0.5 && Math.abs((w.x - v.x) * lane.dir.z - (w.z - v.z) * lane.dir.x) < half.width + CAR_HALF.length)) {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
         car.impact = 0;
+        this.pileups.push({ x: v.x, z: v.z, speed: Math.max(car.speed, 5) });
         car.speed = 0;
         continue;
       }
 
       // About to touch the truck: from here on the crash is the physics engine's business.
       const closing = (car.speed + truckSpeed) * dt * 2 + 0.25;
-      if (across < reachAcross + CAR_HALF.width + 0.25 && Math.abs(along) < reachAlong + CAR_HALF.length + closing) {
+      if (across < reachAcross + half.width + 0.25 && Math.abs(along) < reachAlong + half.length + closing) {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
@@ -215,7 +237,7 @@ export class Traffic {
 
       // The fastest speed from which it can still stop in the room it has.
       const room = Math.max(0, gap - STOP_GAP);
-      const target = Math.min(lane.cruise, Math.sqrt(2 * BRAKING * room));
+      const target = Math.min(car.cruise, Math.sqrt(2 * BRAKING * room));
       if (target < car.speed) car.speed = Math.max(target, car.speed - BRAKING * 1.5 * dt);
       else car.speed = Math.min(target, car.speed + ACCELERATION * dt);
 
@@ -232,7 +254,7 @@ export class Traffic {
     for (const car of this.cars) {
       car.s = car.startS;
       this.restore(car);
-      car.speed = car.lane.cruise;
+      car.speed = car.cruise;
     }
   }
 
@@ -251,6 +273,7 @@ export class Traffic {
   /** Move a car to its place on its lane: a smooth kinematic move, or an instant jump. */
   private place(car: TrafficCar, jump: boolean): void {
     v.copy(car.lane.from).addScaledVector(car.lane.dir, car.s);
+    v.y = CLEARANCE + car.spec.half.height;
     if (jump) car.body.setTranslation(v, true);
     else car.body.setNextKinematicTranslation(v);
   }

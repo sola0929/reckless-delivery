@@ -104,6 +104,7 @@ export class GameAudio {
   private lastBump = 0;
   private lastKnock = 0;
   private lastThud = 0;
+  private lastCrunch = 0;
   private paused = false;
   /** How fast the engine recording is playing right now: for the dev checks. */
   engineRate = IDLE_RATE;
@@ -351,6 +352,17 @@ export class GameAudio {
       default:
         this.play(pick(this.clips.soft), v, 1 + wobble, { muffle: 1200 });
     }
+  }
+
+  /** Two cars coming together, somewhere near: the crash itself, and the ring of it. `strength` from 0 to 1. */
+  crunch(strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.loaded || this.paused || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    if (t - this.lastCrunch < 0.09) return;
+    this.lastCrunch = t;
+    this.play(pick(strength > 0.5 ? this.clips.hard : this.clips.mid), (0.3 + strength * 0.5) * BUMP_LEVEL, 0.9 + Math.random() * 0.2);
+    this.play(pick(this.clips.metal), 0.2 + strength * 0.4, 0.7 + Math.random() * 0.15);
   }
 
   /** Something has broken for good: a jar in pieces, a melon burst, a crate in planks. */

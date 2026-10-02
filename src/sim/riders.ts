@@ -2,7 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { GROUP, PHYSICS, TRUCK, groups } from '../config';
 import type { RiderLane } from '../levels/types';
-import { CAR_HALF, type Traffic } from './traffic';
+import type { Traffic } from './traffic';
 import type { Truck } from './truck';
 
 /** A scooter's extent, with its rider. Its body's origin is on the road under its middle. */
@@ -236,7 +236,7 @@ export class Riders {
       // A car knocked loose and sliding into them takes them with it: left as they are they
       // would stop it dead, and the truck behind it.
       const here = this.where(rider);
-      if (traffic.cars.some((car) => car.knocked > 0 && Math.hypot(car.body.translation().x - here.x, car.body.translation().z - here.z) < CAR_HALF.length + 0.6)) {
+      if (traffic.cars.some((car) => car.knocked > 0 && Math.hypot(car.body.translation().x - here.x, car.body.translation().z - here.z) < car.spec.half.length + 0.6)) {
         this.knock(rider, here, { x: 0, y: 0, z: 0 }, 1, v.set(rider.road.left.x, 0, rider.road.left.z), null);
         rider.impact = 0;
         this.hits--;
@@ -363,11 +363,12 @@ export class Riders {
     for (const car of traffic.cars) {
       const p = car.body.translation();
       // A wreck may be lying any way round.
-      if (car.knocked > 0) add(p.x, p.z, CAR_HALF.length, CAR_HALF.length, 0);
+      const half = car.spec.half;
+      if (car.knocked > 0) add(p.x, p.z, half.length, half.length, 0);
       else {
         const sameWay = car.lane.dir.dot(road.dir);
         const along = Math.abs(sameWay) > 0.7;
-        add(p.x, p.z, along ? CAR_HALF.length : CAR_HALF.width, along ? CAR_HALF.width : CAR_HALF.length, car.speed * sameWay);
+        add(p.x, p.z, along ? half.length : half.width, along ? half.width : half.length, car.speed * sameWay);
       }
     }
     for (const rider of this.list) {

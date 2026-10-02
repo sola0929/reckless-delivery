@@ -3,7 +3,7 @@ import { Quaternion, Vector3 } from 'three';
 import { DRIVER, GROUP, PHYSICS, TRUCK, groups } from '../config';
 import type { CargoItem, CargoSystem } from './cargo';
 import type { Riders } from './riders';
-import { CAR_HALF, type Traffic } from './traffic';
+import type { Traffic } from './traffic';
 import type { Trains } from './trains';
 import type { Truck } from './truck';
 
@@ -486,7 +486,7 @@ export class Driver {
       const dz = this.pos.z - (lane.from.z + lane.dir.z * car.s);
       const along = dx * lane.dir.x + dz * lane.dir.z;
       const across = dx * lane.dir.z - dz * lane.dir.x;
-      if (Math.abs(along) > CAR_HALF.length + DRIVER.radius || Math.abs(across) > CAR_HALF.width + DRIVER.radius) continue;
+      if (Math.abs(along) > car.spec.half.length + DRIVER.radius || Math.abs(across) > car.spec.half.width + DRIVER.radius) continue;
       this.knockDown(lane.dir.x, lane.dir.z, car.speed, across < 0 ? -1 : 1, cargo);
       return;
     }

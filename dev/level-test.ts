@@ -393,7 +393,7 @@ while (!sim.result && steps < 60 * 900) {
   if (crawl.some(([x, z]) => Math.hypot(x - p.x, z - p.z) < 9)) limit = Math.min(limit, 3);
   for (const [x0, z0, x1, z1, most] of slow) if (p.x > x0 && p.x < x1 && p.z > z0 && p.z < z1) limit = Math.min(limit, most);
   const runUp = Math.abs(p.x - bridgeX) < 3 && p.z > bridgeFrom && p.z < bridgeTo;
-  if (runUp) limit = 17;
+  if (runUp) limit = 24;
   const toFinish = Math.hypot(finishAt[0] - p.x, finishAt[1] - p.z);
   if (toFinish < 20) limit = toFinish < 1.5 ? 0 : Math.min(limit, 1.5 + toFinish * 0.5);
 
@@ -425,7 +425,7 @@ while (!sim.result && steps < 60 * 900) {
   if ((clearAt !== null || runUp || blocked > 90) && throttle > 0) throttle = 1;
   // Brake in pulses, as a careful driver would, so the load stays put. Between tracks there is no room for that.
   const brake = throttle < 0 && (onRails || speed > limit + 4 || steps % 18 < 9);
-  sim.step({ throttle: throttle < 0 ? (brake ? -1 : 0) : throttle, steer: Math.max(-1, Math.min(1, error * 2.2)), handbrake: false });
+  sim.step({ throttle: throttle < 0 ? (brake ? -1 : 0) : throttle, steer: Math.max(-1, Math.min(1, error * 2.2)), handbrake: false, boost: runUp });
   steps++;
   if (verbose && steps % 300 === 0) console.log(`  t=${steps / 60}s leg ${leg}/${path.length - 1} at (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) speed ${speed.toFixed(1)} value ${Math.round(sim.cargoValue())} on truck ${sim.cargoOnTruck()}`);
 }

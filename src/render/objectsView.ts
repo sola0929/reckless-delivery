@@ -14,7 +14,12 @@ interface PartSlot {
   /** Its colour, whole and wrecked. */
   color: number;
   wreckedColor: number;
+  /** Whether it is a lamp that flashes. */
+  flash: boolean;
 }
+
+/** What a flashing lamp is between flashes. */
+const UNLIT = 0x4a3a18;
 
 interface Entry {
   object: LooseObject;
@@ -45,6 +50,8 @@ export class ObjectsView {
   private readonly rot = new THREE.Quaternion();
   private readonly one = new THREE.Vector3(1, 1, 1);
   private readonly color = new THREE.Color();
+  private readonly lamps: PartSlot[] = [];
+  private lit = true;
 
   constructor(scene: THREE.Scene, objects: readonly LooseObject[]) {
     const counts: Record<Shape, number> = { box: 0, cylinder: 0, cone: 0 };
@@ -80,12 +87,21 @@ export class ObjectsView {
         const index = next[part.shape]++;
         const after = object.kind.wrecked?.[i];
         mesh.setColorAt(index, color.set(part.color));
-        return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color };
+        return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color, flash: !!part.flash };
       });
+      this.lamps.push(...slots.filter((slot) => slot.flash));
       this.entries.push({ object, slots, wrecked: false, settled: false });
     }
     for (const mesh of this.meshes) mesh.instanceColor!.needsUpdate = true;
     this.update();
+  }
+
+  /** Turn every flashing lamp on or off. */
+  blink(lit: boolean): void {
+    if (lit === this.lit) return;
+    this.lit = lit;
+    for (const slot of this.lamps) slot.mesh.setColorAt(slot.index, this.color.set(lit ? slot.color : UNLIT));
+    for (const mesh of this.meshes) mesh.instanceColor!.needsUpdate = true;
   }
 
   /** Redraw everything, e.g. after a reset has put it all back. */
@@ -147,7 +163,7 @@ export class PedestriansView {
     const color = new THREE.Color();
     people.forEach((p, i) => {
       this.bodies.setColorAt(i, color.set(p.color));
-      this.heads.setColorAt(i, color.set(SKIN));
+      this.heads.setColorAt(i, color.set(p.hat ?? SKIN));
       this.legs.setColorAt(i * 2, color.set(TROUSERS));
       this.legs.setColorAt(i * 2 + 1, color.set(TROUSERS));
     });

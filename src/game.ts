@@ -318,6 +318,17 @@ function showBlast(at: { x: number; y: number; z: number }): void {
   if (spot) hud.popup('瓦斯爆炸！', spot.x, spot.y, 'big');
 }
 
+let fountainTimer = 0;
+/** Each fountain within sight throws its water up, a little at a time. */
+function playFountains(dt: number): void {
+  if ((fountainTimer += dt) < 0.07) return;
+  fountainTimer = 0;
+  const truckAt = sim.truck.body.translation();
+  for (const [x, y, z] of level.fountains ?? []) {
+    if (Math.hypot(x - truckAt.x, z - truckAt.z) < 90) bursts.emit(splashAt.set(x, y, z), 'water', 4, 3.2, 2.6);
+  }
+}
+
 function noteEvent(event: CargoEvent): void {
   if (event.kind === 'recovered') {
     const at = onScreen(event.item);
@@ -511,6 +522,17 @@ function frame(now: number): void {
     }
     for (const knock of sim.drainKnocks()) showKnock(knock);
     for (const blast of sim.drainBlasts()) showBlast(blast);
+    for (const crash of sim.drainPileups()) {
+      // One car into the back of another: metal on metal, with weight behind it.
+      const at = sim.truck.body.translation();
+      const near = hearing(Math.hypot(crash.x - at.x, crash.z - at.z));
+      if (near > 0) audio.crunch(Math.min(1, crash.speed / 12) * near);
+      bursts.emit(splashAt.set(crash.x, 0.8, crash.z), 'sparks', 12, 4);
+    }
+    for (const gate of levelView.takeBroken()) {
+      bursts.emit(splashAt.set(gate.x, gate.y, gate.z), 'splinters', 30, 6);
+      audio.knock('wood', 0.9, 0.3);
+    }
     hardestBump = Math.max(hardestBump, ...sim.drainBumps());
     for (const strike of sim.drainStrikes()) {
       bursts.emit(splashAt.set(strike.x, strike.y + 0.5, strike.z), 'sparks', 60, 9);
@@ -541,10 +563,12 @@ function frame(now: number): void {
   cargoViews.apply(alpha);
   cargoViews.update(dt);
   objectsView.update();
+  objectsView.blink(now % 1100 < 550);
   wreckage.update(dt);
   pedestriansView.update(dt);
   spoutGeysers(dt);
   crackle(dt);
+  playFountains(dt);
   truckMesh.updateWheels(sim.truck);
   // The truck shows what it has been through: battered, then smoking. It drives the same.
   const wearStage = WEAR_STAGES.filter((wear) => sim.truckWear >= wear).length;
