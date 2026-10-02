@@ -155,7 +155,8 @@ check('the city has people in it', people.length > 50, `${people.length}`);
 wait(1);
 // A long clear road to do it on.
 carryTo(sx - 3.5, sz);
-const victim = people[0];
+// Someone who is free to run: not one of those kept to their own ground.
+const victim = people.find((p) => !p.crowd.fenced)!;
 /** Stand the victim in the road ahead of the truck, facing nothing in particular. */
 const standAhead = (metres: number) => {
   const t = truckPos();
@@ -435,6 +436,18 @@ if (!sim.result || sim.result.failure) {
   console.log(`  stopped at (${p.x.toFixed(1)}, ${p.z.toFixed(1)}, y ${p.y.toFixed(2)}) heading ${heading().toFixed(2)} speed ${sim.truck.forwardSpeed().toFixed(1)}, value ${Math.round(sim.cargoValue())}, leg ${leg}, failure ${sim.result?.failure}, waited ${waiting}`);
 }
 const result = sim.result;
+if (!sim.result) {
+  // Stuck somewhere: say what is round the truck.
+  const at = truckPos();
+  const near = (list: { body: { translation(): { x: number; y: number; z: number } } }[], name: (o: never) => string) =>
+    list.filter((o) => Math.hypot(o.body.translation().x - at.x, o.body.translation().z - at.z) < 9)
+      .map((o) => `${name(o as never)} (${(o.body.translation().x - at.x).toFixed(1)}, ${(o.body.translation().z - at.z).toFixed(1)})`);
+  console.log('  stuck at', at.x.toFixed(1), at.z.toFixed(1), 'heading', heading().toFixed(2), 'near:', [
+    ...near(sim.traffic.cars, (c: { kind: string; knocked: number; speed: number }) => `${c.kind}${c.knocked > 0 ? ' wreck' : ` at ${c.speed.toFixed(1)}`}`),
+    ...near(sim.riders.list, (r: { knocked: number }) => `rider${r.knocked > 0 ? ' down' : ''}`),
+    ...near(sim.objects.objects, (o: { desc: { kind: string }; knocked: boolean }) => `${o.desc.kind}${o.knocked ? '*' : ''}`),
+  ].join(' | '));
+}
 check('a careful driver reaches the delivery bay', result !== null && !result.failure, `leg ${leg + 1}/${path.length - 1} after ${(steps / 60).toFixed(0)} s`);
 if (result && !result.failure) {
   check('careful delivery passes', result.stars >= 1, `${Math.floor(result.fraction * 100)}% of value, ${result.stars} star(s), ${result.seconds.toFixed(0)} s`);

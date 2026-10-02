@@ -815,7 +815,7 @@ function throughRoads(): number[] {
 }
 
 /** The stretch of the back street that is plain road: between the foot of the terrace and the oil. */
-const BACK_STREET: { row: number; from: number; to: number } = { row: 41, from: 20.4, to: 14.6 };
+const BACK_STREET: { row: number; from: number; to: number } = { row: 41, from: 20.4, to: 15.2 };
 
 /**
  * People on the pavements along the route, and people crossing the two streets where the
@@ -1223,6 +1223,9 @@ function buildSite(b: Builder): void {
   // The outside of the bend, and a rail to keep the way out apart from the roundabout.
   railBend(b, bend, mid, mid - z0 - 0.45);
   rail(b, x1, south, x1, z1);
+  // And on from its end, across the pavement to the wall of the house on the corner:
+  // otherwise the corner can be cut, from the roundabout straight to the way out.
+  rail(b, x1, z1, x1 + 6.5, z1 + 6.5);
 
   // The plates, hard against the inner rail: not much wider than the truck.
   const plateHalf = 1.95;
@@ -1403,6 +1406,10 @@ function buildSlick(b: Builder): void {
   // Signs facing whoever is coming, well before the oil and again at its edge.
   for (const back of [26, 8]) for (const side of [-1, 1]) {
     b.signs.push({ pos: [corner - 32 - back, 0, z + side * 6.4], rotY: -Math.PI / 2, kind: 'slippery' });
+  }
+  // Boards stood across the road where the oil begins, in two rows: there is no way past but through them.
+  for (const [back, offsets] of [[4.5, [-5.2, -1.8, 1.6, 5]], [2.4, [-3.5, -0.1, 3.3]]] as [number, number[]][]) {
+    for (const off of offsets) b.object('slipBoard', corner - 32 - back, z + off, 0, -Math.PI / 2);
   }
   // Something soft to slide into on the outside of the bend.
   for (const d of [-5, -2.5, 0, 2.5, 5]) b.object('barrel', corner + 6.6, z + d);
@@ -1640,7 +1647,7 @@ function buildRiver(b: Builder): void {
   if (!rows.length) return;
   const z0 = zOf(rows[0]) - HALF;
   const z1 = zOf(rows[rows.length - 1]) + HALF;
-  b.pits.push({ pos: [(MIN_X + MAX_X) / 2, (z0 + z1) / 2], half: [(MAX_X - MIN_X) / 2, (z1 - z0) / 2], depth: 3.6, water: 0.7 });
+  b.pits.push({ pos: [(MIN_X + MAX_X) / 2, (z0 + z1) / 2], half: [(MAX_X - MIN_X) / 2, (z1 - z0) / 2], depth: 8, water: 0.7 });
 
   for (let c = 0; c < COLS; c++) {
     const x = xOf(c);
@@ -1812,6 +1819,6 @@ export function city(): LevelDef {
     // The first level: mistakes cost less here than they will later.
     damageScale: 0.8,
     stars: [0, 0.6],
-    par: 180,
+    par: 150,
   };
 }

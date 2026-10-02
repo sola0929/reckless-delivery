@@ -1,6 +1,7 @@
 // Sound. The engine and the crashes are recordings (all public domain: see
 // public/audio/SOURCES.md), played faster or slower, louder or softer, to fit what is happening.
 
+import { HORN_VOICES, playHorn } from './horns';
 import { soundSettings } from './sound-settings';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -105,6 +106,7 @@ export class GameAudio {
   private lastKnock = 0;
   private lastThud = 0;
   private lastCrunch = 0;
+  private lastHorn = 0;
   private paused = false;
   /** How fast the engine recording is playing right now: for the dev checks. */
   engineRate = IDLE_RATE;
@@ -363,6 +365,22 @@ export class GameAudio {
     this.lastCrunch = t;
     this.play(pick(strength > 0.5 ? this.clips.hard : this.clips.mid), (0.3 + strength * 0.5) * BUMP_LEVEL, 0.9 + Math.random() * 0.2);
     this.play(pick(this.clips.metal), 0.2 + strength * 0.4, 0.7 + Math.random() * 0.15);
+  }
+
+  /**
+   * A car horn, somewhere near. `strength` from 0 to 1 is how near it is, `long` how hard
+   * it is leant on. `car` says whose it is: each car has its own horn, tuned a little
+   * differently from the next, and one in three has the cracked one.
+   */
+  horn(strength: number, long: number, car: number): void {
+    const ctx = this.ctx;
+    if (!ctx || this.paused || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    // A street full of them is a din, not a wall of sound: no more than a few a second.
+    if (t - this.lastHorn < 0.12) return;
+    this.lastHorn = t;
+    const voice = car % 3 === 1 ? HORN_VOICES.h : HORN_VOICES.a;
+    playHorn(ctx, this.master, voice, 0.22 + long * (0.35 + Math.random() * 0.35), 0.05 + strength * 0.1, 0.95 + ((car * 37) % 11) * 0.01);
   }
 
   /** Something has broken for good: a jar in pieces, a melon burst, a crate in planks. */

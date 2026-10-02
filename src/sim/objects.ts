@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { GROUP, TRUCK, groups } from '../config';
-import { OBJECT_KINDS, type ObjectDesc, type ObjectKind } from '../levels/objects';
+import { OBJECT_KINDS, POLE_SPACING, type ObjectDesc, type ObjectKind } from '../levels/objects';
 import type { Truck } from './truck';
 
 export interface LooseObject {
@@ -22,6 +22,8 @@ export interface LooseObject {
   hush: number;
   /** For something explosive that has been knocked: seconds until it goes off. Below 0 otherwise. */
   fuse: number;
+  /** For a pole: which of its wires have parted. 1 for those running ahead, 2 for those behind, 3 for both. */
+  cut: number;
 }
 
 /** Something has blown up. */
@@ -102,6 +104,16 @@ const CARRYING_SPEED = 2;
 /** Hit at this speed or more, m/s, a thing that can be wrecked is. */
 const WRECK_SPEED = 3;
 
+/**
+ * A box with its edges taken off. The ground is laid in slabs, and a square-edged box shoved
+ * along it catches its leading edge on the join between two of them and stops dead: a
+ * market stall standing on such a join met the truck like a wall. Slivers are left square.
+ */
+function roundedBox(a: number, b: number, c: number): RAPIER.ColliderDesc {
+  const round = Math.min(0.05, Math.min(a, b, c) * 0.45);
+  return round < 0.015 ? RAPIER.ColliderDesc.cuboid(a, b, c) : RAPIER.ColliderDesc.roundCuboid(a - round, b - round, c - round, round);
+}
+
 /** Whether an object has gone over: tipped more than half way to the ground. */
 function lying(object: LooseObject): boolean {
   const r = object.body.rotation();
@@ -119,6 +131,8 @@ export class ObjectSystem {
   private landings: LandEvent[] = [];
   /** What blew up during the latest step. */
   blasts: Blast[] = [];
+  /** Where a live wire has just parted and is left hanging. */
+  private arcs: { x: number; y: number; z: number }[] = [];
   private events: KnockEvent[] = [];
   private readonly byCollider = new Map<number, LooseObject>();
   private under = new Set<LooseObject>();
@@ -145,12 +159,12 @@ export class ObjectSystem {
       );
       const solid = kind.parts.filter((p) => !p.ghost);
       const height = Math.max(...solid.map((p) => p.pos[1] + p.size[1]));
-      const object: LooseObject = { desc, kind, body, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1 };
+      const object: LooseObject = { desc, kind, body, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1, cut: 0 };
       const shares = solid.reduce((sum, p) => sum + (p.weight ?? 1), 0);
       for (const part of solid) {
         const [a, b, c] = part.size;
         const shape =
-          part.shape === 'box' ? RAPIER.ColliderDesc.cuboid(a, b, c)
+          part.shape === 'box' ? roundedBox(a, b, c)
           : part.shape === 'cylinder' ? RAPIER.ColliderDesc.cylinder(b, a)
           : RAPIER.ColliderDesc.cone(b, a);
         const [rx, ry, rz] = part.rot ?? [0, 0, 0];
@@ -193,6 +207,7 @@ export class ObjectSystem {
       const speed = Math.hypot(v.x, v.y, v.z);
       if (speed < KNOCK_SPEED) continue;
       object.knocked = true;
+      this.partWires(object);
       // Something light that the truck has just hit is tossed up, below; and it is not to
       // come up under the truck's nose and toss the truck. It stops being solid to the
       // truck here and now, not a step later.
@@ -250,12 +265,46 @@ export class ObjectSystem {
       // Blown over, not run into: it is not for the truck's load to answer for.
       if (!other.knocked) {
         other.knocked = true;
+        this.partWires(other);
         other.wrecked = other.kind.wrecked !== undefined && push >= WRECK_SPEED;
         const [x, y, z] = other.desc.pos;
         this.events.push({ object: other, at: { x, y, z } });
         if (other.kind.explosive) other.fuse = 0.12 + this.random() * 0.3;
       }
     }
+  }
+
+  /**
+   * A pole going over takes its wires with it: they part, on both sides of it, and the
+   * halves left on the poles next along drop and hang there, live.
+   */
+  private partWires(pole: LooseObject): void {
+    if (!pole.kind.parts.some((part) => part.wire)) return;
+    pole.cut = 3;
+    const [x, y, z] = pole.desc.pos;
+    this.arcs.push({ x, y: y + 6.6, z });
+    for (const other of this.objects) {
+      if (other === pole || other.knocked || !other.kind.parts.some((part) => part.wire)) continue;
+      const dx = x - other.desc.pos[0];
+      const dz = z - other.desc.pos[2];
+      if (Math.hypot(dx, dz) > POLE_SPACING + 1.5) continue;
+      // Which of its sides the fallen pole was on: its wires run along its own Z.
+      const turn = other.desc.rotY ?? 0;
+      // Only the poles in the same row: the one over the road is as near, but nothing joins the two.
+      if (Math.abs(dx * Math.cos(turn) - dz * Math.sin(turn)) > 1.5) continue;
+      const ahead = dx * Math.sin(turn) + dz * Math.cos(turn) > 0;
+      const bit = ahead ? 1 : 2;
+      if (!other.kind.parts.some((part) => part.wire === (ahead ? 1 : -1)) || other.cut & bit) continue;
+      other.cut |= bit;
+      this.arcs.push({ x: other.desc.pos[0], y: other.desc.pos[1] + 1.8, z: other.desc.pos[2] });
+    }
+  }
+
+  /** Wires that have parted since the last call: where the loose end of each is. */
+  drainArcs(): { x: number; y: number; z: number }[] {
+    const out = this.arcs;
+    this.arcs = [];
+    return out;
   }
 
   /** Watch a loose thing for the moment it hits the ground, or anything else. */
@@ -438,7 +487,9 @@ export class ObjectSystem {
     for (const object of this.under) this.setGroups(object, SOLID);
     this.under.clear();
     this.fresh = [];
+    this.arcs = [];
     for (const object of this.objects) {
+      object.cut = 0;
       // Whatever was never disturbed is still where it belongs, and is best left asleep.
       if (!object.knocked && object.body.isSleeping()) continue;
       const [x, y, z] = object.desc.pos;

@@ -16,8 +16,13 @@ interface PartSlot {
   wreckedColor: number;
   /** Whether it is a lamp that flashes. */
   flash: boolean;
+  /** For a length of wire: which side of its pole it runs off, as a bit, and how it lies once parted. */
+  side: number;
+  slack: THREE.Matrix4 | null;
 }
 
+/** Shrunk to nothing: for a part that is no longer there. */
+const GONE = new THREE.Matrix4().makeScale(0, 0, 0);
 /** What a flashing lamp is between flashes. */
 const UNLIT = 0x4a3a18;
 
@@ -28,6 +33,8 @@ interface Entry {
   wrecked: boolean;
   /** Whether it was already drawn at rest, so needn't be touched again until it wakes. */
   settled: boolean;
+  /** Which of its wires were drawn as parted. */
+  cut: number;
 }
 
 const UNIT: Record<Shape, () => THREE.BufferGeometry> = {
@@ -87,10 +94,10 @@ export class ObjectsView {
         const index = next[part.shape]++;
         const after = object.kind.wrecked?.[i];
         mesh.setColorAt(index, color.set(part.color));
-        return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color, flash: !!part.flash };
+        return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color, flash: !!part.flash, side: part.wire === 1 ? 1 : part.wire === -1 ? 2 : 0, slack: part.slack ? place(part.slack) : null };
       });
       this.lamps.push(...slots.filter((slot) => slot.flash));
-      this.entries.push({ object, slots, wrecked: false, settled: false });
+      this.entries.push({ object, slots, wrecked: false, settled: false, cut: 0 });
     }
     for (const mesh of this.meshes) mesh.instanceColor!.needsUpdate = true;
     this.update();
@@ -122,6 +129,11 @@ export class ObjectsView {
         recoloured = true;
         for (const slot of entry.slots) slot.mesh.setColorAt(slot.index, this.color.set(entry.wrecked ? slot.wreckedColor : slot.color));
       }
+      if (entry.cut !== entry.object.cut) {
+        // A wire has parted, or a reset has mended it.
+        entry.cut = entry.object.cut;
+        entry.settled = false;
+      }
       if (asleep && entry.settled) continue;
       entry.settled = asleep;
       changed = true;
@@ -129,7 +141,10 @@ export class ObjectsView {
       const r = entry.object.body.rotation();
       this.body.compose(this.pos.set(t.x, t.y, t.z), this.rot.set(r.x, r.y, r.z, r.w), this.one);
       for (const slot of entry.slots) {
-        slot.mesh.setMatrixAt(slot.index, this.world.multiplyMatrices(this.body, entry.wrecked && slot.wrecked ? slot.wrecked : slot.local));
+        // A parted wire hangs from a pole that is still standing. On the one that has gone over it is simply gone.
+        const parted = slot.slack && entry.cut & slot.side ? (entry.object.knocked ? GONE : slot.slack) : null;
+        const local = parted ?? (entry.wrecked && slot.wrecked ? slot.wrecked : slot.local);
+        slot.mesh.setMatrixAt(slot.index, this.world.multiplyMatrices(this.body, local));
       }
     }
     if (changed) for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;

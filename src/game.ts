@@ -1,5 +1,6 @@
 import { Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { DRIVER, PHYSICS } from './config';
+import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
 import { Input } from './input';
 import { GameAudio, type Material } from './audio';
@@ -33,6 +34,28 @@ const view = createView(canvas, level);
 const input = new Input(canvas);
 const hud = new Hud(level);
 const chase = new ChaseCamera(view.camera);
+const graphics = new Graphics(view);
+// The switch in the pause menu: one of four, the one in force lit. On automatic it says what it has settled on.
+const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('#gfx-quality button')];
+const QUALITY_NAME = { high: '高', medium: '中', low: '低' };
+function showQuality(): void {
+  for (const button of qualityButtons) {
+    const choice = button.dataset.quality as QualityChoice;
+    button.classList.toggle('on', choice === graphics.choice);
+    if (choice === 'auto') button.textContent = graphics.choice === 'auto' ? `自動 · ${QUALITY_NAME[graphics.quality]}` : '自動';
+  }
+}
+for (const button of qualityButtons) {
+  button.addEventListener('click', () => {
+    graphics.choose(button.dataset.quality as QualityChoice);
+    showQuality();
+  });
+}
+showQuality();
+graphics.onStepDown = (quality) => {
+  showQuality();
+  hud.popup(quality === 'low' ? '畫面不順，已調到最低畫質' : '畫面不順，已自動降低畫質', window.innerWidth / 2, window.innerHeight * 0.3, 'big');
+};
 const minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, level);
 
 const levelView = new LevelView(view.scene, sim);
@@ -168,6 +191,9 @@ const geysers: { at: Vector3; left: number }[] = [];
 const CRACKLE_SECONDS = 3.2;
 /** Strings of firecrackers going off where they fell, and how long until each one's next bang. */
 const crackles: { at: Vector3; left: number; next: number }[] = [];
+/** Loose ends of live wire, each spitting sparks for a while yet, and how long until its next flash. */
+const arcs: { at: Vector3; left: number; next: number }[] = [];
+const ARC_SECONDS = 3.5;
 /** Within this far of the truck, something bursting bursts over it. */
 const SPLASH_REACH = 7;
 
@@ -299,6 +325,26 @@ function crackle(dt: number): void {
     if (Math.random() < 0.3) smoke.emit(splashAt, RISING);
     const near = hearing(Math.hypot(c.at.x - truckAt.x, c.at.z - truckAt.z));
     if (near > 0) audio.thud('bone', (0.5 + Math.random() * 0.5) * near, 0.1);
+  }
+}
+
+/** Parted wires: flashes at each loose end, close together at first and then further apart, and the crack of each. */
+function arcWires(dt: number): void {
+  const truckAt = sim.truck.body.translation();
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const arc = arcs[i];
+    arc.left -= dt;
+    if (arc.left <= 0) {
+      arcs.splice(i, 1);
+      continue;
+    }
+    if ((arc.next -= dt) > 0) continue;
+    arc.next = 0.06 + Math.random() * 0.35 * (1.3 - arc.left / ARC_SECONDS);
+    splashAt.set(arc.at.x + (Math.random() - 0.5) * 0.5, arc.at.y + (Math.random() - 0.5) * 0.6, arc.at.z + (Math.random() - 0.5) * 0.5);
+    bursts.emit(splashAt, 'arc', 14, 5, 0.7);
+    bursts.emit(splashAt, 'sparks', 8, 4);
+    const near = hearing(Math.hypot(arc.at.x - truckAt.x, arc.at.z - truckAt.z));
+    if (near > 0) audio.thud('bone', (0.6 + Math.random() * 0.4) * near, 0.1);
   }
 }
 
@@ -462,6 +508,7 @@ function updatePrompt(): void {
 }
 
 function frame(now: number): void {
+  const before = last;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   accumulator += dt;
@@ -470,6 +517,7 @@ function frame(now: number): void {
   if (paused && !retryAsked) {
     // Nothing moves; the picture stays as it was.
     accumulator = 0;
+    graphics.rest();
     view.renderer.render(view.scene, view.camera);
     requestAnimationFrame(frame);
     return;
@@ -492,6 +540,7 @@ function frame(now: number): void {
     wreckage.clear();
     geysers.length = 0;
     crackles.length = 0;
+    arcs.length = 0;
     truckMesh.wash();
     truckSync.apply(1);
     chase.snap(truckMesh.root.position, truckHeading());
@@ -522,12 +571,21 @@ function frame(now: number): void {
     }
     for (const knock of sim.drainKnocks()) showKnock(knock);
     for (const blast of sim.drainBlasts()) showBlast(blast);
+    for (const end of sim.drainArcs()) {
+      arcs.push({ at: new Vector3(end.x, end.y, end.z), left: ARC_SECONDS * (0.7 + Math.random() * 0.5), next: 0 });
+      bursts.emit(splashAt.set(end.x, end.y, end.z), 'arc', 40, 9, 0.8);
+    }
     for (const crash of sim.drainPileups()) {
       // One car into the back of another: metal on metal, with weight behind it.
       const at = sim.truck.body.translation();
       const near = hearing(Math.hypot(crash.x - at.x, crash.z - at.z));
       if (near > 0) audio.crunch(Math.min(1, crash.speed / 12) * near);
       bursts.emit(splashAt.set(crash.x, 0.8, crash.z), 'sparks', 12, 4);
+    }
+    for (const horn of sim.drainHorns()) {
+      const at = sim.truck.body.translation();
+      const near = hearing(Math.hypot(horn.x - at.x, horn.z - at.z));
+      if (near > 0 && !sim.result) audio.horn(near, horn.long, horn.car);
     }
     for (const gate of levelView.takeBroken()) {
       bursts.emit(splashAt.set(gate.x, gate.y, gate.z), 'splinters', 30, 6);
@@ -568,6 +626,7 @@ function frame(now: number): void {
   pedestriansView.update(dt);
   spoutGeysers(dt);
   crackle(dt);
+  arcWires(dt);
   playFountains(dt);
   truckMesh.updateWheels(sim.truck);
   // The truck shows what it has been through: battered, then smoking. It drives the same.
@@ -626,6 +685,9 @@ function frame(now: number): void {
   showPopups(dt);
 
   view.renderer.render(view.scene, view.camera);
+  // A tab in the background is hardly drawn at all: that is not the machine being slow.
+  if (document.hidden) graphics.rest();
+  else graphics.frame((now - before) / 1000);
   requestAnimationFrame(frame);
 }
 

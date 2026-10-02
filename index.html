@@ -39,6 +39,7 @@
         <div id="result-title"></div>
         <div id="result-stars"></div>
         <div id="result-reason"></div>
+        <div id="result-verdict"></div>
         <div id="result-value"></div>
         <div id="result-rows"></div>
         <div id="result-goals"></div>
@@ -69,6 +70,12 @@
               <label><span>音效</span><input id="vol-sfx" type="range" min="0" max="100" /></label>
               <label><span>音樂</span><input id="vol-music" type="range" min="0" max="100" /></label>
               <label class="mute"><input id="vol-mute" type="checkbox" /><span>靜音</span></label>
+              <div class="quality"><span>畫質</span><div class="segments" id="gfx-quality">
+                <button type="button" data-quality="auto">自動</button>
+                <button type="button" data-quality="high">高</button>
+                <button type="button" data-quality="medium">中</button>
+                <button type="button" data-quality="low">低</button>
+              </div></div>
             </div>
             <div id="pause-confirm" hidden>
               <p>確定要回到主選單嗎？<br />這一趟的進度不會保留。</p>
@@ -137,6 +144,7 @@
         <div class="menu-page" id="menu-home">
           <button class="menu-item primary" id="menu-start" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>開始遊戲</button>
           <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
+          <button class="menu-item" data-page="menu-settings" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
           <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
           <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b>Enter</b> 確定</div>
         </div>
@@ -148,6 +156,23 @@
           </div>
           <div id="menu-level-list"></div>
           <button id="menu-free" class="level-free" type="button"></button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+        </div>
+
+        <div class="menu-page" id="menu-settings" hidden>
+          <div class="page-title">設定</div>
+          <div class="pause-sound settings-panel">
+            <label><span>音效</span><input id="set-sfx" type="range" min="0" max="100" /></label>
+            <label><span>音樂</span><input id="set-music" type="range" min="0" max="100" /></label>
+            <label class="mute"><input id="set-mute" type="checkbox" /><span>靜音</span></label>
+            <div class="quality"><span>畫質</span><div class="segments" id="set-quality">
+              <button type="button" data-quality="auto">自動</button>
+              <button type="button" data-quality="high">高</button>
+              <button type="button" data-quality="medium">中</button>
+              <button type="button" data-quality="low">低</button>
+            </div></div>
+            <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
+          </div>
           <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
         </div>
 

@@ -62,7 +62,16 @@ export interface TrafficCar {
   spec: VehicleSpec;
   /** The speed it keeps to with the road clear. */
   cruise: number;
+  /** Seconds until it may sound its horn again. */
+  hush: number;
 }
+
+/** A driver leans on the horn when the truck is coming at them, or sitting across their lane, within this far ahead. */
+const HORN_REACH = 45;
+/** And then leaves it alone for about this long. */
+const HORN_REST = 1.1;
+/** A car that has been brought to a stand sounds it only about this often, and only if it is near the front. */
+const HORN_REST_STOPPED = 9;
 
 /** What the vehicles of a lane are, where the level doesn't say: mostly cars. Nothing long is left parked. */
 function kindOf(n: number, moving: boolean): VehicleKind {
@@ -94,6 +103,8 @@ export class Traffic {
   fresh: TrafficCar[] = [];
   /** Cars that a wreck was shoved into during the latest step: where, and how fast the two met. */
   pileups: { x: number; z: number; speed: number }[] = [];
+  /** Where a horn was sounded during the latest step, and how hard it was leant on, 0 to 1. */
+  horns: { x: number; z: number; long: number; car: number }[] = [];
   private lanes = 0;
 
   constructor(world: RAPIER.World, lanes: TrafficLane[]) {
@@ -135,7 +146,7 @@ export class Traffic {
           );
         }
         const cruise = desc.speed > 0 && spec.crawl ? spec.crawl : desc.speed;
-        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise };
+        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise, hush: 0 };
         this.place(car, true);
         this.cars.push(car);
         n++;
@@ -157,6 +168,7 @@ export class Traffic {
     const truckSpeed = Math.hypot(tv.x, tv.z);
     this.fresh = [];
     this.pileups = [];
+    this.horns = [];
     // Cars already knocked loose, wherever the crash has left them.
     const wrecks = this.cars.filter((car) => car.knocked > 0).map((car) => car.body.translation());
 
@@ -205,6 +217,16 @@ export class Traffic {
       const reachAlong = alongF * TRUCK_HALF_LENGTH + alongS * TRUCK_HALF_WIDTH;
       const reachAcross = alongS * TRUCK_HALF_LENGTH + alongF * TRUCK_HALF_WIDTH;
       const sameWay = truckForward.dot(lane.dir) > SAME_WAY;
+      // In their lane and not going their way: across it, or coming straight at them.
+      car.hush -= dt;
+      if (car.hush <= 0 && lane.cruise > 0 && !sameWay && across < reachAcross + half.width && along > reachAlong && along < HORN_REACH) {
+        // Bearing down on it they keep at it. Once they have had to stop, it is only now and
+        // then: a queue of standing cars all leaning on their horns is a racket.
+        const rest = car.speed > 2 ? HORN_REST : HORN_REST_STOPPED;
+        car.hush = rest * (0.7 + ((car.s * 7.3) % 1) * 0.6);
+        // Of those standing, only whoever is at the front has the truck to sound it at.
+        if (car.speed > 2 || along <= reachAlong + half.length + 14) this.horns.push({ x: lane.from.x + lane.dir.x * car.s, z: lane.from.z + lane.dir.z * car.s, long: truckForward.dot(lane.dir) < -SAME_WAY ? 1 : 0.5, car: this.cars.indexOf(car) });
+      }
       if (sameWay && across < reachAcross + half.width + 0.4 && along > -reachAlong) {
         gap = Math.min(gap, along - reachAlong - half.length);
       }
@@ -230,6 +252,9 @@ export class Traffic {
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
         car.impact = Math.hypot(lane.dir.x * car.speed - tv.x, lane.dir.z * car.speed - tv.z);
+        // Whoever was driving it has something to say, if they were driving it.
+        if (lane.cruise > 0) this.horns.push({ x: t.x, z: t.z, long: 1, car: this.cars.indexOf(car) });
+        car.hush = HORN_REST;
         car.speed = 0;
         this.fresh.push(car);
         continue;

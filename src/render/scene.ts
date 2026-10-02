@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA } from '../config';
+import { loadChoice } from '../graphics-choice';
 import { groundTiles } from '../levels/ground';
 import type { LevelDef } from '../levels/types';
 
@@ -64,7 +65,9 @@ function groundGeometry(level: LevelDef): THREE.BufferGeometry {
 }
 
 export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // On a machine with two graphics chips, ask for the stronger. Edges are smoothed unless
+  // the picture has been turned right down: that costs too much on a weak chip.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: loadChoice() !== 'low', powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;

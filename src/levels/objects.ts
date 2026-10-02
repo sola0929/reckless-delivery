@@ -18,6 +18,10 @@ export interface ObjectPart {
   weight?: number;
   /** A lamp that flashes: lit and dark by turns. */
   flash?: boolean;
+  /** A length of wire running off to the next pole: 1 for the one ahead, -1 for the one behind. */
+  wire?: 1 | -1;
+  /** How it lies once that wire has parted: hanging from the pole instead of reaching for the next. */
+  slack?: Omit<ObjectPart, 'slack'>;
 }
 
 /** What is thrown up when the object is first knocked. */
@@ -232,7 +236,13 @@ function pole(ahead: boolean, behind: boolean): ObjectKind {
     return [0, 1, 2].map((n) => {
       const length = half / 3;
       const fall = drops[n] - drops[n + 1];
-      return box([0.02, 0.02, Math.hypot(length, fall) / 2], [x, (drops[n] + drops[n + 1]) / 2, way * length * (n + 0.5)], wire, { ghost: true, rot: [way * Math.atan2(fall, length), 0, 0] });
+      const size: Vec3 = [0.02, 0.02, Math.hypot(length, fall) / 2];
+      // Parted, the first two lengths hang straight down from where they were made fast, swinging out a little, and the third is gone.
+      const hanging: Omit<ObjectPart, 'slack'> = {
+        shape: 'box', size: n < 2 ? size : [0, 0, 0], color: wire, ghost: true,
+        pos: [x + way * 0.05 * n, top - length * (n + 0.5), way * (0.1 + 0.12 * n)], rot: [Math.PI / 2 - way * 0.05, 0, 0],
+      };
+      return box(size, [x, (drops[n] + drops[n + 1]) / 2, way * length * (n + 0.5)], wire, { ghost: true, rot: [way * Math.atan2(fall, length), 0, 0], wire: way as 1 | -1, slack: hanging });
     });
   };
   const ways = [...(ahead ? [1] : []), ...(behind ? [-1] : [])];
@@ -248,7 +258,7 @@ function pole(ahead: boolean, behind: boolean): ObjectKind {
       box([0.3, 0.04, 0.04], [0.2, 5.8, 0], 0x6a5a48, { ghost: true }),
       // Three thin wires along the top, and one thick cable slung lower down.
       ...ways.flatMap((way) => [-0.85, 0, 0.85].flatMap((x) => hang(x, 6.92, 0.5, way))),
-      ...ways.flatMap((way) => hang(-0.18, 5.9, 0.6, way).map((part) => ({ ...part, size: [0.04, 0.04, part.size[2]] as Vec3 }))),
+      ...ways.flatMap((way) => hang(-0.18, 5.9, 0.6, way).map((part) => ({ ...part, size: [0.04, 0.04, part.size[2]] as Vec3, slack: { ...part.slack!, size: [part.slack!.size[2] ? 0.04 : 0, part.slack!.size[2] ? 0.04 : 0, part.slack!.size[2]] as Vec3 } }))),
     ],
   };
 }
@@ -454,6 +464,19 @@ export const OBJECT_KINDS = {
       box([0.4, 0.42, 0.4], [0, 1.32, 0], 0xcfe6ee),
       box([0.44, 0.1, 0.44], [0, 1.84, 0], 0xf2c12e, { ghost: true }),
       ...[[-0.18, 0xe86a9a], [0.02, 0xf2efe6], [0.2, 0xd85a4a]].map(([x, color]) => box([0.11, 0.11, 0.11], [x, 1.02, 0.1], color, { ghost: true })),
+    ],
+  },
+  /** A folding board stood in the road: yellow, with a warning on both faces. */
+  slipBoard: {
+    mass: 7,
+    parts: [
+      // Two boards leaning together at the top, their feet apart.
+      box([0.34, 0.5, 0.03], [0, 0.48, 0.17], 0xf2c12e, { rot: [-0.32, 0, 0] }),
+      box([0.34, 0.5, 0.03], [0, 0.48, -0.17], 0xf2c12e, { rot: [0.32, 0, 0] }),
+      box([0.2, 0.2, 0.01], [0, 0.56, 0.18], 0x1c1d20, { rot: [-0.32, 0, Math.PI / 4], ghost: true }),
+      box([0.2, 0.2, 0.01], [0, 0.56, -0.18], 0x1c1d20, { rot: [0.32, 0, Math.PI / 4], ghost: true }),
+      box([0.24, 0.05, 0.01], [0, 0.2, 0.3], 0xd0302a, { rot: [-0.32, 0, 0], ghost: true }),
+      box([0.24, 0.05, 0.01], [0, 0.2, -0.3], 0xd0302a, { rot: [0.32, 0, 0], ghost: true }),
     ],
   },
   /** A length of concrete pipe, lying on its side: it rolls. */

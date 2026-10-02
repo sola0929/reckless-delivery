@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>喇叭試聽</title>
+    <style>
+      body { margin: 0; padding: 32px 40px; background: #131a24; color: #fff; font: 16px/1.6 "Microsoft JhengHei", sans-serif; }
+      h1 { margin: 0 0 4px; font-size: 26px; }
+      p { margin: 0 0 20px; opacity: 0.7; }
+      .row { display: grid; grid-template-columns: 320px repeat(4, auto) 1fr; gap: 10px; align-items: center; padding: 10px 14px; margin: 6px 0; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+      .row b { font-size: 17px; }
+      button { padding: 7px 16px; border: 0; border-radius: 8px; background: #ffd166; color: #1c222b; font: inherit; font-weight: 700; cursor: pointer; }
+      button.quiet { background: rgba(255, 255, 255, 0.16); color: #fff; }
+      button:hover { filter: brightness(1.12); }
+      small { opacity: 0.55; }
+    </style>
+  </head>
+  <body>
+    <h1>喇叭試聽</h1>
+    <p>每一列是一種喇叭。「短」是橫擋車道時的一聲，「長」是逆向對著開時的長音，「三台車」是同一種喇叭在三台車上（音高略有不同）接連響，「塞車」模擬一小段時間內好幾台一起按。告訴我字母就好，也可以指定哪種車用哪一種。</p>
+    <div id="list"></div>
+    <script type="module">
+      import { HORN_VOICES, playHorn } from '/src/horns.ts';
+      const ctx = new AudioContext();
+      const out = ctx.createGain();
+      out.gain.value = 0.9;
+      out.connect(ctx.destination);
+      const list = document.getElementById('list');
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (const [id, voice] of Object.entries(HORN_VOICES)) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `<b>${voice.name}</b>`;
+        const add = (label, quiet, play) => {
+          const button = document.createElement('button');
+          button.textContent = label;
+          if (quiet) button.className = 'quiet';
+          button.onclick = async () => { await ctx.resume(); play(); };
+          row.append(button);
+        };
+        add('短', false, () => playHorn(ctx, out, voice, 0.25, 0.14));
+        add('長', false, () => playHorn(ctx, out, voice, 0.75, 0.14));
+        add('三台車', true, async () => { for (const tune of [0.95, 1.04, 1]) { playHorn(ctx, out, voice, 0.4, 0.13, tune); await wait(520); } });
+        add('塞車', true, async () => { for (let i = 0; i < 7; i++) { playHorn(ctx, out, voice, 0.25 + Math.random() * 0.5, 0.06 + Math.random() * 0.08, 0.94 + Math.random() * 0.12); await wait(180 + Math.random() * 420); } });
+        const notes = document.createElement('small');
+        notes.textContent = `${voice.notes.join(' + ')} Hz`;
+        row.append(notes);
+        list.append(row);
+      }
+    </script>
+  </body>
+</html>

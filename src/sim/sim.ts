@@ -56,7 +56,7 @@ export interface Result {
 }
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
-const GROUND_THICKNESS = 3;
+const GROUND_THICKNESS = 5;
 /** The truck this far below the road, for this long, has fallen into a pit. */
 const PIT_DEPTH = 0.6;
 const PIT_SECONDS = 1;
@@ -133,6 +133,7 @@ export class Sim {
   private strikes: { x: number; y: number; z: number }[] = [];
   private blasts: Blast[] = [];
   private pileups: { x: number; z: number; speed: number }[] = [];
+  private horns: { x: number; z: number; long: number; car: number }[] = [];
   private readonly eventQueue: RAPIER.EventQueue;
   private readonly startPoses: Pose[] = [];
 
@@ -232,6 +233,7 @@ export class Sim {
     const walkers = this.pedestrians.inRoad().map((p) => p.pos);
     this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
     this.pileups.push(...this.traffic.pileups);
+    this.horns.push(...this.traffic.horns);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
     this.world.step(this.eventQueue);
     this.eventQueue.drainContactForceEvents((event) => {
@@ -282,6 +284,18 @@ export class Sim {
     const out = this.pileups;
     this.pileups = [];
     return out;
+  }
+
+  /** Horns sounded at the truck since the last call: where, and how long a blast, 0 to 1. */
+  drainHorns(): { x: number; z: number; long: number; car: number }[] {
+    const out = this.horns;
+    this.horns = [];
+    return out;
+  }
+
+  /** Live wires that have parted since the last call: where the loose end of each is. */
+  drainArcs(): { x: number; y: number; z: number }[] {
+    return this.objects.drainArcs();
   }
 
   /** Explosions since the last call. */
@@ -387,6 +401,7 @@ export class Sim {
     this.strikes = [];
     this.blasts = [];
     this.pileups = [];
+    this.horns = [];
     this.result = null;
   }
 

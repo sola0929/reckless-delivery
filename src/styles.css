@@ -379,8 +379,20 @@ body {
 }
 
 #result-reason:empty,
+#result-verdict:empty,
 #result-record:empty {
   display: none;
+}
+
+/* What the customer has to say about it. */
+#result-verdict {
+  margin: 0 auto 12px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  background: rgba(255, 209, 102, 0.1);
+  color: #ffe2a0;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 /* What arrived: the figure, and a bar of it with the second star's mark on it. */

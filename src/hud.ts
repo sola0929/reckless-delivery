@@ -2,6 +2,7 @@ import type { RecordsSet } from './best';
 import { soundButtons } from './jukebox';
 import type { LevelDef } from './levels/types';
 import { soundSettings } from './sound-settings';
+import { verdict } from './verdict';
 import { CARGO_TYPES, type CargoType } from './sim/cargo-types';
 import type { Failure, Result } from './sim/sim';
 
@@ -215,6 +216,7 @@ export class Hud {
     el('result-title').className = passed ? 'passed' : 'failed';
     el('result-stars').innerHTML = [0, 1, 2].map((n) => `<span class="${n < result.stars ? 'on' : ''}" style="animation-delay:${0.25 + n * 0.22}s">★</span>`).join('');
     el('result-reason').textContent = reason;
+    el('result-verdict').textContent = this.level.finish ? `「${verdict(result, this.level)}」` : '';
 
     const [pass, two] = this.level.stars;
     const percent = Math.floor(result.fraction * 100);

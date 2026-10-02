@@ -1,5 +1,7 @@
 import { levelStates, loadBest } from './best';
-import { playMusic, soundButtons } from './jukebox';
+import { loadChoice, saveChoice, type QualityChoice } from './graphics-choice';
+import { playMusic, soundButtons, uiSound } from './jukebox';
+import { soundSettings } from './sound-settings';
 import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST } from './levels';
 
 // The page is the main menu until a level is named in its address, and the game after that.
@@ -70,6 +72,30 @@ function showMenu(): void {
 
   // "Start" goes to the delivery furthest along that can be played.
   const next = LEVEL_LIST.filter((_, i) => states[i] === 'open' || states[i] === 'done').pop()?.id ?? FIRST_LEVEL;
+  // Settings: the volumes and the picture quality, the same ones the pause menu has.
+  const sfx = document.getElementById('set-sfx') as HTMLInputElement;
+  const music = document.getElementById('set-music') as HTMLInputElement;
+  const mute = document.getElementById('set-mute') as HTMLInputElement;
+  soundSettings.watch((settings) => {
+    sfx.value = String(Math.round(settings.sfx * 100));
+    music.value = String(Math.round(settings.music * 100));
+    mute.checked = settings.muted;
+  });
+  sfx.addEventListener('input', () => soundSettings.set({ sfx: Number(sfx.value) / 100 }));
+  // Let go of the slider, and hear how loud that is.
+  sfx.addEventListener('change', () => uiSound('confirm'));
+  music.addEventListener('input', () => soundSettings.set({ music: Number(music.value) / 100 }));
+  mute.addEventListener('change', () => soundSettings.set({ muted: mute.checked }));
+  const qualities = [...menu.querySelectorAll<HTMLButtonElement>('#set-quality button')];
+  const showQuality = () => qualities.forEach((button) => button.classList.toggle('on', button.dataset.quality === loadChoice()));
+  for (const button of qualities) {
+    button.addEventListener('click', () => {
+      saveChoice(button.dataset.quality as QualityChoice);
+      showQuality();
+    });
+  }
+  showQuality();
+
   document.getElementById('menu-start')!.addEventListener('click', () => play(next));
   for (const button of menu.querySelectorAll<HTMLElement>('[data-page]')) {
     button.addEventListener('click', () => open(button.dataset.page!));

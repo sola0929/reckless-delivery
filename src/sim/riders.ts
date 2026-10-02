@@ -21,10 +21,11 @@ const SWERVE = 3.4;
 /** Their speed round a U-turn, and the least room they turn in. */
 const TURNING = 4.5;
 const TURN_ROOM = 2.2;
-/** How long a scooter lies where it was knocked before it is ridden off again. */
-const KNOCKED_SECONDS = 8;
-/** It only goes back once the truck is at least this far from its place on the road. */
-const RETURN_CLEARANCE = 18;
+/** A rider walks back to their scooter at this speed, m/s, and is at it within this distance. */
+const WALK = 3.2;
+const REACH = 0.9;
+/** They don't get back on while the truck is this close to it. */
+const MOUNT_CLEARANCE = 6;
 /** How long its rider lies in the road. */
 const DOWN_SECONDS = 3;
 /** Room left beside whatever is being passed: less for another scooter than for anything else. */
@@ -73,6 +74,9 @@ export interface Rider {
   impact: number;
   /** Seconds left as a loose wreck after a collision; 0 while being ridden. */
   knocked: number;
+  /** While off it: whether they are walking back to it, and which way they face. */
+  walking: boolean;
+  facing: number;
   /** Whether the rider is on it. When not, where they are, and how long they have left lying there. */
   seated: boolean;
   person: Vector3;
@@ -192,7 +196,7 @@ export class Riders {
         const d = road.lo + this.random() * (road.hi - road.lo);
         const rider: Rider = {
           body, road, s, d, speed: 0, drift: 0, cruise: 13 + this.random() * 4.5, wish: d, mind: this.random() * 3, cuts: false, turn: -1, impact: 0,
-          knocked: 0, seated: true, person: new Vector3(), personVelocity: new Vector3(), down: 0, yaw: Math.atan2(road.dir.x, road.dir.z), index: this.list.length,
+          knocked: 0, walking: false, facing: 0, seated: true, person: new Vector3(), personVelocity: new Vector3(), down: 0, yaw: Math.atan2(road.dir.x, road.dir.z), index: this.list.length,
           start: { road, s, d },
         };
         rider.speed = rider.cruise;
@@ -222,14 +226,8 @@ export class Riders {
     const seen = this.roads.map((road) => this.obstacles(road, t, tv, truckForward, truckSide, traffic, walkers));
 
     for (const rider of this.list) {
-      if (!rider.seated) this.tumble(rider, dt);
       if (rider.knocked > 0) {
-        rider.knocked -= dt;
-        if (rider.knocked <= 0) {
-          v.copy(rider.road.from).addScaledVector(rider.road.dir, rider.s);
-          if (Math.hypot(t.x - v.x, t.z - v.z) > RETURN_CLEARANCE) this.restore(rider);
-          else rider.knocked = 0.5;
-        }
+        this.recover(rider, dt, t);
         continue;
       }
 
@@ -508,7 +506,7 @@ export class Riders {
     }
     rider.body.setLinvel({ x: tv.x * 0.85 + at.vx * 0.15 + truckSide.x * side * 5, y: 3.2, z: tv.z * 0.85 + at.vz * 0.15 + truckSide.z * side * 5 }, true);
     rider.body.setAngvel({ x: truckSide.z * side * 4, y: side * 3, z: -truckSide.x * side * 4 }, true);
-    rider.knocked = KNOCKED_SECONDS;
+    rider.knocked = 1;
     rider.impact = Math.hypot(at.vx - tv.x, at.vz - tv.z);
     rider.speed = 0;
     rider.drift = 0;
@@ -521,6 +519,47 @@ export class Riders {
     this.hits++;
     this.events.push(rider);
     this.fresh.push(rider);
+  }
+
+  /**
+   * A rider who has been knocked off: they fly, lie where they land for a moment, get up,
+   * walk back to wherever their scooter has ended up, stand it up and ride on from there.
+   */
+  private recover(rider: Rider, dt: number, truck: { x: number; z: number }): void {
+    rider.walking = false;
+    const p = rider.person;
+    if (p.y > 0 || rider.personVelocity.y > 0 || rider.down > 0) {
+      this.tumble(rider, dt);
+      return;
+    }
+    const at = rider.body.translation();
+    // Gone into the river or down a hole: there is no fetching it. They start again from where they set out.
+    if (at.y < -1) {
+      Object.assign(rider, rider.start);
+      this.restore(rider);
+      return;
+    }
+    const dx = at.x - p.x;
+    const dz = at.z - p.z;
+    const away = Math.hypot(dx, dz);
+    if (away > REACH) {
+      rider.walking = true;
+      rider.facing = Math.atan2(dx, dz);
+      p.x += (dx / away) * WALK * dt;
+      p.z += (dz / away) * WALK * dt;
+      return;
+    }
+    // At the scooter: but not while the truck is still on top of it.
+    rider.facing = Math.atan2(rider.road.dir.x, rider.road.dir.z);
+    if (Math.hypot(truck.x - at.x, truck.z - at.z) < MOUNT_CLEARANCE) return;
+    // Back onto the road where the scooter lies, or as near to there as the road goes.
+    const { road } = rider;
+    const rx = at.x - road.from.x;
+    const rz = at.z - road.from.z;
+    rider.s = rx * road.dir.x + rz * road.dir.z;
+    rider.d = rx * road.left.x + rz * road.left.z;
+    rider.wish = clamp(rider.d, road.lo, road.hi);
+    this.restore(rider);
   }
 
   /** A thrown rider: through the air, along the road, and a lie-down. */
@@ -552,6 +591,7 @@ export class Riders {
     rider.body.setLinvel(zero, true);
     rider.body.setAngvel(zero, true);
     rider.knocked = 0;
+    rider.walking = false;
     rider.speed = 0;
     rider.drift = 0;
     rider.turn = -1;

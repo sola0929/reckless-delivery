@@ -126,15 +126,16 @@ export class RidersView {
         this.place(this.legs, i * 2 + 1, -0.13, 0.84, -0.12, -1.15);
         return;
       }
-      // Thrown off: on their back in the road, and then on their feet beside it, waiting.
+      // Thrown off: on their back in the road, and then on their feet, walking back to it.
       const lying = rider.down > 0;
-      this.euler.set(lying ? -Math.PI / 2 : 0, rider.yaw, 0);
+      const stride = rider.walking ? Math.sin(performance.now() * 0.012 + i) * 0.65 : 0;
+      this.euler.set(lying ? -Math.PI / 2 : 0, lying ? rider.yaw : rider.facing, 0);
       this.base.compose(rider.person, this.rot.setFromEuler(this.euler), this.one);
       const lift = lying ? 0.25 : 0;
       this.place(this.torsos, i, 0, 1.05 + lift, 0, 0);
       this.place(this.heads, i, 0, 1.62 + lift, 0, 0);
-      this.place(this.legs, i * 2, 0.11, 0.72 + lift, 0, 0);
-      this.place(this.legs, i * 2 + 1, -0.11, 0.72 + lift, 0, 0);
+      this.place(this.legs, i * 2, 0.11, 0.72 + lift, 0, stride);
+      this.place(this.legs, i * 2 + 1, -0.11, 0.72 + lift, 0, -stride);
     });
     for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
