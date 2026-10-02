@@ -9,6 +9,7 @@ import { playMusic, uiSound } from './jukebox';
 import { FIRST_LEVEL, LEVELS } from './levels';
 import { Minimap } from './minimap';
 import { ChaseCamera } from './render/camera';
+import { BattleView } from './render/battleView';
 import { CargoViews } from './render/cargoView';
 import { DriverView } from './render/driverView';
 import { Bursts, Smoke } from './render/effects';
@@ -79,6 +80,15 @@ const objectsView = new ObjectsView(view.scene, sim.objects.objects);
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
+const battleView = new BattleView(view.scene, sim.battle, level.battle);
+battleView.onTrail = (at) => smoke.emit(at, NO_DRIFT);
+// The warning that something has the truck in its sights: a ring that closes on it, and what it is.
+const lockRing = document.createElement('div');
+lockRing.id = 'lock';
+lockRing.innerHTML = '<i></i><span></span>';
+lockRing.hidden = true;
+document.getElementById('hud')!.append(lockRing);
+let beepWait = 0;
 const cargoViews = new CargoViews(view.scene, bursts);
 cargoViews.rebuild(sim);
 
@@ -348,8 +358,11 @@ function arcWires(dt: number): void {
   }
 }
 
-/** A cylinder of gas going off: a ball of fire, smoke after it, and everything in earshot knows. */
-function showBlast(at: { x: number; y: number; z: number }): void {
+/** What is said over each kind of explosion. A shell landing says nothing: there are too many. */
+const BLAST_WORDS: Record<string, string> = { gas: '瓦斯爆炸！', drum: '油桶爆炸！', mine: '地雷！', rocket: '火箭彈！', tank: '坦克砲！' };
+
+/** Something going off: a ball of fire, smoke after it, and everything in earshot knows. */
+function showBlast(at: { x: number; y: number; z: number; kind?: string }): void {
   splashAt.set(at.x, at.y + 0.6, at.z);
   bursts.emit(splashAt, 'fire', 190, 16, 1.1);
   bursts.emit(splashAt, 'sparks', 110, 20, 1);
@@ -360,8 +373,9 @@ function showBlast(at: { x: number; y: number; z: number }): void {
   audio.bump(4 + near * 10);
   audio.knock('barrel', near, 1);
   chase.shake(0.4 + near * 1.8);
-  const spot = toScreen(at, 2.2);
-  if (spot) hud.popup('瓦斯爆炸！', spot.x, spot.y, 'big');
+  const words = BLAST_WORDS[at.kind ?? 'gas'];
+  const spot = words ? toScreen(at, 2.2) : null;
+  if (spot) hud.popup(words, spot.x, spot.y, 'big');
 }
 
 let fountainTimer = 0;
@@ -575,6 +589,21 @@ function frame(now: number): void {
       arcs.push({ at: new Vector3(end.x, end.y, end.z), left: ARC_SECONDS * (0.7 + Math.random() * 0.5), next: 0 });
       bursts.emit(splashAt.set(end.x, end.y, end.z), 'arc', 40, 9, 0.8);
     }
+    for (const sound of sim.drainBattleSounds()) {
+      const from = sim.truck.body.translation();
+      const near = hearing(Math.hypot(sound.x - from.x, sound.z - from.z));
+      if (near === 0) continue;
+      if (sound.kind === 'gun') audio.thud('bone', 0.5 + near * 0.5, 0.1);
+      else if (sound.kind === 'launch') audio.whoosh(near, false);
+      else if (sound.kind === 'whistle') audio.whoosh(near, true);
+      else audio.bump(5 + near * 8);
+    }
+    if (sim.drainShots() > 0) {
+      // Rounds going into the load: chips off whatever they hit, and the sound of it.
+      const from = sim.truck.body.translation();
+      bursts.emit(splashAt.set(from.x, from.y + 1.2, from.z), 'splinters', 8, 4);
+      audio.thud('wood', 0.7, 0.2);
+    }
     for (const crash of sim.drainPileups()) {
       // One car into the back of another: metal on metal, with weight behind it.
       const at = sim.truck.body.translation();
@@ -627,6 +656,21 @@ function frame(now: number): void {
   spoutGeysers(dt);
   crackle(dt);
   arcWires(dt);
+  battleView.update(dt, truckMesh.root.position, level.battle);
+  // Locked on to: the ring closes in on the truck as the moment comes, and the beeps crowd together.
+  const threat = sim.result ? null : sim.battle.threat;
+  const ringAt = threat ? toScreen(truckMesh.root.position, 1) : null;
+  lockRing.hidden = !ringAt;
+  if (threat && ringAt) {
+    lockRing.style.left = `${ringAt.x}px`;
+    lockRing.style.top = `${ringAt.y}px`;
+    lockRing.style.setProperty('--close', String(1 - threat.lock));
+    lockRing.lastElementChild!.textContent = threat.kind === 'tank' ? '坦克瞄準中' : '火箭筒鎖定中';
+    if ((beepWait -= dt) <= 0) {
+      beepWait = 0.5 - threat.lock * 0.42;
+      audio.beep(threat.lock);
+    }
+  }
   playFountains(dt);
   truckMesh.updateWheels(sim.truck);
   // The truck shows what it has been through: battered, then smoking. It drives the same.

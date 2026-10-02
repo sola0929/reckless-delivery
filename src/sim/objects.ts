@@ -31,6 +31,11 @@ export interface Blast {
   x: number;
   y: number;
   z: number;
+  /** What it was, and how hard it went, beside a cylinder of gas. */
+  kind: 'gas' | 'drum' | 'mine' | 'shell' | 'rocket' | 'tank';
+  power: number;
+  /** How far it reaches, metres, when that is not as far as a cylinder of gas does. */
+  radius?: number;
 }
 
 /** Something already knocked loose has come down on the ground, or bounced off something. */
@@ -219,7 +224,7 @@ export class ObjectSystem {
           this.under.add(object);
         }
       }
-      if (object.kind.explosive) object.fuse = FUSE_SECONDS;
+      if (object.kind.explosive) object.fuse = object.kind.fuse ?? FUSE_SECONDS;
       object.wrecked = object.kind.wrecked !== undefined && speed >= WRECK_SPEED;
       const [x, y, z] = object.desc.pos;
       const event = { object, at: { x, y, z } };
@@ -245,20 +250,28 @@ export class ObjectSystem {
    */
   private explode(object: LooseObject): void {
     const at = object.body.translation();
-    this.blasts.push({ x: at.x, y: at.y, z: at.z });
+    const bang = object.kind.bang ?? { kind: 'gas' as const, power: 1 };
+    this.blasts.push({ x: at.x, y: at.y, z: at.z, ...bang });
+    this.throwFrom(at, object);
+  }
+
+  /** Throw everything loose that is within reach of a blast, whatever caused it. `object` is the thing that blew up, if it was one of these. */
+  throwFrom(at: { x: number; y: number; z: number; radius?: number }, object: LooseObject | null = null): void {
+    const reach = at.radius ?? BLAST_RADIUS;
     for (const other of this.objects) {
+      if (other.kind.stable && other !== object) continue;
       const p = other.body.translation();
       const dx = p.x - at.x;
       const dz = p.z - at.z;
       const away = Math.hypot(dx, dz);
-      if (away > BLAST_RADIUS) continue;
+      if (away > reach) continue;
       if (other === object) {
         other.body.setLinvel({ x: (this.random() - 0.5) * 6, y: 15, z: (this.random() - 0.5) * 6 }, true);
         other.body.setAngvel({ x: 9, y: 2, z: 7 }, true);
         continue;
       }
       const mass = other.body.mass();
-      const push = BLAST_SPEED * (1 - away / BLAST_RADIUS) * Math.min(1, 150 / mass);
+      const push = BLAST_SPEED * (1 - away / reach) * Math.min(1, 150 / mass);
       const out = Math.max(away, 0.3);
       other.body.applyImpulse({ x: (dx / out) * push * mass, y: push * 0.7 * mass, z: (dz / out) * push * mass }, true);
       other.body.applyTorqueImpulse({ x: (this.random() - 0.5) * mass * 2, y: 0, z: (this.random() - 0.5) * mass * 2 }, true);

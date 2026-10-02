@@ -1,8 +1,9 @@
 import { city } from './city';
+import { range } from './range';
 import { sandbox } from './sandbox';
 import type { LevelDef } from './types';
 
-export const LEVELS: Record<string, () => LevelDef> = { city, sandbox };
+export const LEVELS: Record<string, () => LevelDef> = { city, sandbox, range };
 
 export const FIRST_LEVEL = 'city';
 
@@ -24,5 +25,8 @@ export const LEVEL_LIST: LevelEntry[] = [
   { id: 'ice', name: '冰原', badge: '4', note: '路面結冰，煞車要提早', ready: false },
 ];
 
-/** Somewhere to drive about with nothing at stake. Always open, and keeps no record. */
-export const FREE_PLAY: LevelEntry = { id: 'sandbox', name: '測試場', badge: '∞', note: '沒有目標，隨便開、隨便撞', ready: true };
+/** Places to drive about with nothing at stake. Always open, and they keep no record. */
+export const FREE_PLAY: LevelEntry[] = [
+  { id: 'sandbox', name: '測試場', badge: '∞', note: '沒有目標，隨便開、隨便撞', ready: true },
+  { id: 'range', name: '戰場試驗場', badge: '⚑', note: '第二關的機制先在這裡試：砲擊、交火、火箭筒、坦克、煙霧、地雷', ready: true },
+];

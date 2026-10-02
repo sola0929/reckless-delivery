@@ -672,3 +672,39 @@ button.quiet:hover {
   55% { opacity: 0.85; }
   100% { opacity: 0; margin-top: var(--run); scale: 0.96 1.25; }
 }
+
+/* Something has the truck in its sights: a ring round it that closes as the moment comes. */
+#lock {
+  position: absolute;
+  width: 0;
+  height: 0;
+  --close: 1;
+}
+
+#lock i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(90px + 150px * var(--close));
+  height: calc(90px + 150px * var(--close));
+  translate: -50% -50%;
+  border: 3px solid #ff3a2a;
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(255, 58, 42, 0.6), inset 0 0 18px rgba(255, 58, 42, 0.35);
+  opacity: calc(1 - var(--close) * 0.5);
+}
+
+#lock span {
+  position: absolute;
+  left: 50%;
+  top: calc(-70px - 75px * var(--close));
+  translate: -50% 0;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: #ff3a2a;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}

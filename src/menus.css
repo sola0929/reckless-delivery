@@ -390,6 +390,7 @@ body.in-menu #hud {
 .level-thumb.forest { background: linear-gradient(160deg, #2f6b4a, #9ac46a); }
 .level-thumb.mountain { background: linear-gradient(160deg, #6a5a7a, #d9a27a); }
 .level-thumb.ice { background: linear-gradient(160deg, #6fa8d8, #e8f4fa); }
+.level-thumb.range { background: linear-gradient(160deg, #5a5f48, #b08a5a); }
 .level-thumb.sandbox { background: repeating-linear-gradient(45deg, #5b626b 0 12px, #666d77 12px 24px); }
 
 /* Where it stands, in the corner of the picture. */
@@ -487,6 +488,7 @@ body.in-menu #hud {
 .level-free {
   position: relative;
   display: grid;
+  width: 100%;
   grid-template-columns: 84px 1fr;
   gap: 16px;
   align-items: center;

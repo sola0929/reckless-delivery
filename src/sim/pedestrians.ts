@@ -45,10 +45,15 @@ export interface Vehicle {
 
 const CLOTHES = [0x3a6fb3, 0xb33a3a, 0x4a8f5a, 0xe0c341, 0x8a5fb3, 0xd9792b, 0x2f3b4a, 0xd9d9d9, 0x3aa6a6];
 const VEST = 0xf07a1a;
+/** The two armies: what their soldiers wear, and on their heads. */
+const UNIFORM = [0x4f7a9a, 0xc8713a];
+const HELMET = [0x2f4a5c, 0x7a4424];
 const DASH_SPEED = 5;
 /** The truck has to be going at least this fast to send someone flying, or to scare them. */
 const HIT_SPEED = 1.5;
 const SCARE_SPEED = 3;
+/** Nobody on foot comes nearer than this to a truck that is standing or crawling, metres from its sides. */
+const BERTH = 1.7;
 const DOWN_SECONDS = 3;
 const HALF_WIDTH = TRUCK.frame.half[0] + 0.3;
 const HALF_LENGTH = TRUCK.frame.half[2] + 0.3;
@@ -65,6 +70,8 @@ export class Pedestrians {
   readonly list: Pedestrian[] = [];
   /** How many have been sent flying since the last reset. */
   hits = 0;
+  /** Those run down during the latest step. */
+  fresh: Pedestrian[] = [];
   private events: Pedestrian[] = [];
   private seed = 7;
 
@@ -85,8 +92,8 @@ export class Pedestrians {
           yaw: this.random() * Math.PI * 2,
           state: 'wait',
           speed: 0,
-          color: crowd.workers ? VEST : CLOTHES[n++ % CLOTHES.length],
-          hat: crowd.workers ? (i % 4 ? 0xf2c12e : 0xf2efe6) : null,
+          color: crowd.army !== undefined ? UNIFORM[crowd.army] : crowd.workers ? VEST : CLOTHES[n++ % CLOTHES.length],
+          hat: crowd.army !== undefined ? HELMET[crowd.army] : crowd.workers ? (i % 4 ? 0xf2c12e : 0xf2efe6) : null,
           crowd,
           home: pos.clone(),
           target: this.pointIn(crowd, far),
@@ -112,6 +119,7 @@ export class Pedestrians {
     const tv = truck.body.linvel();
     const truckSpeed = Math.hypot(tv.x, tv.z);
     q.set(r.x, r.y, r.z, r.w).invert();
+    this.fresh = [];
 
     for (const p of this.list) {
       if (p.crowd.fenced) this.keepIn(p);
@@ -133,6 +141,7 @@ export class Pedestrians {
         p.speed = 0;
         this.hits++;
         this.events.push(p);
+        this.fresh.push(p);
         continue;
       }
 
@@ -154,6 +163,17 @@ export class Pedestrians {
         }
       }
       if (!threatened) p.alarm = 0;
+
+      // Soldiers only, and nobody in a city: a truck standing, or crawling, is not walked up to,
+      // and whoever it has stopped beside moves off, so that it does not run them down the
+      // moment it sets off, and bring their tanks down on it.
+      if (p.crowd.army !== undefined && truckSpeed <= SCARE_SPEED && p.state !== 'flee' && Math.abs(local.x) < HALF_WIDTH + BERTH && Math.abs(local.z) < HALF_LENGTH + BERTH) {
+        const ox = p.pos.x - t.x;
+        const oz = p.pos.z - t.z;
+        const out = Math.hypot(ox, oz) || 1;
+        p.target.set(p.pos.x + (ox / out) * 3, p.pos.y, p.pos.z + (oz / out) * 3);
+        p.state = 'walk';
+      }
 
       if (p.state === 'wait') {
         p.speed = 0;

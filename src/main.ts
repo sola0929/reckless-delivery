@@ -9,7 +9,7 @@ import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST } from './levels';
 const chosen = new URLSearchParams(location.search).get('level');
 const states = levelStates(LEVEL_LIST);
 /** Whether a level may be played: free play always, a delivery once it is open. */
-const playable = (id: string) => id === FREE_PLAY.id || ['open', 'done'].includes(states[LEVEL_LIST.findIndex((level) => level.id === id)]);
+const playable = (id: string) => FREE_PLAY.some((level) => level.id === id) || ['open', 'done'].includes(states[LEVEL_LIST.findIndex((level) => level.id === id)]);
 
 if (chosen && LEVELS[chosen] && playable(chosen)) void import('./game');
 else showMenu();
@@ -67,8 +67,14 @@ function showMenu(): void {
   });
   document.getElementById('menu-level-stars')!.textContent = `${earned} / ${LEVEL_LIST.length * 3}`;
   const free = document.getElementById('menu-free')!;
-  free.innerHTML = `<div class="level-thumb ${FREE_PLAY.id}"><span>${FREE_PLAY.badge}</span></div><div><div class="level-name">${FREE_PLAY.name}</div><div class="level-note">${FREE_PLAY.note}</div></div><div class="level-state">自由模式</div>`;
-  free.addEventListener('click', () => play(FREE_PLAY.id));
+  for (const { id, name, badge, note } of FREE_PLAY) {
+    const strip = document.createElement('button');
+    strip.type = 'button';
+    strip.className = 'level-free';
+    strip.innerHTML = `<div class="level-thumb ${id}"><span>${badge}</span></div><div><div class="level-name">${name}</div><div class="level-note">${note}</div></div><div class="level-state">自由模式</div>`;
+    strip.addEventListener('click', () => play(id));
+    free.append(strip);
+  }
 
   // "Start" goes to the delivery furthest along that can be played.
   const next = LEVEL_LIST.filter((_, i) => states[i] === 'open' || states[i] === 'done').pop()?.id ?? FIRST_LEVEL;

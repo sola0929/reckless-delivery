@@ -4,6 +4,7 @@ import { GROUP, PHYSICS, groups } from '../config';
 import { sandbox } from '../levels/sandbox';
 import { groundTiles } from '../levels/ground';
 import type { LevelDef, PitDesc, PropDesc, TrackDesc } from '../levels/types';
+import { Battle, type BattleSound } from './battle';
 import { CargoSystem, type CargoEvent, type CargoItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
 import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
@@ -83,10 +84,14 @@ const WEAR_STEP_MAX = 40;
 /** A blast right beside the truck shakes the load by this much, m/s, and shoves the truck this fast. */
 const BLAST_JOLT = 20;
 const BLAST_SHOVE = 2.6;
+/** How hard a direct hit throws the truck, beside a tank's: a small shell only hops it. */
+const FLING = { shell: 0.5, rocket: 0.75, tank: 1 };
 /** How much of that a car passes on, beside what a roadside object of the same weight would: it gives. */
 const CAR_JOLT = 0.7;
 /** A scooter passes on rather more for its weight: light as it is, it would otherwise cost nothing at all. It still comes to well under a car's. */
 const SCOOTER_JOLT = 1.25;
+/** What one round of gunfire takes out of whatever it hits, of a hundred. */
+const GUN_DAMAGE = 9;
 const PARKED: DriveInput = { throttle: 0, steer: 0, handbrake: true };
 
 /** One star for passing, a second for delivering most of the load, a third for doing that inside the par time. */
@@ -110,6 +115,11 @@ export class Sim {
   readonly water: Water;
   readonly objects: ObjectSystem;
   readonly pedestrians: Pedestrians;
+  readonly battle: Battle;
+  /** Seconds since the truck was last thrown by a direct hit: while it is in the air from one, landing on its roof is not held against it. */
+  private flung = 0;
+  private battleSounds: BattleSound[] = [];
+  private shots = 0;
   /** Value of the full load when undamaged. */
   readonly fullValue: number;
   /** Seconds since the start line was crossed; stops at delivery. */
@@ -201,6 +211,7 @@ export class Sim {
     this.objects = new ObjectSystem(this.world, level.objects ?? []);
     this.follow();
     this.pedestrians = new Pedestrians(level.crowds ?? []);
+    this.battle = new Battle(this.world, level.battle);
     this.cargoSystem = new CargoSystem(this.world, level.damageScale ?? 1);
     this.cargoSystem.load(level.cargo, level.spawn, level.heading);
     this.fullValue = this.cargo.reduce((sum, item) => sum + item.type.value, 0);
@@ -217,6 +228,8 @@ export class Sim {
   step(input: DriveInput, foot: FootInput = NO_FOOT_INPUT): void {
     const driving = this.driver.mode === 'driving' && !this.result;
     this.truck.grip = this.gripAt(this.truck.body.translation());
+    this.truck.drag = this.dragAt(this.truck.body.translation());
+    this.flung -= PHYSICS.dt;
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
     this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.riders, this.trains, !this.result);
     this.trains.update(PHYSICS.dt);
@@ -246,10 +259,22 @@ export class Sim {
     this.stalled = trying ? this.stalled + PHYSICS.dt : 0;
     this.objects.update(this.truck, this.stalled > STALL_SECONDS);
     for (const blast of this.objects.blasts) this.blast(blast);
+    this.battle.update(PHYSICS.dt, this.truck);
+    for (const burst of this.battle.bursts) {
+      this.objects.throwFrom(burst);
+      this.blast(burst);
+      if (burst.direct) this.fling(burst, FLING[burst.kind]);
+    }
+    // Gunfire goes through the load: each round that finds the truck takes something out of one thing aboard.
+    for (let i = 0; i < this.battle.hits; i++) this.cargoSystem.shoot(this.truck, GUN_DAMAGE);
+    this.shots += this.battle.hits;
+    this.battleSounds.push(...this.battle.sounds);
     this.shake();
     this.soak();
     this.follow();
     this.pedestrians.update(PHYSICS.dt, this.truck, this.vehicles());
+    // A soldier run down: his army's tanks nearby take it badly.
+    for (const p of this.pedestrians.fresh) if (p.crowd.army !== undefined) this.battle.rouse(p.crowd.army, p.pos.x, p.pos.z);
     if (!this.started) this.started = this.pastStart();
     if (!this.result) {
       if (this.started) this.time += PHYSICS.dt;
@@ -296,6 +321,20 @@ export class Sim {
   /** Live wires that have parted since the last call: where the loose end of each is. */
   drainArcs(): { x: number; y: number; z: number }[] {
     return this.objects.drainArcs();
+  }
+
+  /** What the battle has sounded since the last call. */
+  drainBattleSounds(): BattleSound[] {
+    const out = this.battleSounds;
+    this.battleSounds = [];
+    return out;
+  }
+
+  /** How many rounds of gunfire have gone into the load since the last call. */
+  drainShots(): number {
+    const out = this.shots;
+    this.shots = 0;
+    return out;
   }
 
   /** Explosions since the last call. */
@@ -376,6 +415,10 @@ export class Sim {
     this.truck.reset();
     this.traffic.reset();
     this.riders.reset();
+    this.battle.reset();
+    this.flung = 0;
+    this.battleSounds = [];
+    this.shots = 0;
     const zero = { x: 0, y: 0, z: 0 };
     for (const p of this.startPoses) {
       p.body.setTranslation(p.pos, true);
@@ -431,7 +474,8 @@ export class Sim {
 
   /** An overturned truck ends the run. In free play there is no run to end, so it is set back on its wheels. */
   private overturn(): void {
-    if (this.level.finish) {
+    // Blown onto its roof by a direct hit, it is set back on its wheels: being hit never ends a run.
+    if (this.level.finish && this.flung <= 0) {
       this.fail('overturned');
       return;
     }
@@ -461,7 +505,7 @@ export class Sim {
 
   private gripAt(p: { x: number; z: number }): number {
     for (const s of this.level.slicks ?? []) if (Math.abs(p.x - s.pos[0]) < s.half[0] && Math.abs(p.z - s.pos[1]) < s.half[1]) return s.grip;
-    return 1;
+    return this.patchAt(p) === 'mud' ? 0.6 : 1;
   }
 
   /**
@@ -486,20 +530,52 @@ export class Sim {
    */
   private blast(at: Blast): void {
     this.blasts.push(at);
-    this.pedestrians.blast(at.x, at.z, BLAST_RADIUS);
-    this.riders.blast(at.x, at.z, BLAST_RADIUS);
-    this.driver.blast(at.x, at.z, BLAST_RADIUS, this.cargoSystem);
+    const reach = at.radius ?? BLAST_RADIUS;
+    this.pedestrians.blast(at.x, at.z, reach);
+    this.riders.blast(at.x, at.z, reach);
+    this.driver.blast(at.x, at.z, reach, this.cargoSystem);
     const t = this.truck.body.translation();
     const dx = t.x - at.x;
     const dz = t.z - at.z;
     // From the nearest part of the truck, near enough, rather than from its middle.
     const away = Math.max(0, Math.hypot(dx, dz) - 2.5);
-    const near = 1 - away / BLAST_RADIUS;
+    const near = (1 - away / reach) * at.power;
     if (near <= 0) return;
     const out = Math.max(Math.hypot(dx, dz), 0.3);
     const mass = this.truck.body.mass();
     this.truck.body.applyImpulse({ x: (dx / out) * BLAST_SHOVE * near * mass, y: BLAST_SHOVE * 0.2 * near * mass, z: (dz / out) * BLAST_SHOVE * near * mass }, true);
     this.cargoSystem.jolt(BLAST_JOLT * near, this.truck);
+  }
+
+  /**
+   * A rocket or a tank's shell has struck the truck itself: it is thrown, load and all, away
+   * from where it was hit, and spun. It comes down on its wheels or is set back on them.
+   */
+  private fling(at: { x: number; z: number }, strength: number): void {
+    const body = this.truck.body;
+    const t = body.translation();
+    const dx = t.x - at.x;
+    const dz = t.z - at.z;
+    const out = Math.max(Math.hypot(dx, dz), 0.3);
+    const lv = body.linvel();
+    const thrown = { x: lv.x * 0.5 + (dx / out) * 7 * strength, y: 6.5 * strength, z: lv.z * 0.5 + (dz / out) * 7 * strength };
+    for (const item of this.cargo) if (item.body && !item.held && this.truck.isOnBed(item.body.translation())) item.body.setLinvel(thrown, true);
+    body.setLinvel(thrown, true);
+    body.setAngvel({ x: 0, y: (dx * dz > 0 ? 2 : -2) * strength, z: 0 }, true);
+    this.flung = 5;
+  }
+
+  /** How much the ground under a point holds the truck back, and how well the tyres grip it. */
+  private patchAt(p: { x: number; z: number }): 'mud' | 'wire' | null {
+    for (const patch of this.level.battle?.patches ?? []) {
+      if (Math.abs(p.x - patch.pos[0]) < patch.half[0] && Math.abs(p.z - patch.pos[1]) < patch.half[1]) return patch.kind;
+    }
+    return null;
+  }
+
+  private dragAt(p: { x: number; z: number }): number {
+    const patch = this.patchAt(p);
+    return patch === 'wire' ? 1 : patch === 'mud' ? 0.6 : 0;
   }
 
   /** Running into something heavy checks the truck, and the load feels it. */

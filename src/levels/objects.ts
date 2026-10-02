@@ -37,6 +37,12 @@ export interface ObjectKind {
   juice?: number;
   /** Goes off a moment after it is knocked, and throws everything near it. */
   explosive?: boolean;
+  /** How long after: seconds. A mine does not wait. */
+  fuse?: number;
+  /** What it is when it goes off, for whoever tells the player; and how hard, beside a cylinder of gas. */
+  bang?: { kind: 'gas' | 'drum' | 'mine'; power: number };
+  /** Left alone by other blasts: neither thrown by them nor set off. A mine stays where it was laid. */
+  stable?: boolean;
   /** Goes on banging and flashing for a while where it stood: a string of firecrackers. */
   crackle?: boolean;
   /**
@@ -479,6 +485,23 @@ export const OBJECT_KINDS = {
       box([0.24, 0.05, 0.01], [0, 0.2, -0.3], 0xd0302a, { rot: [0.32, 0, 0], ghost: true }),
     ],
   },
+  /** A mine, half buried: a dark disc with a prong in the middle. It goes off the moment it is touched. */
+  mine: {
+    mass: 6,
+    explosive: true,
+    fuse: 0.02,
+    bang: { kind: 'mine', power: 1.5 },
+    stable: true,
+    parts: [cyl(0.3, 0.05, [0, 0.05, 0], 0x4a5240), cyl(0.2, 0.02, [0, 0.11, 0], 0x33382c, { ghost: true }), cyl(0.04, 0.05, [0, 0.16, 0], 0xb5533c, { ghost: true })],
+  },
+  /** A drum of fuel: red, with a band. It goes up like the gas does. */
+  oilDrum: {
+    mass: 45,
+    explosive: true,
+    bang: { kind: 'drum', power: 1.2 },
+    parts: [cyl(0.32, 0.46, [0, 0.46, 0], 0xb5362a), cyl(0.33, 0.04, [0, 0.62, 0], 0x2a2e33, { ghost: true }), cyl(0.33, 0.04, [0, 0.3, 0], 0x2a2e33, { ghost: true })],
+  },
+  sandbag: { mass: 30, parts: [box([0.45, 0.14, 0.24], [0, 0.14, 0], 0xb9a57a)] },
   /** A length of concrete pipe, lying on its side: it rolls. */
   pipe: { mass: 90, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
   /** Bricks on a pallet. */

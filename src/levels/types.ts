@@ -75,6 +75,8 @@ export interface CrowdDesc {
   count: number;
   /** Height of the ground there. */
   y: number;
+  /** Soldiers of one army or the other: in its colour, and a helmet. Run one down and that army's tanks nearby take notice. */
+  army?: 0 | 1;
   /** People at work: in a hard hat and an orange vest. */
   workers?: boolean;
   /** Walled in: whatever happens, they stay on their patch, and are not chased or thrown through its edges. */
@@ -164,6 +166,69 @@ export interface GateDesc {
   track: number;
 }
 
+/** A stretch of ground that is being shelled while the truck is on it. */
+export interface ShellZone {
+  /** [minX, minZ, maxX, maxZ] */
+  area: [number, number, number, number];
+  /** Seconds between one shell and the next, about. */
+  every: number;
+}
+
+/**
+ * A stretch where the two armies are firing at each other across the road, from its low-X
+ * edge and its high-X edge: stray rounds all over it, none aimed at the truck, any of which
+ * may go through the load. Whatever is solid stops them, so a wreck is something to be behind.
+ */
+export interface CrossfireDesc {
+  /** [minX, minZ, maxX, maxZ] */
+  area: [number, number, number, number];
+  /** Rounds a second that cross the stretch of it round the truck. */
+  rate: number;
+}
+
+/** A soldier with a rocket launcher: locks on to the truck while it is in sight and in range, then fires straight. */
+export interface LauncherDesc {
+  pos: Vec3;
+  range: number;
+  side: 0 | 1;
+}
+
+/**
+ * A tank, standing where it is, shelling the other army a long way off. It takes no notice
+ * of the truck unless the truck runs down one of its own army's soldiers nearby.
+ */
+export interface TankDesc {
+  pos: Vec2;
+  /** The way it faces: radians about Y, 0 = toward +Z. */
+  rotY: number;
+  side: 0 | 1;
+  /** Which way its gun points while it has only the other army to shoot at: radians about Y, in the world. The way the tank faces, if unset. */
+  gun?: number;
+}
+
+/** A patch of the road that holds the truck back: mud, which is also slippery, or barbed wire, which is worse. */
+export interface PatchDesc {
+  pos: Vec2;
+  half: Vec2;
+  kind: 'mud' | 'wire';
+}
+
+/** A bank of smoke: inside it, nothing can be seen but what is close by. */
+export interface SmokeDesc {
+  pos: Vec2;
+  radius: number;
+}
+
+/** Everything about a level that is a battle. */
+export interface BattleDesc {
+  shelling?: ShellZone[];
+  crossfire?: CrossfireDesc[];
+  launchers?: LauncherDesc[];
+  tanks?: TankDesc[];
+  patches?: PatchDesc[];
+  smoke?: SmokeDesc[];
+}
+
 export interface FinishZone {
   pos: Vec2;
   half: Vec2;
@@ -196,6 +261,7 @@ export interface LevelDef {
   cargo: CargoPlacement[];
   traffic: TrafficLane[];
   riders?: RiderLane[];
+  battle?: BattleDesc;
   /** Where water plays: the top of each fountain's jet. */
   fountains?: Vec3[];
   /**

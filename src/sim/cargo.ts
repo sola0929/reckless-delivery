@@ -354,6 +354,12 @@ export class CargoSystem {
     body.setLinvel({ x: lv.x + radius * z, y: lv.y, z: lv.z - radius * x }, false);
   }
 
+  /** A round of gunfire into the load: one thing on the bed, taken at random, loses this much of its health. */
+  shoot(truck: Truck, amount: number): void {
+    const aboard = this.items.filter((item) => item.body && !item.held && item.stage < 3 && truck.isOnBed(item.body.translation()));
+    if (aboard.length) this.damage(aboard[Math.floor(this.random() * aboard.length)], amount * this.damageScale);
+  }
+
   /** Track whether an item is on the truck, and report it falling off or coming back. */
   private settle(item: CargoItem, onBed: boolean, dt: number): void {
     item.offTruckTime = onBed ? 0 : item.offTruckTime + dt;

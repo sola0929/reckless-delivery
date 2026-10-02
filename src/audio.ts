@@ -383,6 +383,47 @@ export class GameAudio {
     playHorn(ctx, this.master, voice, 0.22 + long * (0.35 + Math.random() * 0.35), 0.05 + strength * 0.1, 0.95 + ((car * 37) % 11) * 0.01);
   }
 
+  /** A short note, made on the spot: the warning that something is locking on. Higher and louder the nearer it is to firing. */
+  beep(urgency: number): void {
+    const ctx = this.ctx;
+    if (!ctx || this.paused || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.07 + urgency * 0.07, t + 0.005);
+    gain.gain.linearRampToValueAtTime(0.0001, t + 0.07);
+    const note = ctx.createOscillator();
+    note.type = 'square';
+    note.frequency.value = 880 + urgency * 660;
+    note.connect(gain).connect(this.master);
+    note.start(t);
+    note.stop(t + 0.09);
+  }
+
+  /** A burst of noise swept down or up: a rocket leaving, a shell coming in. */
+  whoosh(strength: number, falling: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || this.paused || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const seconds = falling ? 1.6 : 0.5;
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = falling ? 9 : 2.5;
+    filter.frequency.setValueAtTime(falling ? 2600 : 500, t);
+    filter.frequency.exponentialRampToValueAtTime(falling ? 500 : 2400, t + seconds);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime((falling ? 0.1 : 0.22) * strength, t + (falling ? seconds * 0.8 : 0.04));
+    gain.gain.linearRampToValueAtTime(0.0001, t + seconds);
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start(t);
+  }
+
   /** Something has broken for good: a jar in pieces, a melon burst, a crate in planks. */
   smash(material: Material, weight: number): void {
     const ctx = this.ctx;

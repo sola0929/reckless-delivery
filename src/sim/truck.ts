@@ -28,6 +28,9 @@ export class Truck {
   boosting = false;
   /** How well the tyres hold the road, 1 normally; less on a slick. Set by whoever knows what the truck is driving on. */
   grip = 1;
+  /** How much whatever is under the wheels holds the truck back: 0 on a road, toward 1 in the worst of it. */
+  drag = 0;
+  private dragged = 0;
   /** 0 when off the brakes, up to 1 for a full emergency stop. */
   brakeLevel = 0;
   private steer = 0;
@@ -119,10 +122,14 @@ export class Truck {
     const brakeImpulse = decel * mass * dt;
     const frontBrake = (brakeImpulse * TRUCK.brakeFrontBias) / 2;
 
+    // In mud or wire the engine has less to give, and the truck is dragged back the faster it goes.
+    engine *= 1 - this.drag * 0.5;
+    if (this.drag !== this.dragged) this.body.setLinearDamping((this.dragged = this.drag) * 1.5);
+
     // Less steering lock at speed, so a full key press doesn't flip the truck.
     const t = clamp(Math.abs(speed) / TRUCK.boostMaxSpeed, 0, 1);
     const target = input.steer * (TRUCK.maxSteer + (TRUCK.minSteer - TRUCK.maxSteer) * t);
-    const step = TRUCK.steerRate * dt;
+    const step = TRUCK.steerRate * dt * (1 - this.drag * 0.45);
     this.steer += clamp(target - this.steer, -step, step);
 
     const c = this.controller;
