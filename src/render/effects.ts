@@ -90,6 +90,10 @@ const BURST_STYLES = {
   bone: { colors: [0xece6d2, 0xcfc7ae], size: [0.03, 0.06], stretch: 2, life: [0.8, 1.3] },
   leaves: { colors: [0x4f8a4a, 0x5d9a52, 0x447d44, 0x7fae5a], size: [0.07, 0.14], stretch: 1.6, life: [1.0, 1.9] },
   sparks: { colors: [0xffe9a0, 0xfff6cf, 0xffc24a], size: [0.03, 0.05], stretch: 3, life: [0.25, 0.55] },
+  feathers: { colors: [0xf6f3ea, 0xe6dcc6, 0xc98a4a], size: [0.04, 0.08], stretch: 2.6, life: [1.2, 2.2] },
+  fire: { colors: [0xffb030, 0xff7a1a, 0xffe07a, 0xe8401a], size: [0.1, 0.24], stretch: 1.4, life: [0.3, 0.75] },
+  // Whatever colour it is given: fruit, paint.
+  juice: { colors: [0xffffff], size: [0.06, 0.13], stretch: 1, life: [0.7, 1.4] },
 } as const;
 
 export type BurstStyle = keyof typeof BURST_STYLES;
@@ -124,7 +128,7 @@ export class Bursts {
    * Throw `count` bits out from a point. `power` is their launch speed in m/s; `upward` above
    * 1 sends them more up than out, like a jet.
    */
-  emit(at: THREE.Vector3, style: BurstStyle, count: number, power: number, upward = 1): void {
+  emit(at: THREE.Vector3, style: BurstStyle, count: number, power: number, upward = 1, tint?: number): void {
     const s = BURST_STYLES[style];
     const between = ([lo, hi]: readonly [number, number]) => lo + Math.random() * (hi - lo);
     for (let n = 0; n < count; n++) {
@@ -142,7 +146,10 @@ export class Bursts {
       b.rot.setFromEuler(new THREE.Euler(Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3));
       b.age = 0;
       b.life = between(s.life);
-      this.mesh.setColorAt(i, COLOR.set(s.colors[Math.floor(Math.random() * s.colors.length)]));
+      COLOR.set(tint ?? s.colors[Math.floor(Math.random() * s.colors.length)]);
+      // A given colour is varied a little from one bit to the next.
+      if (tint !== undefined) COLOR.multiplyScalar(0.75 + Math.random() * 0.4);
+      this.mesh.setColorAt(i, COLOR);
     }
     this.mesh.instanceColor!.needsUpdate = true;
   }

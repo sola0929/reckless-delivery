@@ -20,6 +20,15 @@ export interface LooseObject {
   was: { x: number; y: number; z: number } | null;
   /** Seconds before another landing of its will be reported. */
   hush: number;
+  /** For something explosive that has been knocked: seconds until it goes off. Below 0 otherwise. */
+  fuse: number;
+}
+
+/** Something has blown up. */
+export interface Blast {
+  x: number;
+  y: number;
+  z: number;
 }
 
 /** Something already knocked loose has come down on the ground, or bounced off something. */
@@ -55,14 +64,27 @@ const v = new Vector3();
 const side = new Vector3();
 /** Sideways speed given to something heavy when the truck hits it, m/s. */
 const SHOVE = 4;
+/** How long a knocked cylinder of gas rolls about before it goes off, and how far its blast reaches. */
+const FUSE_SECONDS = 0.45;
+export const BLAST_RADIUS = 10;
+/** The speed, m/s, given to something light right beside it. Heavier things get less. */
+const BLAST_SPEED = 18;
+/** Lighter than this, kg, a loose thing is slowed as it rolls or slides. */
+const ROLLS_BELOW = 120;
 const SOLID = groups(GROUP.prop, GROUP.all);
 /** What something caught beneath the truck becomes: solid to everything but the truck. */
 const PASSING_UNDER = groups(GROUP.prop, GROUP.all & ~GROUP.truck);
+/** And what something light becomes once the truck has hit it: solid to neither the truck nor what it carries. */
+const PASSING_THROUGH = groups(GROUP.prop, GROUP.all & ~GROUP.truck & ~GROUP.cargo);
 /** The space beneath the truck's frame, in its own coordinates: half extents, and how far below its centre. */
 const UNDER_HALF = { x: 1.2, y: 0.3, z: 3.5 };
 /** Nothing standing taller than this fits under there: a post with its foot under the bumper is being pushed, not driven over. */
 const UNDER_HEIGHT = 0.7;
 const UNDER_DROP = 0.42;
+/** Above this speed, m/s, the truck's meeting with anything light is settled by hand. */
+const MEET_SPEED = 2;
+/** Lighter than this, kg, a thing that has been knocked is never left to wedge beneath the truck or against it. */
+const UNDER_MASS = 150;
 /** The whole of the truck, and a little more: half extents, and how far above its centre. */
 const AROUND_HALF = { x: 1.5, y: 1.1, z: 4.0 };
 const AROUND_RISE = 0.4;
@@ -95,6 +117,8 @@ export class ObjectSystem {
   /** Objects knocked during the latest step. */
   fresh: KnockEvent[] = [];
   private landings: LandEvent[] = [];
+  /** What blew up during the latest step. */
+  blasts: Blast[] = [];
   private events: KnockEvent[] = [];
   private readonly byCollider = new Map<number, LooseObject>();
   private under = new Set<LooseObject>();
@@ -113,11 +137,15 @@ export class ObjectSystem {
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(...desc.pos)
           .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+          // Light things don't roll on and on: a barrel or a can slows as if the road dragged at it.
+          // Heavy ones are left alone, to fall as they should.
+          .setLinearDamping(kind.mass < ROLLS_BELOW ? 0.25 : 0)
+          .setAngularDamping(kind.mass < ROLLS_BELOW ? 1.8 : 0)
           .setSleeping(true),
       );
       const solid = kind.parts.filter((p) => !p.ghost);
       const height = Math.max(...solid.map((p) => p.pos[1] + p.size[1]));
-      const object: LooseObject = { desc, kind, body, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0 };
+      const object: LooseObject = { desc, kind, body, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1 };
       const shares = solid.reduce((sum, p) => sum + (p.weight ?? 1), 0);
       for (const part of solid) {
         const [a, b, c] = part.size;
@@ -146,8 +174,13 @@ export class ObjectSystem {
   /** Call once per physics step, after the world has stepped. */
   update(truck?: Truck, stalled = false): void {
     this.fresh = [];
-    if (truck) this.clearBeneath(truck, stalled);
+    this.blasts = [];
+    if (truck) {
+      this.clearBeneath(truck, stalled);
+      this.meet(truck);
+    }
     for (const object of this.objects) {
+      if (object.fuse >= 0 && (object.fuse -= STEP) < 0) this.explode(object);
       if (object.body.isSleeping()) {
         object.was = null;
         continue;
@@ -160,6 +193,18 @@ export class ObjectSystem {
       const speed = Math.hypot(v.x, v.y, v.z);
       if (speed < KNOCK_SPEED) continue;
       object.knocked = true;
+      // Something light that the truck has just hit is tossed up, below; and it is not to
+      // come up under the truck's nose and toss the truck. It stops being solid to the
+      // truck here and now, not a step later.
+      if (truck && object.kind.mass < UNDER_MASS && !this.under.has(object)) {
+        const t = truck.body.translation();
+        const p = object.body.translation();
+        if (Math.hypot(p.x - t.x, p.z - t.z) < 6) {
+          this.setGroups(object, this.letThrough(object));
+          this.under.add(object);
+        }
+      }
+      if (object.kind.explosive) object.fuse = FUSE_SECONDS;
       object.wrecked = object.kind.wrecked !== undefined && speed >= WRECK_SPEED;
       const [x, y, z] = object.desc.pos;
       const event = { object, at: { x, y, z } };
@@ -175,6 +220,41 @@ export class ObjectSystem {
       if (truck && mass > LIFT_FULL_MASS && this.shoveAside(object, truck, mass, speed)) continue;
       const spin = mass * 0.35 * Math.min(speed, 12);
       object.body.applyTorqueImpulse({ x: (this.random() - 0.5) * spin, y: (this.random() - 0.5) * spin * 0.5, z: (this.random() - 0.5) * spin }, true);
+    }
+  }
+
+  /**
+   * A cylinder of gas going off: everything loose within reach is thrown outward and up, the
+   * lighter the further, and the cylinder itself goes up like a rocket. Anything else
+   * explosive that it reaches follows a moment later.
+   */
+  private explode(object: LooseObject): void {
+    const at = object.body.translation();
+    this.blasts.push({ x: at.x, y: at.y, z: at.z });
+    for (const other of this.objects) {
+      const p = other.body.translation();
+      const dx = p.x - at.x;
+      const dz = p.z - at.z;
+      const away = Math.hypot(dx, dz);
+      if (away > BLAST_RADIUS) continue;
+      if (other === object) {
+        other.body.setLinvel({ x: (this.random() - 0.5) * 6, y: 15, z: (this.random() - 0.5) * 6 }, true);
+        other.body.setAngvel({ x: 9, y: 2, z: 7 }, true);
+        continue;
+      }
+      const mass = other.body.mass();
+      const push = BLAST_SPEED * (1 - away / BLAST_RADIUS) * Math.min(1, 150 / mass);
+      const out = Math.max(away, 0.3);
+      other.body.applyImpulse({ x: (dx / out) * push * mass, y: push * 0.7 * mass, z: (dz / out) * push * mass }, true);
+      other.body.applyTorqueImpulse({ x: (this.random() - 0.5) * mass * 2, y: 0, z: (this.random() - 0.5) * mass * 2 }, true);
+      // Blown over, not run into: it is not for the truck's load to answer for.
+      if (!other.knocked) {
+        other.knocked = true;
+        other.wrecked = other.kind.wrecked !== undefined && push >= WRECK_SPEED;
+        const [x, y, z] = other.desc.pos;
+        this.events.push({ object: other, at: { x, y, z } });
+        if (other.kind.explosive) other.fuse = 0.12 + this.random() * 0.3;
+      }
     }
   }
 
@@ -196,6 +276,43 @@ export class ObjectSystem {
     const out = this.landings;
     this.landings = [];
     return out;
+  }
+
+  /**
+   * The truck meeting something light at speed is settled here rather than left to the
+   * solver. At 80 km/h the truck is a third of a metre into a parked scooter before the
+   * solver hears of it, and what the solver does about that is throw the truck in the air.
+   * So whatever light thing the truck is about to reach is sent on its way with the truck's
+   * own speed, the truck gives up its share of momentum for it, level and through its
+   * middle, and the two never press on each other. The rest follows as for any knock: it is
+   * tossed, spun and heard.
+   */
+  private meet(truck: Truck): void {
+    const tv = truck.body.linvel();
+    const speed = Math.hypot(tv.x, tv.z);
+    // Slowly, things are nudged and leant on in the ordinary way.
+    if (speed < MEET_SPEED) return;
+    const t = truck.body.translation();
+    const ahead = STEP * 2;
+    const met: LooseObject[] = [];
+    this.world.intersectionsWithShape(
+      { x: t.x + tv.x * ahead, y: t.y + AROUND_RISE, z: t.z + tv.z * ahead }, truck.body.rotation(), this.aroundShape,
+      (collider) => {
+        const object = this.byCollider.get(collider.handle);
+        if (object && !object.knocked && object.kind.mass < UNDER_MASS && !this.under.has(object) && !met.includes(object)) met.push(object);
+        return true;
+      },
+      undefined, groups(GROUP.all, GROUP.prop),
+    );
+    const mass = truck.body.mass();
+    for (const object of met) {
+      const own = object.body.mass();
+      object.body.setLinvel({ x: tv.x * 1.05, y: 0, z: tv.z * 1.05 }, true);
+      this.setGroups(object, this.letThrough(object));
+      this.under.add(object);
+      const share = (own * mass) / (mass + own);
+      truck.body.applyImpulse({ x: -tv.x * share, y: 0, z: -tv.z * share }, true);
+    }
   }
 
   /**
@@ -221,8 +338,18 @@ export class ObjectSystem {
       );
     };
     const found = new Set<LooseObject>();
+    // Whatever fits under the frame, or has fallen flat; and anything light at all, standing
+    // or not. A scooter is taller than the frame is high, but once the nose has been lifted
+    // by the first of a row the next goes under it still standing, the truck climbs onto
+    // them, and over it goes.
     touching(this.underShape, -UNDER_DROP, (object) => {
-      if (object.height < UNDER_HEIGHT || lying(object)) found.add(object);
+      if (object.height < UNDER_HEIGHT || lying(object) || object.kind.mass < UNDER_MASS) found.add(object);
+    });
+    // And anything light is done with the truck once the truck has sent it flying: from
+    // then until it is clear, the truck goes through it rather than be lifted or tripped
+    // by it.
+    touching(this.aroundShape, AROUND_RISE, (object) => {
+      if (object.knocked && object.kind.mass < UNDER_MASS) found.add(object);
     });
     // Something thin hit fast can end up inside the cab before the physics has caught it.
     // It is not left there: it is let out the way it came.
@@ -254,7 +381,7 @@ export class ObjectSystem {
         if (stalled || this.under.has(object)) found.add(object);
       });
     }
-    for (const object of found) if (!this.under.has(object)) this.setGroups(object, PASSING_UNDER);
+    for (const object of found) if (!this.under.has(object)) this.setGroups(object, this.letThrough(object));
     for (const object of this.under) if (!found.has(object)) this.setGroups(object, SOLID);
     this.under = found;
   }
@@ -282,6 +409,11 @@ export class ObjectSystem {
     const rate = (1.2 + Math.min(speed, 12) * 0.12) / Math.hypot(fx, fz);
     object.body.setAngvel({ x: fz * rate, y: 0, z: -fx * rate }, true);
     return true;
+  }
+
+  /** What something is while the truck is passing over or through it. A light thing in the air is kept off the load as well. */
+  private letThrough(object: LooseObject): number {
+    return object.kind.mass < UNDER_MASS ? PASSING_THROUGH : PASSING_UNDER;
   }
 
   private setGroups(object: LooseObject, collisionGroups: number): void {
@@ -321,7 +453,9 @@ export class ObjectSystem {
       object.carried = 0;
       object.was = null;
       object.hush = 0;
+      object.fuse = -1;
     }
+    this.blasts = [];
     this.landings = [];
     this.riding.clear();
     this.events = [];

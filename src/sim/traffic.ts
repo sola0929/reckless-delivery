@@ -27,7 +27,7 @@ const ACCELERATION = 3;
 const LOOKAHEAD = 40;
 /** The truck counts as going a lane's way when it points within about 40 degrees of it (as a cosine). */
 const SAME_WAY = 0.75;
-const CAR_MASS = 1200;
+export const CAR_MASS = 1200;
 /** How long a car lies where it was knocked before returning to its lane. */
 const KNOCKED_SECONDS = 8;
 /** It only returns once the truck is at least this far from its place in the lane. */
@@ -54,8 +54,12 @@ export interface TrafficCar {
   color: number;
   /** Seconds left as a loose wreck after a collision; 0 while driving normally. */
   knocked: number;
+  /** How fast it and the truck came together when they last collided, m/s. */
+  impact: number;
 }
 
+/** How far a car's edges are rounded off, metres. */
+const CAR_ROUND = 0.16;
 const CAR_COLORS = [0xd9d9d9, 0x2f3b4a, 0xb33a3a, 0x3a6fb3, 0xe0c341, 0x4a8f5a, 0x8a8f96, 0x1c1c1f];
 const q = new Quaternion();
 const v = new Vector3();
@@ -72,6 +76,8 @@ const UP = new Vector3(0, 1, 0);
  */
 export class Traffic {
   readonly cars: TrafficCar[] = [];
+  /** Cars that ran into the truck, or were run into by it, during the latest step. */
+  fresh: TrafficCar[] = [];
   private lanes = 0;
 
   constructor(world: RAPIER.World, lanes: TrafficLane[]) {
@@ -94,8 +100,12 @@ export class Traffic {
         // Two boxes, a long low body and a shorter cabin on top, matching how the car is
         // drawn. One tall box would leave anyone standing on the bonnet hovering above it.
         for (const part of [CAR_BODY, CAR_CABIN]) {
+          // Rounded off at the edges. The road is laid in slabs, and a square-edged box
+          // shoved along it catches its leading edge on the join between two of them and
+          // stops dead, as if it had hit a wall: with whatever is pushing it stopped behind.
+          const [hx, hy, hz] = part.half;
           world.createCollider(
-            RAPIER.ColliderDesc.cuboid(...part.half)
+            RAPIER.ColliderDesc.roundCuboid(hx - CAR_ROUND, hy - CAR_ROUND, hz - CAR_ROUND, CAR_ROUND)
               .setTranslation(...part.pos)
               .setMass(CAR_MASS * part.massShare)
               // A car is on wheels: once it has been hit it rolls away from a shove. With an
@@ -106,7 +116,7 @@ export class Traffic {
             body,
           );
         }
-        const car: TrafficCar = { body, lane, s, startS: s, speed: desc.speed, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0 };
+        const car: TrafficCar = { body, lane, s, startS: s, speed: desc.speed, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0 };
         this.place(car, true);
         this.cars.push(car);
         n++;
@@ -114,7 +124,11 @@ export class Traffic {
     }
   }
 
-  update(dt: number, truck: Truck): void {
+  /**
+   * `walkers` are people out in the road, and `scooters` whatever is being ridden along it:
+   * cars wait for the one and keep behind the other, as they do for each other.
+   */
+  update(dt: number, truck: Truck, walkers: readonly { x: number; z: number }[] = [], scooters: readonly { x: number; z: number }[] = []): void {
     const t = truck.body.translation();
     const r = truck.body.rotation();
     q.set(r.x, r.y, r.z, r.w);
@@ -122,6 +136,9 @@ export class Traffic {
     const truckSide = new Vector3(1, 0, 0).applyQuaternion(q);
     const tv = truck.body.linvel();
     const truckSpeed = Math.hypot(tv.x, tv.z);
+    this.fresh = [];
+    // Cars already knocked loose, wherever the crash has left them.
+    const wrecks = this.cars.filter((car) => car.knocked > 0).map((car) => car.body.translation());
 
     for (const car of this.cars) {
       const { lane } = car;
@@ -143,6 +160,18 @@ export class Traffic {
         gap = Math.min(gap, ahead - CAR_HALF.length * 2);
       }
 
+      // Someone on foot is given room on both sides: they are on their way across the lane.
+      for (const walker of walkers) {
+        v.set(walker.x - lane.from.x, 0, walker.z - lane.from.z);
+        const ahead = v.dot(lane.dir) - car.s;
+        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < CAR_HALF.width + 2.4) gap = Math.min(gap, ahead - CAR_HALF.length);
+      }
+      for (const scooter of scooters) {
+        v.set(scooter.x - lane.from.x, 0, scooter.z - lane.from.z);
+        const ahead = v.dot(lane.dir) - car.s;
+        if (ahead > 0 && Math.abs(v.x * lane.dir.z - v.z * lane.dir.x) < CAR_HALF.width + 0.5) gap = Math.min(gap, ahead - CAR_HALF.length - 0.85);
+      }
+
       // The truck, if any part of it is in this lane ahead and it is going their way: then it
       // is slow traffic, to be followed. Across the lane or coming the wrong way it is not
       // something a driver in town expects, and they drive straight into it. Its reach along
@@ -159,13 +188,28 @@ export class Traffic {
         gap = Math.min(gap, along - reachAlong - CAR_HALF.length);
       }
 
+      // About to be touched by a car that has been knocked loose: it is knocked loose too.
+      // A car still driven by hand cannot be moved by anything, so a wreck shoved into the
+      // back of one, with the truck behind it, stops the truck like a wall.
+      v.copy(lane.from).addScaledVector(lane.dir, car.s);
+      if (wrecks.some((w) => Math.abs((w.x - v.x) * lane.dir.x + (w.z - v.z) * lane.dir.z) < CAR_HALF.length * 2 + 0.5 && Math.abs((w.x - v.x) * lane.dir.z - (w.z - v.z) * lane.dir.x) < CAR_HALF.width + CAR_HALF.length)) {
+        car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+        car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
+        car.knocked = KNOCKED_SECONDS;
+        car.impact = 0;
+        car.speed = 0;
+        continue;
+      }
+
       // About to touch the truck: from here on the crash is the physics engine's business.
       const closing = (car.speed + truckSpeed) * dt * 2 + 0.25;
       if (across < reachAcross + CAR_HALF.width + 0.25 && Math.abs(along) < reachAlong + CAR_HALF.length + closing) {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
+        car.impact = Math.hypot(lane.dir.x * car.speed - tv.x, lane.dir.z * car.speed - tv.z);
         car.speed = 0;
+        this.fresh.push(car);
         continue;
       }
 
@@ -184,6 +228,7 @@ export class Traffic {
   }
 
   reset(): void {
+    this.fresh = [];
     for (const car of this.cars) {
       car.s = car.startS;
       this.restore(car);

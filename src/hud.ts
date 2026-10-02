@@ -35,6 +35,7 @@ export class Hud {
   private readonly navArrow = el('nav-arrow');
   private readonly navDistance = el('nav-distance');
   private readonly popups = el('popups');
+  private readonly splats = el('splats');
   private readonly result = el('result');
   private readonly banner = el('banner');
   private readonly prompt = el('prompt');
@@ -244,5 +245,41 @@ export class Hud {
 
   clearPopups(): void {
     this.popups.replaceChildren();
+    this.splats.replaceChildren();
+  }
+
+  /**
+   * Something has burst over the windscreen: blots of it across the view, biggest toward
+   * the top, that run down and are gone in a few seconds. `amount` runs from 0 to 1.
+   */
+  splat(color: number, amount = 1): void {
+    const hex = `#${color.toString(16).padStart(6, '0')}`;
+    // However much is thrown at it, never so much at once that nothing can be seen through it.
+    const blots = Math.min(Math.round(5 + amount * 7), 16 - this.splats.childElementCount);
+    for (let i = 0; i < blots; i++) {
+      const blot = document.createElement('div');
+      blot.className = 'splat';
+      const size = (70 + Math.random() * 190) * (0.6 + amount * 0.5);
+      const corner = () => `${35 + Math.random() * 30}%`;
+      blot.style.width = `${size}px`;
+      blot.style.height = `${size * (0.8 + Math.random() * 0.5)}px`;
+      // Anywhere but over the truck itself, in the middle of the lower half of the view.
+      let left = 0;
+      let top = 0;
+      do {
+        left = 6 + Math.random() * 88;
+        top = 6 + Math.random() * Math.random() * 76;
+      } while (Math.abs(left - 50) < 15 && top > 42);
+      blot.style.left = `${left}%`;
+      blot.style.top = `${top}%`;
+      blot.style.background = hex;
+      blot.style.borderRadius = `${corner()} ${corner()} ${corner()} ${corner()} / ${corner()} ${corner()} ${corner()} ${corner()}`;
+      blot.style.rotate = `${Math.random() * 360}deg`;
+      blot.style.setProperty('--seconds', `${2.6 + Math.random() * 1.6}s`);
+      blot.style.setProperty('--run', `${30 + Math.random() * 110}px`);
+      blot.style.animationDelay = `${Math.random() * 0.12}s`;
+      blot.addEventListener('animationend', () => blot.remove());
+      this.splats.appendChild(blot);
+    }
   }
 }

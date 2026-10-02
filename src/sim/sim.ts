@@ -6,9 +6,10 @@ import { groundTiles } from '../levels/ground';
 import type { LevelDef, PropDesc, TrackDesc } from '../levels/types';
 import { CargoSystem, type CargoEvent, type CargoItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
-import { ObjectSystem, type KnockEvent, type LandEvent } from './objects';
-import { Pedestrians, type Pedestrian } from './pedestrians';
-import { Traffic } from './traffic';
+import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
+import { Pedestrians, type Pedestrian, type Vehicle } from './pedestrians';
+import { Riders, SCOOTER_MASS, type Rider } from './riders';
+import { CAR_MASS, Traffic } from './traffic';
 import { Trains } from './trains';
 import { Truck, type DriveInput } from './truck';
 import { Water, type Splash } from './water';
@@ -79,6 +80,13 @@ const BUMP_THRESHOLD = 0.4;
 /** Wear, out of 100, per m/s beyond that; and the most one step can add. */
 const WEAR_PER_SPEED = 4;
 const WEAR_STEP_MAX = 40;
+/** A blast right beside the truck shakes the load by this much, m/s, and shoves the truck this fast. */
+const BLAST_JOLT = 20;
+const BLAST_SHOVE = 2.6;
+/** How much of that a car passes on, beside what a roadside object of the same weight would: it gives. */
+const CAR_JOLT = 0.7;
+/** A scooter passes on rather more for its weight: light as it is, it would otherwise cost nothing at all. It still comes to well under a car's. */
+const SCOOTER_JOLT = 1.25;
 const PARKED: DriveInput = { throttle: 0, steer: 0, handbrake: true };
 
 /** One star for passing, a second for delivering most of the load, a third for doing that inside the par time. */
@@ -96,6 +104,7 @@ export class Sim {
   readonly props: PropInstance[] = [];
   readonly cargoSystem: CargoSystem;
   readonly traffic: Traffic;
+  readonly riders: Riders;
   readonly driver: Driver;
   readonly trains: Trains;
   readonly water: Water;
@@ -122,6 +131,7 @@ export class Sim {
   private bumps: number[] = [];
   private stalled = 0;
   private strikes: { x: number; y: number; z: number }[] = [];
+  private blasts: Blast[] = [];
   private readonly eventQueue: RAPIER.EventQueue;
   private readonly startPoses: Pose[] = [];
 
@@ -181,6 +191,7 @@ export class Sim {
 
     this.truck = new Truck(this.world, level.spawn, level.heading);
     this.traffic = new Traffic(this.world, level.traffic);
+    this.riders = new Riders(this.world, level.riders ?? []);
     this.driver = new Driver(this.world);
     this.started = !level.startLine;
     this.water = new Water(level.pits ?? []);
@@ -204,7 +215,7 @@ export class Sim {
     const driving = this.driver.mode === 'driving' && !this.result;
     this.truck.grip = this.gripAt(this.truck.body.translation());
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
-    this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.trains, !this.result);
+    this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.riders, this.trains, !this.result);
     this.trains.update(PHYSICS.dt);
     this.struck -= PHYSICS.dt;
     const train = this.struck <= 0 ? this.trains.striking(this.truck) : null;
@@ -216,7 +227,9 @@ export class Sim {
       const t = this.truck.body.translation();
       this.fail(this.water.poolAt(t.x, t.z) ? 'water' : 'pit');
     }
-    this.traffic.update(PHYSICS.dt, this.truck);
+    const walkers = this.pedestrians.inRoad().map((p) => p.pos);
+    this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
+    this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
     this.world.step(this.eventQueue);
     this.eventQueue.drainContactForceEvents((event) => {
       this.cargoSystem.addForce(event.collider1(), event.collider2(), event.totalForceMagnitude());
@@ -227,9 +240,10 @@ export class Sim {
     const trying = driving && (input.throttle !== 0) && !input.handbrake && Math.abs(this.truck.forwardSpeed()) < 0.4;
     this.stalled = trying ? this.stalled + PHYSICS.dt : 0;
     this.objects.update(this.truck, this.stalled > STALL_SECONDS);
+    for (const blast of this.objects.blasts) this.blast(blast);
     this.shake();
     this.soak();
-    this.pedestrians.update(PHYSICS.dt, this.truck);
+    this.pedestrians.update(PHYSICS.dt, this.truck, this.vehicles());
     if (!this.started) this.started = this.pastStart();
     if (!this.result) {
       if (this.started) this.time += PHYSICS.dt;
@@ -259,6 +273,13 @@ export class Sim {
     return out;
   }
 
+  /** Explosions since the last call. */
+  drainBlasts(): Blast[] {
+    const out = this.blasts;
+    this.blasts = [];
+    return out;
+  }
+
   /** Knocks the truck has taken since the last call: each the change in its speed in one step, m/s. */
   drainBumps(): number[] {
     const out = this.bumps;
@@ -269,6 +290,11 @@ export class Sim {
   /** Things that have just gone into the water. */
   drainSplashes(): Splash[] {
     return this.water.drainSplashes();
+  }
+
+  /** Scooter riders knocked off since the last call. */
+  drainRiderHits(): Rider[] {
+    return this.riders.drainEvents();
   }
 
   /** Pedestrians sent flying since the last call. */
@@ -324,6 +350,7 @@ export class Sim {
     this.water.reset();
     this.truck.reset();
     this.traffic.reset();
+    this.riders.reset();
     const zero = { x: 0, y: 0, z: 0 };
     for (const p of this.startPoses) {
       p.body.setTranslation(p.pos, true);
@@ -347,7 +374,19 @@ export class Sim {
     this.bumps = [];
     this.stalled = 0;
     this.strikes = [];
+    this.blasts = [];
     this.result = null;
+  }
+
+  /** Everything driven or ridden along the roads, the truck apart. */
+  private vehicles(): Vehicle[] {
+    const moving: Vehicle[] = this.riders.moving();
+    for (const car of this.traffic.cars) {
+      if (car.knocked > 0 || car.lane.cruise === 0) continue;
+      const p = car.body.translation();
+      moving.push({ x: p.x, z: p.z, vx: car.lane.dir.x * car.speed, vz: car.lane.dir.z * car.speed });
+    }
+    return moving;
   }
 
   /** An overturned truck ends the run. In free play there is no run to end, so it is set back on its wheels. */
@@ -401,14 +440,42 @@ export class Sim {
     this.strikes.push({ x: t.x, y: t.y, z: t.z });
   }
 
+  /**
+   * Something has blown up. People and riders near it are thrown down; the truck, if it is
+   * near, is shoved away and its load shaken, the more the nearer. It ends nothing by itself.
+   */
+  private blast(at: Blast): void {
+    this.blasts.push(at);
+    this.pedestrians.blast(at.x, at.z, BLAST_RADIUS);
+    this.riders.blast(at.x, at.z, BLAST_RADIUS);
+    this.driver.blast(at.x, at.z, BLAST_RADIUS, this.cargoSystem);
+    const t = this.truck.body.translation();
+    const dx = t.x - at.x;
+    const dz = t.z - at.z;
+    // From the nearest part of the truck, near enough, rather than from its middle.
+    const away = Math.max(0, Math.hypot(dx, dz) - 2.5);
+    const near = 1 - away / BLAST_RADIUS;
+    if (near <= 0) return;
+    const out = Math.max(Math.hypot(dx, dz), 0.3);
+    const mass = this.truck.body.mass();
+    this.truck.body.applyImpulse({ x: (dx / out) * BLAST_SHOVE * near * mass, y: BLAST_SHOVE * 0.2 * near * mass, z: (dz / out) * BLAST_SHOVE * near * mass }, true);
+    this.cargoSystem.jolt(BLAST_JOLT * near, this.truck);
+  }
+
   /** Running into something heavy checks the truck, and the load feels it. */
   private shake(): void {
+    const truckMass = this.truck.body.mass();
+    // A car or a scooter, by however fast the two came together: it may have run into a truck
+    // that was standing. The heavier it is, the more of that the load feels.
+    let jolt = 0;
+    for (const car of this.traffic.fresh) jolt = Math.max(jolt, ((car.impact * CAR_MASS) / (truckMass + CAR_MASS)) * CAR_JOLT);
+    for (const rider of this.riders.fresh) jolt = Math.max(jolt, ((rider.impact * SCOOTER_MASS) / (truckMass + SCOOTER_MASS)) * SCOOTER_JOLT);
+    if (jolt > 0) this.cargoSystem.jolt(jolt * JOLT_PER_SPEED_LOST, this.truck);
     if (!this.objects.fresh.length) return;
     const t = this.truck.body.translation();
     const lv = this.truck.body.linvel();
     const speed = Math.hypot(lv.x, lv.z);
-    const truckMass = this.truck.body.mass();
-    let jolt = 0;
+    jolt = 0;
     for (const { object } of this.objects.fresh) {
       const p = object.body.translation();
       if (Math.hypot(p.x - t.x, p.z - t.z) > 6) continue;
@@ -425,6 +492,7 @@ export class Sim {
     for (const piece of this.cargoSystem.debris) this.water.soak(piece.body);
     for (const object of this.objects.objects) if (object.knocked) this.water.soak(object.body);
     for (const car of this.traffic.cars) if (car.knocked > 0) this.water.soak(car.body);
+    for (const rider of this.riders.list) if (rider.knocked > 0) this.water.soak(rider.body);
     if (this.driver.mode !== 'driving' && this.water.under({ x: this.driver.pos.x, y: this.driver.pos.y + 1, z: this.driver.pos.z })) {
       this.driver.fishOut(this.truck, this.cargoSystem);
     }

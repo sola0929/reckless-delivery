@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { DRIVER, GROUP, PHYSICS, TRUCK, groups } from '../config';
 import type { CargoItem, CargoSystem } from './cargo';
+import type { Riders } from './riders';
 import { CAR_HALF, type Traffic } from './traffic';
 import type { Trains } from './trains';
 import type { Truck } from './truck';
@@ -123,7 +124,7 @@ export class Driver {
   }
 
   /** Call once per physics step, before the world steps. `canAct` is false once the level is over. */
-  update(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem, traffic: Traffic, trains: Trains, canAct: boolean): void {
+  update(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem, traffic: Traffic, riders: Riders, trains: Trains, canAct: boolean): void {
     this.plan = null;
     this.atLeash = false;
     if (this.mode === 'driving') {
@@ -162,7 +163,7 @@ export class Driver {
       this.held.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
     }
 
-    if (this.safeLeft <= 0) this.checkTraffic(traffic, trains, cargo);
+    if (this.safeLeft <= 0) this.checkTraffic(traffic, riders, trains, cargo);
   }
 
   reset(): void {
@@ -476,8 +477,8 @@ export class Driver {
     };
   }
 
-  /** Run down by a moving car or a train: thrown aside, dropping whatever was held. */
-  private checkTraffic(traffic: Traffic, trains: Trains, cargo: CargoSystem): void {
+  /** Run down by a moving car, a scooter or a train: thrown aside, dropping whatever was held. */
+  private checkTraffic(traffic: Traffic, riders: Riders, trains: Trains, cargo: CargoSystem): void {
     for (const car of traffic.cars) {
       if (car.knocked > 0 || car.speed < 2) continue;
       const { lane } = car;
@@ -489,8 +490,23 @@ export class Driver {
       this.knockDown(lane.dir.x, lane.dir.z, car.speed, across < 0 ? -1 : 1, cargo);
       return;
     }
+    const scooter = riders.at(this.pos.x, this.pos.z, DRIVER.radius);
+    if (scooter) {
+      // A glancing blow next to a car's: half the speed is taken out of it.
+      this.knockDown(scooter.dirX, scooter.dirZ, scooter.speed * 0.5, this.random() < 0.5 ? -1 : 1, cargo);
+      return;
+    }
     const train = trains.at(this.pos.x, this.pos.z, DRIVER.radius);
     if (train) this.knockDown(train.direction, 0, train.speed, this.random() < 0.5 ? -1 : 1, cargo);
+  }
+
+  /** Caught by a blast at this spot, if they are out of the cab and within `radius` of it: thrown away from it. */
+  blast(x: number, z: number, radius: number, cargo: CargoSystem): void {
+    if (this.mode !== 'onFoot') return;
+    const dx = this.pos.x - x;
+    const dz = this.pos.z - z;
+    const away = Math.hypot(dx, dz);
+    if (away < radius) this.knockDown(dx / Math.max(away, 0.3), dz / Math.max(away, 0.3), 7 * (1 - away / radius) + 2, 1, cargo);
   }
 
   /** Flung forward with whatever hit them and off to one side, losing hold of their load. */

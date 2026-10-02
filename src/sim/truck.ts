@@ -109,7 +109,7 @@ export class Truck {
     this.brakeTime = braking ? this.brakeTime + dt : 0;
     const ramp = clamp(this.brakeTime / TRUCK.brakeRamp, 0, 1);
     const parked = engine === 0 && input.throttle === 0 && Math.abs(speed) < 0.5;
-    let decel = TRUCK.rollingDecel;
+    let decel = TRUCK.rollingDecel + TRUCK.coastDrag * Math.abs(speed);
     if (braking) decel = TRUCK.brakeDecel + (TRUCK.hardBrakeDecel - TRUCK.brakeDecel) * ramp;
     else if (parked) decel = TRUCK.hardBrakeDecel;
     else if (engine !== 0) decel = 0;

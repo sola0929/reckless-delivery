@@ -149,6 +149,10 @@ export class CargoItem {
 }
 
 /** Owns every cargo item: spawning, impact damage, falling apart, and being lost. */
+const STILL = { x: 0, y: 0, z: 0 };
+/** Turning faster than this, radians a second, something round is tumbling rather than rolling. */
+const TUMBLING = 5;
+
 export class CargoSystem {
   readonly items: CargoItem[] = [];
   readonly debris: Debris[] = [];
@@ -242,6 +246,7 @@ export class CargoSystem {
         continue;
       }
       const onBed = truck.isOnBed(t);
+      this.roll(item, body, truck, onBed, dt);
 
       // A thrown item that comes down in the bed lands for free, and so does whatever it
       // lands on. Anywhere else, the landing counts like any other impact.
@@ -317,9 +322,43 @@ export class CargoSystem {
     }
   }
 
+  /**
+   * Something round is slow to start rolling and quick to stop: its turning, relative to
+   * the bed it lies on, is cut back by a fixed amount each step. Under gentle driving that
+   * is all of it, and it stays put, held by friction like a crate; driven hard, it rolls.
+   */
+  private roll(item: CargoItem, body: RAPIER.RigidBody, truck: Truck, onBed: boolean, dt: number): void {
+    const { rolling, hull } = item.type;
+    if (!rolling || !hull || body.isSleeping()) return;
+    if (hull.shape === 'cylinder') {
+      // Standing on its end it is not rolling, and is left to stand or fall by itself.
+      const r = body.rotation();
+      if (1 - 2 * (r.x * r.x + r.z * r.z) > 0.5) return;
+    }
+    const under = onBed ? truck.body.angvel() : STILL;
+    const av = body.angvel();
+    const x = av.x - under.x;
+    const y = av.y - under.y;
+    const z = av.z - under.z;
+    const turning = Math.hypot(x, y, z);
+    // Tumbling, as in a crash, is none of this: it is left to tumble.
+    if (turning < 1e-4 || turning > TUMBLING) return;
+    const radius = hull.size[0];
+    const keep = Math.max(0, 1 - ((rolling / radius) * dt) / turning);
+    body.setAngvel({ x: under.x + x * keep, y: under.y + y * keep, z: under.z + z * keep }, false);
+    // Held still while it rests on something: what was taken out of its turning goes into
+    // its travel instead, as it would if it could not turn. So where it touches the bed it
+    // still keeps pace with the bed, and is carried along rather than left behind.
+    if (keep > 0 || item.force <= 0) return;
+    const lv = body.linvel();
+    body.setLinvel({ x: lv.x + radius * z, y: lv.y, z: lv.z - radius * x }, false);
+  }
+
   /** Track whether an item is on the truck, and report it falling off or coming back. */
   private settle(item: CargoItem, onBed: boolean, dt: number): void {
     item.offTruckTime = onBed ? 0 : item.offTruckTime + dt;
+    // On the road a jar or a melon doesn't roll on for ever. On the bed it is left free to.
+    item.body?.setAngularDamping(onBed ? 0 : 1.8);
     if (!item.fallen && item.offTruckTime > FALLEN_SECONDS) {
       item.fallen = true;
       // Extra items found along the way were never part of the load, so losing one costs nothing.

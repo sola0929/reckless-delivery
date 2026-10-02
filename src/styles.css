@@ -429,3 +429,26 @@ button.quiet:hover {
 .popup.gain {
   color: #6fd08c;
 }
+
+/* Whatever has just burst over the windscreen: blots that run down the glass and thin out. */
+#splats {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.splat {
+  position: absolute;
+  translate: -50% -50%;
+  opacity: 0;
+  animation: splat-run var(--seconds) ease-in forwards;
+}
+
+@keyframes splat-run {
+  0% { opacity: 0; scale: 0.2; }
+  3% { opacity: 0.92; scale: 1.08; }
+  7% { scale: 1; }
+  55% { opacity: 0.85; }
+  100% { opacity: 0; margin-top: var(--run); scale: 0.96 1.25; }
+}

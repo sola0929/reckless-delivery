@@ -14,6 +14,7 @@ import { Bursts, Smoke } from './render/effects';
 import { LevelView } from './render/levelView';
 import { BodySync, TruckMesh } from './render/meshes';
 import { ObjectsView, PedestriansView } from './render/objectsView';
+import { RidersView } from './render/ridersView';
 import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
 import type { CargoEvent, CargoItem } from './sim/cargo';
@@ -54,6 +55,7 @@ view.scene.add(smoke.mesh, engineSmoke.mesh, bursts.mesh);
 const objectsView = new ObjectsView(view.scene, sim.objects.objects);
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
+const ridersView = new RidersView(view.scene, sim.riders.list);
 const cargoViews = new CargoViews(view.scene, bursts);
 cargoViews.rebuild(sim);
 
@@ -72,7 +74,7 @@ const audio = new GameAudio();
 playMusic('level');
 /** How heavy the heaviest thing the truck sent flying this frame was, 0 to 1; below 0 if it hit nothing. */
 let knockedWeight = -1;
-const debug = { sim, camera: view.camera, freeze: false, audio };
+const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
 let last = performance.now();
@@ -145,10 +147,29 @@ function toScreen(point: { x: number; y: number; z: number }, above: number): { 
 
 /** What people shout when they are sent flying. */
 const SHOUTS = ['喂！', '啊啊啊！', '看路啊！', '哎唷！', '搞什麼！'];
+const RIDER_SHOUTS = ['我的車！', '會不會開車啊！', '哎唷喂！', '啊啊啊！', '長眼睛沒有！'];
+
+/**
+ * Someone has been run down: the thump of it, louder the faster the truck was going, and
+ * what they have to say about it. With a scooter under them there is metal in it as well.
+ */
+function showHit(at: { x: number; y: number; z: number }, shouts: string[], scooter: boolean): void {
+  const strength = Math.min(1, Math.abs(sim.truck.forwardSpeed()) / 14);
+  audio.knock(scooter ? 'metal' : 'soft', 0.35 + strength * 0.65, scooter ? 0.45 : 0.7);
+  // The crash that goes with a scooter is mostly the scooter.
+  if (scooter) knockedWeight = Math.max(knockedWeight, 0.6);
+  const spot = toScreen(at, 1.8);
+  if (spot) hud.popup(shouts[Math.floor(Math.random() * shouts.length)], spot.x, spot.y, 'big');
+}
 const GEYSER_SECONDS = 7;
 const splashAt = new Vector3();
 /** Broken hydrants, still spouting where they stood. */
 const geysers: { at: Vector3; left: number }[] = [];
+const CRACKLE_SECONDS = 3.2;
+/** Strings of firecrackers going off where they fell, and how long until each one's next bang. */
+const crackles: { at: Vector3; left: number; next: number }[] = [];
+/** Within this far of the truck, something bursting bursts over it. */
+const SPLASH_REACH = 7;
 
 /** Something has just been sent flying: throw up whatever it is made of. */
 /** Things that sound of neither wood nor metal when hit. */
@@ -228,6 +249,17 @@ function showKnock(knock: KnockEvent): void {
     knockedWeight = Math.max(knockedWeight, weight);
   }
   const at = new Vector3(knock.at.x, knock.at.y + 0.6, knock.at.z);
+  if (kind.juice !== undefined) {
+    // Fruit, or paint: up in the air, and all over the truck if the truck is what hit it.
+    bursts.emit(at.clone().setY(knock.at.y + 1), 'juice', 46, 6, 1, kind.juice);
+    audio.smash('melon', 0.5);
+    if (away < SPLASH_REACH && Math.abs(sim.truck.forwardSpeed()) > 2) {
+      truckMesh.stain(kind.juice);
+      // The windscreen only catches it when there is someone behind it to see.
+      if (sim.driver.mode === 'driving') hud.splat(kind.juice, Math.min(1, Math.abs(sim.truck.forwardSpeed()) / 12) * (kind.wrecked ? 1 : 0.45));
+    }
+  }
+  if (kind.crackle) crackles.push({ at: new Vector3(knock.at.x, knock.at.y + 0.3, knock.at.z), left: CRACKLE_SECONDS, next: 0 });
   if (kind.effect === 'leaves') bursts.emit(at.setY(knock.at.y + 3), 'leaves', 26, 4);
   else if (kind.effect) bursts.emit(at, kind.effect, kind.effect === 'sparks' ? 18 : 14, 4);
   if (knock.object.wrecked) {
@@ -248,6 +280,42 @@ function spoutGeysers(dt: number): void {
     // A column of water, weakening as the pressure drops.
     else bursts.emit(g.at, 'water', 3, 5 + 5 * (g.left / GEYSER_SECONDS), 3);
   }
+}
+
+/** Firecrackers: a run of flashes and bangs, jumping about as the string does. */
+function crackle(dt: number): void {
+  const truckAt = sim.truck.body.translation();
+  for (let i = crackles.length - 1; i >= 0; i--) {
+    const c = crackles[i];
+    c.left -= dt;
+    if (c.left <= 0) {
+      crackles.splice(i, 1);
+      continue;
+    }
+    if ((c.next -= dt) > 0) continue;
+    c.next = 0.05 + Math.random() * 0.09;
+    splashAt.set(c.at.x + (Math.random() - 0.5) * 1.6, c.at.y, c.at.z + (Math.random() - 0.5) * 1.6);
+    bursts.emit(splashAt, Math.random() < 0.5 ? 'sparks' : 'fire', 5, 3.5, 1.4);
+    if (Math.random() < 0.3) smoke.emit(splashAt, RISING);
+    const near = hearing(Math.hypot(c.at.x - truckAt.x, c.at.z - truckAt.z));
+    if (near > 0) audio.thud('bone', (0.5 + Math.random() * 0.5) * near, 0.1);
+  }
+}
+
+/** A cylinder of gas going off: a ball of fire, smoke after it, and everything in earshot knows. */
+function showBlast(at: { x: number; y: number; z: number }): void {
+  splashAt.set(at.x, at.y + 0.6, at.z);
+  bursts.emit(splashAt, 'fire', 190, 16, 1.1);
+  bursts.emit(splashAt, 'sparks', 110, 20, 1);
+  for (let i = 0; i < 30; i++) engineSmoke.emit(contact.set(at.x + (Math.random() - 0.5) * 4.5, at.y + 0.4 + Math.random() * 2.5, at.z + (Math.random() - 0.5) * 4.5), RISING);
+  const truckAt = sim.truck.body.translation();
+  const near = Math.max(0, 1 - Math.hypot(at.x - truckAt.x, at.z - truckAt.z) / 45);
+  if (near === 0) return;
+  audio.bump(4 + near * 10);
+  audio.knock('barrel', near, 1);
+  chase.shake(0.4 + near * 1.8);
+  const spot = toScreen(at, 2.2);
+  if (spot) hud.popup('瓦斯爆炸！', spot.x, spot.y, 'big');
 }
 
 function noteEvent(event: CargoEvent): void {
@@ -403,6 +471,7 @@ function frame(now: number): void {
     bannerAge = 0;
     sim.reset();
     levelView.snap();
+    ridersView.snap();
     truckSync.snap();
     hud.hideResult();
     hud.showBanner();
@@ -411,6 +480,8 @@ function frame(now: number): void {
     objectsView.refresh();
     wreckage.clear();
     geysers.length = 0;
+    crackles.length = 0;
+    truckMesh.wash();
     truckSync.apply(1);
     chase.snap(truckMesh.root.position, truckHeading());
     smoke.clear();
@@ -439,6 +510,7 @@ function frame(now: number): void {
       soundCargoEvent(event);
     }
     for (const knock of sim.drainKnocks()) showKnock(knock);
+    for (const blast of sim.drainBlasts()) showBlast(blast);
     hardestBump = Math.max(hardestBump, ...sim.drainBumps());
     for (const strike of sim.drainStrikes()) {
       bursts.emit(splashAt.set(strike.x, strike.y + 0.5, strike.z), 'sparks', 60, 9);
@@ -450,11 +522,10 @@ function frame(now: number): void {
       bursts.emit(splashAt.set(splash.x, splash.y + 0.2, splash.z), 'water', big ? 90 : 24, big ? 9 : 5, 2);
       audio.splash(big);
     }
-    for (const person of sim.drainPedestrianHits()) {
-      const at = toScreen(person.pos, 1.8);
-      if (at) hud.popup(SHOUTS[Math.floor(Math.random() * SHOUTS.length)], at.x, at.y, 'big');
-    }
+    for (const person of sim.drainPedestrianHits()) showHit(person.pos, SHOUTS, false);
+    for (const rider of sim.drainRiderHits()) showHit(rider.person, RIDER_SHOUTS, true);
     levelView.capture();
+    ridersView.capture();
     truckSync.capture();
     cargoViews.capture();
     accumulator -= PHYSICS.dt;
@@ -465,6 +536,7 @@ function frame(now: number): void {
 
   const alpha = accumulator / PHYSICS.dt;
   levelView.apply(alpha);
+  ridersView.apply(alpha);
   truckSync.apply(alpha);
   cargoViews.apply(alpha);
   cargoViews.update(dt);
@@ -472,6 +544,7 @@ function frame(now: number): void {
   wreckage.update(dt);
   pedestriansView.update(dt);
   spoutGeysers(dt);
+  crackle(dt);
   truckMesh.updateWheels(sim.truck);
   // The truck shows what it has been through: battered, then smoking. It drives the same.
   const wearStage = WEAR_STAGES.filter((wear) => sim.truckWear >= wear).length;

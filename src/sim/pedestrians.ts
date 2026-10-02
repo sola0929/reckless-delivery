@@ -24,6 +24,21 @@ export interface Pedestrian {
   /** How long they freeze before running from the truck, and how long they have been frozen. */
   reaction: number;
   alarm: number;
+  /** At a crossing: which end of it they are at, or are making for. */
+  far: boolean;
+}
+
+/** How far back from each end of a crossing people wait: the width of pavement they stand on. */
+const KERBSIDE = 2.5;
+/** They cross if nothing will reach them within this long. It takes them longer than that to get over. */
+const LOOK_SECONDS = 3;
+
+/** Something driving or riding along a road. */
+export interface Vehicle {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
 }
 
 const CLOTHES = [0x3a6fb3, 0xb33a3a, 0x4a8f5a, 0xe0c341, 0x8a5fb3, 0xd9792b, 0x2f3b4a, 0xd9d9d9, 0x3aa6a6];
@@ -60,7 +75,8 @@ export class Pedestrians {
     let n = 0;
     for (const crowd of this.crowds) {
       for (let i = 0; i < crowd.count; i++) {
-        const pos = this.pointIn(crowd);
+        const far = this.random() < 0.5;
+        const pos = this.pointIn(crowd, far);
         this.list.push({
           pos,
           yaw: this.random() * Math.PI * 2,
@@ -69,9 +85,11 @@ export class Pedestrians {
           color: CLOTHES[n++ % CLOTHES.length],
           crowd,
           home: pos.clone(),
-          target: this.pointIn(crowd),
+          target: this.pointIn(crowd, far),
           velocity: new Vector3(),
-          timer: this.random() * 2,
+          far,
+          // Those at a crossing set off at different moments, not in a body.
+          timer: this.random() * (crowd.crossing ? 9 : 2),
           pace: 1.2 + this.random() * 0.8,
           reaction: 0.3 + this.random() * 0.3,
           alarm: 0,
@@ -80,8 +98,11 @@ export class Pedestrians {
     }
   }
 
-  /** Call once per physics step. */
-  update(dt: number, truck: Truck): void {
+  /**
+   * Call once per physics step. `vehicles` is the traffic: nobody steps out in front of it.
+   * The truck is not among it; people step out in front of that.
+   */
+  update(dt: number, truck: Truck, vehicles: readonly Vehicle[] = []): void {
     const t = truck.body.translation();
     const r = truck.body.rotation();
     const tv = truck.body.linvel();
@@ -132,7 +153,13 @@ export class Pedestrians {
       if (p.state === 'wait') {
         p.speed = 0;
         if ((p.timer -= dt) <= 0) {
-          p.target.copy(this.pointIn(p.crowd));
+          // At a crossing, over to the other side, once there is a gap in the traffic.
+          if (p.crowd.crossing && !this.gap(p, vehicles)) {
+            p.timer = 0.4;
+            continue;
+          }
+          p.far = !p.far;
+          p.target.copy(this.pointIn(p.crowd, p.far));
           p.state = 'walk';
         }
         continue;
@@ -145,13 +172,57 @@ export class Pedestrians {
       const arrived = left < 0.3 || (p.state === 'flee' && (p.timer -= dt) <= 0);
       if (arrived) {
         p.state = 'wait';
-        p.timer = 0.4 + this.random() * 2.5;
+        p.timer = p.crowd.crossing ? 3 + this.random() * 16 : 0.4 + this.random() * 2.5;
         continue;
       }
       p.pos.x += (dx / left) * pace * dt;
       p.pos.z += (dz / left) * pace * dt;
       p.yaw = Math.atan2(dx, dz);
       p.speed = pace;
+    }
+  }
+
+  /** Whether nothing is about to come past where someone at a crossing is standing. */
+  private gap(p: Pedestrian, vehicles: readonly Vehicle[]): boolean {
+    const [x0, z0, x1, z1] = p.crowd.area;
+    const alongX = p.crowd.crossing === 'z';
+    const middle = alongX ? (z0 + z1) / 2 : (x0 + x1) / 2;
+    const reach = (alongX ? z1 - z0 : x1 - x0) / 2 - KERBSIDE;
+    for (const vehicle of vehicles) {
+      if (Math.abs((alongX ? vehicle.z : vehicle.x) - middle) > reach) continue;
+      const away = alongX ? p.pos.x - vehicle.x : p.pos.z - vehicle.z;
+      const speed = alongX ? vehicle.vx : vehicle.vz;
+      // Coming this way, and here within a few seconds.
+      if (away * speed > 0 && Math.abs(away) < Math.abs(speed) * LOOK_SECONDS + 3) return false;
+    }
+    return true;
+  }
+
+  /** People who are out in the road at this moment, on their way across. */
+  inRoad(): Pedestrian[] {
+    return this.list.filter((p) => {
+      const axis = p.crowd.crossing;
+      if (!axis || p.state === 'down' || p.state === 'wait') return false;
+      const [x0, z0, x1, z1] = p.crowd.area;
+      const at = axis === 'x' ? p.pos.x : p.pos.z;
+      const [lo, hi] = axis === 'x' ? [x0, x1] : [z0, z1];
+      return at > lo + KERBSIDE && at < hi - KERBSIDE;
+    });
+  }
+
+  /** Throw everyone within `radius` of a blast outward from it. */
+  blast(x: number, z: number, radius: number): void {
+    for (const p of this.list) {
+      const dx = p.pos.x - x;
+      const dz = p.pos.z - z;
+      const away = Math.hypot(dx, dz);
+      if (away > radius || p.state === 'down') continue;
+      const out = Math.max(away, 0.3);
+      const push = 9 * (1 - away / radius) + 2;
+      p.velocity.set((dx / out) * push, 4 + push * 0.4, (dz / out) * push);
+      p.state = 'down';
+      p.timer = DOWN_SECONDS;
+      p.speed = 0;
     }
   }
 
@@ -193,9 +264,15 @@ export class Pedestrians {
     }
   }
 
-  private pointIn(crowd: CrowdDesc): Vector3 {
+  /** Somewhere to stand in a crowd's patch. At a crossing that is on one pavement or the other: the far one, or the near. */
+  private pointIn(crowd: CrowdDesc, far: boolean): Vector3 {
     const [x0, z0, x1, z1] = crowd.area;
-    return new Vector3(x0 + this.random() * (x1 - x0), crowd.y, z0 + this.random() * (z1 - z0));
+    const x = x0 + this.random() * (x1 - x0);
+    const z = z0 + this.random() * (z1 - z0);
+    const kerb = this.random() * KERBSIDE;
+    if (crowd.crossing === 'x') return new Vector3(far ? x1 - kerb : x0 + kerb, crowd.y, z);
+    if (crowd.crossing === 'z') return new Vector3(x, crowd.y, far ? z1 - kerb : z0 + kerb);
+    return new Vector3(x, crowd.y, z);
   }
 
   /** Seeded, so headless runs repeat exactly. */

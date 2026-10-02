@@ -7,6 +7,18 @@ import type { ObjectDesc } from './objects';
 /** A point or extent on the ground: [x, z]. */
 export type Vec2 = [number, number];
 
+/** How a building is drawn. What is solid of it is still its plain box. */
+export interface BuildingLook {
+  /** Terraced shophouses, downtown blocks, or sheet-metal sheds. */
+  style: 'old' | 'tower' | 'shed';
+  /** Which sides face a street rather than a neighbour's wall: -X, +X, -Z, +Z. */
+  open: [boolean, boolean, boolean, boolean];
+  /** Height of the plant room on a tall building's roof; 0 for none. */
+  crown: number;
+  /** Everything about it that is left to chance follows from this. */
+  seed: number;
+}
+
 export interface PropDesc {
   shape: 'box' | 'cylinder' | 'cone';
   /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. */
@@ -21,6 +33,8 @@ export interface PropDesc {
   fade?: boolean;
   /** Drawn but not solid: rooftops, foliage, awnings. */
   ghost?: boolean;
+  /** Drawn as a building, with windows, shopfronts and a roof, rather than as a bare box. */
+  building?: BuildingLook;
   /** Colour of its footprint on the minimap. Left off the map when unset. */
   mapColor?: number;
   /** Drawn on the minimap beneath the decals rather than above them: pavements under grass. */
@@ -56,6 +70,26 @@ export interface CrowdDesc {
   count: number;
   /** Height of the ground there. */
   y: number;
+  /**
+   * Set where the patch lies across a road, to the axis the road is crossed along. People
+   * there go from one end of it to the other and back, and stop only at the ends, on the
+   * pavements; traffic waits for them while they are in the road.
+   */
+  crossing?: 'x' | 'z';
+}
+
+/**
+ * A stretch of road that scooters ride along in a swarm, one way. They keep within a band
+ * to either side of the line, weaving through whatever else is on it.
+ */
+export interface RiderLane {
+  from: Vec2;
+  to: Vec2;
+  /** How far across the road they may be: metres to the left of the line, as they ride, at each edge of the band. To the right is negative. */
+  band: Vec2;
+  riders: number;
+  /** At the end of it they turn round into this other lane, by its place in the list. Without one they start again from the beginning. */
+  turnInto?: number;
 }
 
 /** A hole dug in the ground. Driving into one ends the run. */
@@ -138,6 +172,7 @@ export interface LevelDef {
   decals: DecalDesc[];
   cargo: CargoPlacement[];
   traffic: TrafficLane[];
+  riders?: RiderLane[];
   /**
    * Where the run begins: the clock starts once the middle of the truck has crossed the
    * line through `pos`, going the way of `dir`. Without one it starts at once.

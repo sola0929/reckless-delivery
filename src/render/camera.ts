@@ -28,6 +28,8 @@ export class ChaseCamera {
   private readonly focus = new THREE.Vector3();
   private wasOnFoot = false;
   private glide = 0;
+  /** How hard the camera is being shaken, metres; it dies away by itself. */
+  private tremor = 0;
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
@@ -38,6 +40,11 @@ export class ChaseCamera {
 
   addZoom(wheelDelta: number): void {
     this.zoom = THREE.MathUtils.clamp(this.zoom * Math.exp(wheelDelta * 0.001), CAMERA.minZoom, CAMERA.maxZoom);
+  }
+
+  /** Shake the camera, as a blast nearby would: by about this many metres at first. */
+  shake(amount: number): void {
+    this.tremor = Math.max(this.tremor, amount);
   }
 
   /** Jump straight behind the truck, e.g. after a reset. */
@@ -88,6 +95,12 @@ export class ChaseCamera {
     this.camera.position.copy(this.focus).addScaledVector(dir, -distance);
     this.camera.position.y = this.focus.y + height;
     this.camera.lookAt(TARGET.copy(this.focus).addScaledVector(dir, ahead));
+    if (this.tremor > 0.01) {
+      this.camera.position.x += (Math.random() - 0.5) * this.tremor;
+      this.camera.position.y += (Math.random() - 0.5) * this.tremor;
+      this.camera.position.z += (Math.random() - 0.5) * this.tremor;
+      this.tremor *= Math.exp(-5 * dt);
+    }
 
     const fov = CAMERA.fov + (boosting ? CAMERA.boostFov : 0);
     this.fov += (fov - this.fov) * ease(CAMERA.fovFollow, dt);

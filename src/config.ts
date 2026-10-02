@@ -73,7 +73,9 @@ export const TRUCK = {
   // Share of braking done by the front axle.
   brakeFrontBias: 0.6,
   handbrakeDecel: 7,
-  rollingDecel: 0.5,
+  // With the pedal up the truck slows by itself: a little from the tyres, and more the faster it is going.
+  rollingDecel: 1.3,
+  coastDrag: 0.11,
   // Extra height, in metres, at which drive and brake forces act: exaggerates squat and dive.
   pitchLeverage: 0.5,
   // Lying this far over (cosine of the tilt) and still for this long, the truck rights itself.

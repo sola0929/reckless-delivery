@@ -201,6 +201,8 @@ wait(1);
 carryTo(...cityCell(20.22, 22.3));
 for (let i = 0; i < 60 * 20 && !sim.result; i++) sim.step({ throttle: sim.truck.forwardSpeed() < 6 ? 0.6 : 0, steer: 0, handbrake: false });
 check('creeping over the open bridge ends in the river', sim.result?.failure === 'water', `truck at y = ${truckPos().y.toFixed(2)}`);
+// It may hang on the lip a while before it slides in: the sinking starts when it is under.
+for (let i = 0; i < 60 * 8 && !sim.water.under(truckPos()); i++) sim.step(idle);
 wait(4);
 check('and the truck sinks slowly, not like a stone', truckPos().y < -1 && truckPos().y > -3.4, `y = ${truckPos().y.toFixed(2)} four seconds later`);
 

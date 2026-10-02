@@ -156,6 +156,9 @@ export class TruckMesh {
   private readonly steerPivots: THREE.Group[] = [];
   private readonly wheels: THREE.Mesh[] = [];
   private readonly brakeLamp = new THREE.MeshStandardMaterial({ color: 0x7a1010, emissive: 0xff2010, emissiveIntensity: 0 });
+  /** Splashes of whatever the truck has driven through. */
+  private readonly stains: THREE.Mesh[] = [];
+  private readonly blot = new THREE.CircleGeometry(1, 9);
 
   constructor() {
     const paint = this.paint;
@@ -378,6 +381,41 @@ export class TruckMesh {
       }
     }
     this.damage = stage;
+  }
+
+  /**
+   * Splash the truck with something: blots across the nose and windscreen, over the cab roof
+   * and down the sides of the bed. They stay until the truck is washed.
+   */
+  stain(color: number): void {
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const [cw, ch, cl] = TRUCK.cab.half;
+    const [, cy, cz] = TRUCK.cab.pos;
+    const [sx, sy, sz] = TRUCK.sideWall.pos;
+    const [, shy, shz] = TRUCK.sideWall.half;
+    const between = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+    const blot = (x: number, y: number, z: number, turnX: number, turnY: number, size: number) => {
+      const mesh = new THREE.Mesh(this.blot, material);
+      mesh.position.set(x, y, z);
+      mesh.rotation.set(turnX, turnY, 0);
+      // Never round: longer one way than the other, and down the panel where it has run.
+      mesh.scale.set(size * between(0.7, 1.2), size * between(0.8, 1.6), 1);
+      this.root.add(mesh);
+      this.stains.push(mesh);
+    };
+    for (let i = 0; i < 4; i++) blot(between(-cw, cw) * 0.85, cy + between(-ch, ch) * 0.8, cz + cl + 0.045, 0, 0, between(0.12, 0.3));
+    for (let i = 0; i < 4; i++) blot(between(-cw, cw) * 0.85, cy + ch + 0.105, cz + between(-cl, cl) * 0.85, -Math.PI / 2, 0, between(0.14, 0.34));
+    for (const side of [-1, 1]) {
+      blot(side * (cw + 0.03), cy + between(-ch, ch) * 0.7, cz + between(-cl, cl) * 0.6, 0, (side * Math.PI) / 2, between(0.12, 0.26));
+      for (let i = 0; i < 2; i++) blot(side * (sx + 0.06), sy - shy * between(0.2, 0.8), sz + between(-shz, shz) * 0.9, 0, (side * Math.PI) / 2, between(0.12, 0.28));
+    }
+    while (this.stains.length > 90) this.stains.shift()!.removeFromParent();
+  }
+
+  /** As it left the depot. */
+  wash(): void {
+    for (const stain of this.stains) stain.removeFromParent();
+    this.stains.length = 0;
   }
 
   /** Where smoke comes out once the engine is suffering, in the world. */

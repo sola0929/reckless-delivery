@@ -58,6 +58,13 @@ export interface CargoType {
   salvage: number;
   friction: number;
   /**
+   * For something round: how much the bed has to gain or lose in speed, m/s², before it
+   * rolls rather than staying where it was put. Friction alone holds nothing round: a ball
+   * on a flat bed sets off at the lightest touch of the pedal. A sphere is held however it
+   * lies; a cylinder only on its side, so that it stands or falls as before.
+   */
+  rolling?: number;
+  /**
    * One collider for the whole item until it is destroyed. Without it, every part
    * collides on its own, which suits spindly things like a skeleton.
    */
@@ -132,6 +139,7 @@ function jar(): CargoType {
     salvage: 0.2,
     friction: 0.6,
     // Squat enough to slide before it tips over.
+    rolling: 4,
     hull: { shape: 'cylinder', size: [0.3, 0.33, 0] },
     parts: [
       { shape: 'cylinder', size: [0.3, 0.24, 0], pos: [0, -0.09, 0], color: CLAY, mass: 15 },
@@ -361,6 +369,7 @@ function watermelon(): CargoType {
     give: 7,
     salvage: 0.1,
     friction: 0.5,
+    rolling: 4,
     hull: { shape: 'sphere', size: [r, 0, 0] },
     parts: [
       { shape: 'sphere', size: [r, 0, 0], pos: [0, 0, 0], color: WHITE, mass: 6.8, texture: 'melon' },

@@ -2,9 +2,10 @@ import type { Vec3 } from '../config';
 import type { ObjectDesc, ObjectKindId } from './objects';
 import { TRUCK } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
+import { buildingMarks } from '../render/buildings';
 import { mulberry32 } from './sandbox';
 import { tilesAround, type Tile } from './ground';
-import type { CrowdDesc, DecalDesc, LevelDef, PitDesc, PropDesc, SignDesc, SignalDesc, SlickDesc, TrackDesc, TrafficLane, Vec2 } from './types';
+import type { BuildingLook, CrowdDesc, DecalDesc, LevelDef, PitDesc, PropDesc, RiderLane, SignDesc, SignalDesc, SlickDesc, TrackDesc, TrafficLane, Vec2 } from './types';
 
 // Level 1: a delivery run across a city, drawn as a map of characters. Each one is a 16 m
 // square; north is at the top. To add a road, change the map.
@@ -186,6 +187,8 @@ class Builder {
   /** Rectangles to leave free of scattered clutter: [minX, minZ, maxX, maxZ]. */
   readonly keepClear: Tile[] = [];
   readonly rand = mulberry32(21);
+  /** A second set of dice, for what was added once the first had laid everything else out: using these moves none of that. */
+  readonly dice = mulberry32(57);
   /** Counts lengths of guard rail, to paint them alternately. */
   rails = 0;
 
@@ -305,10 +308,16 @@ function buildBlocks(b: Builder): void {
         const rows = rEnd === r ? [r] : [r, rEnd];
         const back = (open: boolean) => (open ? b.span(3.5, 5) : 0);
         // Columns run against X: the next column up is the low-X side.
-        const lowX = xOf(cEnd) - HALF + back(!rows.every((rr) => built(cEnd + 1, rr)));
-        const highX = xOf(c) + HALF - back(!rows.every((rr) => built(c - 1, rr)));
-        const lowZ = zOf(r) - HALF + back(!columns.every((cc) => built(cc, r - 1)));
-        const highZ = zOf(rEnd) + HALF - back(!columns.every((cc) => built(cc, rEnd + 1)));
+        const open: BuildingLook['open'] = [
+          !rows.every((rr) => built(cEnd + 1, rr)),
+          !rows.every((rr) => built(c - 1, rr)),
+          !columns.every((cc) => built(cc, r - 1)),
+          !columns.every((cc) => built(cc, rEnd + 1)),
+        ];
+        const lowX = xOf(cEnd) - HALF + back(open[0]);
+        const highX = xOf(c) + HALF - back(open[1]);
+        const lowZ = zOf(r) - HALF + back(open[2]);
+        const highZ = zOf(rEnd) + HALF - back(open[3]);
         const height =
           kind === 'w' ? b.span(6, 10)
           : kind === 'o' ? b.span(6, 15)
@@ -318,12 +327,14 @@ function buildBlocks(b: Builder): void {
         const hz = (highZ - lowZ) / 2;
         const lx = (lowX + highX) / 2;
         const lz = (lowZ + highZ) / 2;
-        b.props.push({ shape: 'box', size: [hx, height / 2, hz], pos: [lx, KERB + height / 2, lz], color, fade: true, mapColor: MAP_BUILDING });
-        // Something on the roof, so the skyline isn't all flat tops.
-        if (height > 14) {
-          const cap = b.span(1, 3);
-          b.props.push({ shape: 'box', size: [hx * 0.5, cap / 2, hz * 0.5], pos: [lx, KERB + height + cap / 2, lz], color: 0x6a7078, ghost: true, fade: true });
-        }
+        // The box is what is solid. How it looks is worked out from it when it is drawn.
+        const look: BuildingLook = {
+          style: kind === 'w' ? 'shed' : kind === 'o' ? 'old' : 'tower',
+          open,
+          crown: height > 14 ? b.span(1, 3) : 0,
+          seed: c * 7919 + r * 104729,
+        };
+        b.props.push({ shape: 'box', size: [hx, height / 2, hz], pos: [lx, KERB + height / 2, lz], color, fade: true, mapColor: MAP_BUILDING, building: look });
       }
     }
   }
@@ -353,6 +364,147 @@ function buildStreetFurniture(b: Builder): void {
       }
     }
   }
+}
+
+const SCOOTERS: ObjectKindId[] = ['scooterRed', 'scooterBlue', 'scooterWhite', 'scooterBlack', 'scooterYellow', 'scooterTeal', 'scooterWhite', 'scooterBlack'];
+
+/**
+ * Scooters parked in rows at the kerb, tail to the road, between the trees and the lamps:
+ * in front of the shops, and only along the streets the route goes down or passes close to.
+ */
+function buildScooters(b: Builder): void {
+  // Dice of their own, so that adding these moves nothing else.
+  const rand = mulberry32(88);
+  const inset = 1.15;
+  const gap = 0.78;
+  // Whatever stands up out of the pavement: a wall across it, a barrier, a railing.
+  const standing = b.props.filter((p) => !p.ghost && p.mass === undefined && p.pos[1] + p.size[1] > KERB + 0.3);
+  const clear = (x: number, z: number) => standing.every((p) => Math.abs(x - p.pos[0]) > p.size[0] + 1 || Math.abs(z - p.pos[2]) > (p.shape === 'box' ? p.size[2] : p.size[0]) + 1);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const kind = at(c, r);
+      if (kind !== '#' && kind !== 'o') continue;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const beside = at(c + dc, r + dr);
+        if (!DRIVABLE.has(beside) || beside === 'm' || beside === 'c' || beside === 'd') continue;
+        if (rand() < 0.2) continue;
+        const dx = -dc;
+        const dz = dr;
+        const count = 4 + Math.floor(rand() * 4);
+        const middle = (rand() - 0.5) * 0.9;
+        // All leaning the same way, as a row of them does.
+        const slant = (rand() < 0.5 ? -1 : 1) * (0.15 + rand() * 0.2);
+        for (let i = 0; i < count; i++) {
+          const along = middle + (i - (count - 1) / 2) * gap;
+          const x = xOf(c) + dx * (HALF - inset) + dz * along;
+          const z = zOf(r) + dz * (HALF - inset) + dx * along;
+          // A gap here and there, where someone has ridden off.
+          if (rand() < 0.1 || !nearRoute(x, z, 60) || !b.free(x, z) || !clear(x, z)) continue;
+          b.object(SCOOTERS[Math.floor(rand() * SCOOTERS.length)], x, z, KERB, Math.atan2(-dx, -dz) + slant);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Things along the route that do more than fall over when hit: a cylinder of gas on the
+ * pavement outside each eating house, where its stove is, and tins of paint left about the
+ * roadworks. Gas stands nowhere else but by the stoves of the market and the feast.
+ */
+function buildHazards(b: Builder): void {
+  const standing = b.props.filter((p) => !p.ghost && p.mass === undefined && !p.building && p.pos[1] + p.size[1] > KERB + 0.3);
+  const clear = (x: number, z: number) => standing.every((p) => Math.abs(x - p.pos[0]) > p.size[0] + 0.8 || Math.abs(z - p.pos[2]) > (p.shape === 'box' ? p.size[2] : p.size[0]) + 0.8);
+  for (const prop of b.props) {
+    if (!prop.building || prop.building.style === 'shed' || !nearRoute(prop.pos[0], prop.pos[2], 50)) continue;
+    for (const mark of buildingMarks(prop, prop.building)) {
+      // Not every kitchen keeps its gas out front.
+      if (b.dice() < 0.6 && nearRoute(mark.x, mark.z, 32) && b.free(mark.x, mark.z) && clear(mark.x, mark.z)) b.object('gasCylinder', mark.x, mark.z, KERB, 0);
+    }
+  }
+
+  const paints: ObjectKindId[] = ['paintWhite', 'paintYellow', 'paintBlue'];
+  const [sx, sz] = [xOf(22) + HALF, (zOf(27) + zOf(28)) / 2];
+  for (let i = 0; i < 9; i++) {
+    const x = sx - 3 - b.dice() * 26;
+    const z = sz + (b.dice() < 0.5 ? -1 : 1) * (4.2 + b.dice() * 3.4);
+    if (b.free(x, z, true) && clear(x, z)) b.object(paints[i % paints.length], x, z, 0, 0);
+  }
+}
+
+/** The rows of the map that are road from one edge to the other. */
+function throughRoads(): number[] {
+  const rows: number[] = [];
+  for (let r = 0; r < ROWS; r++) if ([...MAP[ROWS - 1 - r]].every((kind) => kind === '.')) rows.push(r);
+  return rows;
+}
+
+/** The stretch of the back street that is plain road: between the foot of the terrace and the oil. */
+const BACK_STREET: { row: number; from: number; to: number } = { row: 41, from: 20.4, to: 14.6 };
+
+/**
+ * People on the pavements along the route, and people crossing the two streets where the
+ * traffic is: wherever they like, as people do.
+ */
+function buildPeople(b: Builder): void {
+  // Dice of their own, so that adding these moves nothing else.
+  const rand = mulberry32(131);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const kind = at(c, r);
+      if (kind !== '#' && kind !== 'o') continue;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const beside = at(c + dc, r + dr);
+        if (beside !== '.' && beside !== 'b') continue;
+        if (rand() < 0.45) continue;
+        const dx = -dc;
+        const dz = dr;
+        // The strip of pavement between the kerb and the shops, the length of the square.
+        const near = HALF - 0.6;
+        const far = HALF - 3.2;
+        const x = [xOf(c) + dx * near - dz * HALF, xOf(c) + dx * far + dz * HALF];
+        const z = [zOf(r) + dz * near - dx * HALF, zOf(r) + dz * far + dx * HALF];
+        if (!nearRoute(xOf(c) + dx * HALF, zOf(r) + dz * HALF, 30)) continue;
+        b.crowds.push({ area: [Math.min(...x), Math.min(...z), Math.max(...x), Math.max(...z)], count: rand() < 0.3 ? 2 : 1, y: KERB });
+      }
+    }
+  }
+
+  // Crossings: from the pavement on one side to the pavement on the other.
+  const crossing = (column: number, row: number, count: number) => {
+    const x = xOf(column);
+    const z = zOf(row);
+    b.crowds.push({ area: [x - 2.5, z - HALF - 3, x + 2.5, z + HALF + 3], count, y: KERB / 2, crossing: 'z' });
+  };
+  for (const row of throughRoads()) for (const column of [23.6, 25.2, 26.6, 27.9]) crossing(column, row, 3);
+  for (const column of [25.4, 19.4, 17.8, 16.2, 15]) crossing(column, BACK_STREET.row, 2);
+}
+
+/** Where the scooters ride: both carriageways of the boulevard, both ways along the busy street, and up and down the back street. */
+function buildRiders(): RiderLane[] {
+  const lanes: RiderLane[] = [];
+  // A one-way carriageway: from kerb to median.
+  const oneWay: Vec2 = [-7.3, 6.3];
+  // One side of a two-way street, and now and then a little over the middle of it.
+  const twoWay: Vec2 = [-7.3, 0.8];
+
+  const boulevard: number[] = [];
+  for (let r = 0; r < ROWS; r++) if (at(0, r) === 'b') boulevard.push(r);
+  if (boulevard.length === 2) {
+    const [south, north] = boulevard;
+    lanes.push({ from: [MAX_X, zOf(south)], to: [MIN_X, zOf(south)], band: oneWay, riders: 24 });
+    lanes.push({ from: [MIN_X, zOf(north)], to: [MAX_X, zOf(north)], band: oneWay, riders: 24 });
+  }
+  for (const row of throughRoads()) {
+    lanes.push({ from: [MAX_X, zOf(row)], to: [MIN_X, zOf(row)], band: twoWay, riders: 24 });
+    lanes.push({ from: [MIN_X, zOf(row)], to: [MAX_X, zOf(row)], band: twoWay, riders: 24 });
+  }
+  // The back street leads nowhere they want to go: they ride up it, turn round, and ride back.
+  const { row, from, to } = BACK_STREET;
+  const narrow: Vec2 = [-5.8, 0.8];
+  lanes.push({ from: [xOf(from), zOf(row)], to: [xOf(to), zOf(row)], band: narrow, riders: 8, turnInto: lanes.length + 1 });
+  lanes.push({ from: [xOf(to), zOf(row)], to: [xOf(from), zOf(row)], band: narrow, riders: 8, turnInto: lanes.length - 1 });
+  return lanes;
 }
 
 function buildRoads(b: Builder): void {
@@ -418,6 +570,7 @@ function buildMarket(b: Builder, c: number, r: number): void {
   const z = zOf(r);
   const stalls: ObjectKindId[] = ['stallRed', 'stallBlue', 'stallYellow', 'stallGreen'];
   const crates: ObjectKindId[] = ['crateOrange', 'crateRed', 'crateGreen', 'crateYellow'];
+  const fruit: ObjectKindId[] = ['fruitOrange', 'fruitTomato', 'fruitMelon', 'fruitGrape', 'fruitMango'];
   // A stall goes against any side that isn't itself road. Where two such sides meet in a
   // corner, only one of them gets the pitch.
   const pitches: Vec2[] = [];
@@ -432,15 +585,49 @@ function buildMarket(b: Builder, c: number, r: number): void {
       pitches.push([sx, sz]);
       // The stall's long side lies along the lane.
       const rotY = dx !== 0 ? Math.PI / 2 : 0;
-      b.object(b.pick(stalls), sx, sz, 0, rotY);
+      // Turned to face the lane, for those with a front and a back.
+      const facing = Math.atan2(-dx, -dz);
+      const stall = b.pick(stalls);
       const goods = b.pick(crates);
-      // Stock on the counter, and more stacked out front.
-      for (const t of [-0.6, 0, 0.6]) b.object(goods, sx + dz * t, sz + dx * t, 0.84, rotY);
+      const stock = [b.pick(crates), b.pick(crates)];
+      const heaped = b.rand() < 0.5;
       const fx = sx - dx * 1.5;
       const fz = sz - dz * 1.5;
-      b.object(b.pick(crates), fx, fz, 0, rotY);
-      b.object(b.pick(crates), fx + dz * 0.5, fz + dx * 0.5, 0, rotY);
-      if (b.rand() < 0.5) b.object(goods, fx + dz * 0.25, fz + dx * 0.25, 0.4, rotY);
+      const front = () => {
+        b.object(stock[0], fx, fz, 0, rotY);
+        b.object(stock[1], fx + dz * 0.5, fz + dx * 0.5, 0, rotY);
+        if (heaped) b.object(goods, fx + dz * 0.25, fz + dx * 0.25, 0.4, rotY);
+      };
+      // What is sold here. No two pitches side by side need be the same kind of thing.
+      const trade = b.dice();
+      if (trade < 0.24) {
+        // General goods: a counter under an awning, stock on it and more stacked out front.
+        b.object(stall, sx, sz, 0, rotY);
+        for (const t of [-0.6, 0, 0.6]) b.object(goods, sx + dz * t, sz + dx * t, 0.84, rotY);
+        front();
+      } else if (trade < 0.54) {
+        b.object(fruit[Math.floor(b.dice() * fruit.length)], sx, sz, 0, facing);
+        front();
+      } else if (trade < 0.68) {
+        // Something frying, the gas for it standing beside the cart, and somewhere to sit and eat it.
+        b.object(b.dice() < 0.5 ? 'snackCartRed' : 'snackCartYellow', sx, sz, 0, rotY);
+        if (b.dice() < 0.75) b.object('gasCylinder', sx + dz * 1.35 + dx * 0.3, sz + dx * 1.35 + dz * 0.3, 0, 0);
+        for (const t of [-0.5, 0.4]) b.object('stool', fx + dz * t, fz + dx * t, 0, 0);
+      } else if (trade < 0.77) {
+        b.object('fishStall', sx, sz, 0, facing);
+        front();
+      } else if (trade < 0.86) {
+        for (const out of [0.3, 1.2]) b.object('clothesRack', sx - dx * out, sz - dz * out, 0, rotY);
+        front();
+      } else if (trade < 0.94) {
+        b.object('flowerStall', sx, sz, 0, facing);
+        b.object('flowerStall', fx, fz, 0, facing);
+      } else {
+        // Live poultry: cages on the ground and one on top.
+        for (const t of [-0.55, 0.55]) b.object('chickenCage', sx + dz * t, sz + dx * t, 0, rotY);
+        b.object('chickenCage', sx, sz, 0.58, rotY);
+        front();
+      }
       if (b.rand() < 0.35) b.object('barrel', sx - dx * 1.6 + dz * 1.6, sz - dz * 1.6 + dx * 1.6);
     }
   }
@@ -666,17 +853,47 @@ function buildSteps(b: Builder): void {
       color: k % 2 ? 0xa89c86 : 0xb8ad98, mapColor: k === steps - 1 ? MAP_PLAZA : MAP_BARRIER,
     });
   }
-  // On top: a few tables, and people with nowhere better to stand than the road.
+  // On top: a temple feast, laid out in the street. Striped tents down both sides with round
+  // tables under them, more tables where the tents ran out, the caterer's stoves, firecrackers
+  // ready at either end, and the whole neighbourhood. The way through is what was left clear.
   const top = steps * rise;
   const a = from + steps * tread;
   const c = to - steps * tread;
-  for (const [t, side] of [[0.25, 1], [0.5, -1], [0.75, 1]]) {
-    const x = a + (c - a) * t;
-    const tz = z + side * 5.6;
-    b.object('table', x, tz, top);
-    for (const angle of [0, 2.1, 4.2]) b.object('chair', x + Math.cos(angle) * 0.95, tz + Math.sin(angle) * 0.95, top, -angle + Math.PI / 2);
+  const seat = (x: number, tz: number, stools: number) => {
+    b.object('banquetTable', x, tz, top, 0);
+    for (let i = 0; i < stools; i++) {
+      const angle = (i / stools) * Math.PI * 2 + x;
+      b.object('stool', x + Math.cos(angle) * 1.22, tz + Math.sin(angle) * 1.22, top, 0);
+    }
+  };
+  for (const tz of [z - 4.9, z + 9]) {
+    for (const t of [0.17, 0.5, 0.83]) {
+      const x = a + (c - a) * t;
+      b.object('tent', x, tz, top, 0);
+      for (const along of [-1.25, 1.25]) seat(x + along, tz, 5);
+    }
   }
-  b.crowds.push({ area: [a, z - 7, c, z + 7], count: 7, y: top });
+  // The kitchen is at the side, against the houses, out of the way of anyone driving
+  // through: two stoves, and the gas they run on behind them.
+  const kitchen = a + 3;
+  b.object('snackCartRed', kitchen, z - 9.5, top, 0);
+  b.object('snackCartYellow', kitchen + 2.4, z - 9.6, top, 0);
+  for (const dx of [-0.9, 1.2, 3.4]) b.object('gasCylinder', kitchen + dx, z - 10.75, top, 0);
+  b.object('firecrackers', a + 0.9, z + 0.4, top, 0);
+  b.object('firecrackers', c - 0.9, z + 6.9, top, Math.PI);
+  // There is no way left clear, between the tents or behind them: tables from one side to
+  // the other, row behind row, each row set off from the last. Whoever drives through
+  // drives through them.
+  const crackers: Vec2[] = [[a + 0.9, z + 0.4], [c - 0.9, z + 6.9]];
+  [-8.9, -1.3, 1.8, 4.9].forEach((off, row) => {
+    for (let x = a + 1.9 + (row % 2) * 1.6; x < c - 1.4; x += 3.2) {
+      // Not on top of the kitchen, nor of the firecrackers.
+      if (row === 0 && x < kitchen + 5.6) continue;
+      if (crackers.some(([tx, tz]) => Math.hypot(x - tx, z + off - tz) < 1.7)) continue;
+      seat(x, z + off, 5);
+    }
+  });
+  b.crowds.push({ area: [a, z - 11, c, z + 10.5], count: 60, y: top });
   b.keepClear.push([from - 1, z - reach - 1, to + 1, z + reach + 1]);
 }
 
@@ -1012,6 +1229,9 @@ export function city(): LevelDef {
   buildBlocks(b);
   buildRoads(b);
   buildStreetFurniture(b);
+  buildScooters(b);
+  buildPeople(b);
+  buildHazards(b);
   buildEdges(b);
 
   const [sc, sr] = find('S');
@@ -1053,6 +1273,7 @@ export function city(): LevelDef {
     decals: b.decals,
     cargo: cityLoad(),
     traffic: buildTraffic(),
+    riders: buildRiders(),
     finish: { pos: finish, half: [3.4, 6.4] },
     // The first level: mistakes cost less here than they will later.
     damageScale: 0.8,

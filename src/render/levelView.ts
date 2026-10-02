@@ -4,6 +4,7 @@ import type { PropDesc, SignDesc, SlickDesc } from '../levels/types';
 import type { Sim } from '../sim/sim';
 import { CAR_BODY, CAR_CABIN } from '../sim/traffic';
 import { TRAIN_HALF } from '../sim/trains';
+import { buildingMesh } from './buildings';
 import { BodySync, propMesh } from './meshes';
 
 const FADED_OPACITY = 0.16;
@@ -227,7 +228,7 @@ export class LevelView {
     scene.add(...staticProps(props.filter((p) => p.mass === undefined && !p.fade)));
     for (const desc of props) {
       if (!desc.fade) continue;
-      const mesh = propMesh(desc);
+      const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
       scene.add(mesh);
       this.faders.push(this.fader(mesh, desc));
     }
