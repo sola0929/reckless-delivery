@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA } from '../config';
+import { groundTiles } from '../levels/ground';
 import type { LevelDef } from '../levels/types';
 
 export interface View {
@@ -34,11 +35,32 @@ function groundTexture(ground: LevelDef['ground']): THREE.Texture {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  // One tile per 10 m.
-  tex.repeat.set(ground.half[0] / 5, ground.half[1] / 5);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
+}
+
+/** The ground as flat rectangles that leave the pits open, textured by where they are: one tile per 10 m. */
+function groundGeometry(level: LevelDef): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (const [x0, z0, x1, z1] of groundTiles(level)) {
+    const first = positions.length / 3;
+    for (const [x, z] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) {
+      positions.push(x, 0, z);
+      normals.push(0, 1, 0);
+      uvs.push(x / 10, z / 10);
+    }
+    indices.push(first, first + 2, first + 1, first, first + 3, first + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  return geometry;
 }
 
 export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
@@ -67,13 +89,30 @@ export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
   scene.add(sun, sun.target);
 
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(level.ground.half[0] * 2, level.ground.half[1] * 2),
+    groundGeometry(level),
     new THREE.MeshStandardMaterial({ map: groundTexture(level.ground), roughness: 0.95 }),
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(level.ground.center[0], 0, level.ground.center[1]);
   ground.receiveShadow = true;
   scene.add(ground);
+
+  // Each pit is a box seen from the inside: a floor and four walls of earth.
+  const earth = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1, side: THREE.BackSide });
+  for (const pit of level.pits ?? []) {
+    const hole = new THREE.Mesh(new THREE.BoxGeometry(pit.half[0] * 2, pit.depth, pit.half[1] * 2), earth);
+    hole.position.set(pit.pos[0], -pit.depth / 2, pit.pos[1]);
+    hole.receiveShadow = true;
+    scene.add(hole);
+    if (pit.water === undefined) continue;
+    // Water: see-through enough to watch things go down into it.
+    const surface = new THREE.Mesh(
+      new THREE.PlaneGeometry(pit.half[0] * 2, pit.half[1] * 2).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x2f78c4, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false }),
+    );
+    surface.position.set(pit.pos[0], -pit.water, pit.pos[1]);
+    surface.receiveShadow = true;
+    surface.renderOrder = 1;
+    scene.add(surface);
+  }
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);

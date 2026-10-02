@@ -1,5 +1,6 @@
 import type { LevelDef } from './levels/types';
 import type { TrafficCar } from './sim/traffic';
+import { TRAIN_HALF } from './sim/trains';
 
 /** Pixels per metre of the pre-drawn map, and of the map as shown. */
 const DRAWN = 1.5;
@@ -61,7 +62,27 @@ export class Minimap {
     for (const d of this.level.decals) {
       if (d.mapColor !== undefined) rect(d.pos[0], d.pos[1], d.size[0] / 2, d.size[1] / 2, d.mapColor);
     }
+    for (const slick of this.level.slicks ?? []) rect(slick.pos[0], slick.pos[1], slick.half[0], slick.half[1], 0x23262e);
+    for (const pit of this.level.pits ?? []) rect(pit.pos[0], pit.pos[1], pit.half[0], pit.half[1], pit.water === undefined ? 0x14110e : 0x3f7fc0);
     for (const p of mapped) if (!p.mapUnder) prop(p);
+
+    // The intended way through, as a dotted line down the middle of the road.
+    const route = this.level.route;
+    if (route && route.length > 1) {
+      g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      g.lineWidth = 2.5 * DRAWN;
+      g.setLineDash([5 * DRAWN, 5 * DRAWN]);
+      g.lineJoin = 'round';
+      g.beginPath();
+      route.forEach(([x, z], i) => {
+        const u = (this.maxX - x) * DRAWN;
+        const v = (this.maxZ - z) * DRAWN;
+        if (i === 0) g.moveTo(u, v);
+        else g.lineTo(u, v);
+      });
+      g.stroke();
+      g.setLineDash([]);
+    }
   }
 
   /**
@@ -71,6 +92,7 @@ export class Minimap {
   update(
     dt: number, x: number, z: number, heading: number, viewYaw: number, cars: readonly TrafficCar[],
     fallen: readonly { x: number; z: number }[], driver: { x: number; z: number; leash: number } | null,
+    trains: readonly { x: number; z: number }[] = [],
   ): void {
     this.time += dt;
     const { ctx, size } = this;
@@ -104,6 +126,19 @@ export class Minimap {
       if (Math.hypot(cx, cy) > half) continue;
       ctx.fillStyle = car.lane.cruise > 0 ? '#ffd166' : '#aab0b8';
       ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+    }
+
+    // Trains, as long bars sliding along their tracks.
+    ctx.strokeStyle = '#ff7a5a';
+    ctx.lineWidth = 3;
+    for (const train of trains) {
+      const [ax, ay] = place(train.x - TRAIN_HALF.length, train.z);
+      const [bx, by] = place(train.x + TRAIN_HALF.length, train.z);
+      if (Math.min(Math.hypot(ax, ay), Math.hypot(bx, by)) > half) continue;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
     }
 
     // Cargo lying off the truck, waiting to be fetched.

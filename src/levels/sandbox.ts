@@ -104,6 +104,7 @@ export function sandbox(): LevelDef {
     decals: [],
     cargo: standardLoad(),
     traffic: [],
-    stars: [0.6, 0.8, 0.95],
+    stars: [0.6, 0.8],
+    par: 120,
   };
 }

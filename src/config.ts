@@ -111,9 +111,9 @@ export const DRIVER = {
   leash: 35,
   /** Height above the feet at which a load is carried. */
   carryHeight: 2.05,
-  /** Walking speed with a load: 1 at no weight, falling to the floor value for heavy loads. */
-  carrySlowPerKg: 0.02,
-  carrySlowest: 0.45,
+  /** Speed with a load, walking or running: 1 at no weight, falling to the floor value for heavy loads. */
+  carrySlowPerKg: 0.006,
+  carrySlowest: 0.6,
   /**
    * Throwing: holding the button pushes the landing point outward at a steady rate, so the
    * feel is the same whatever is being thrown. Heavier loads just top out sooner: the

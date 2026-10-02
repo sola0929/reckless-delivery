@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import type { PropDesc } from '../levels/types';
+import { mulberry32 } from '../levels/sandbox';
+import type { PropDesc, SignDesc, SlickDesc } from '../levels/types';
 import type { Sim } from '../sim/sim';
 import { CAR_BODY, CAR_CABIN } from '../sim/traffic';
+import { TRAIN_HALF } from '../sim/trains';
 import { BodySync, propMesh } from './meshes';
 
 const FADED_OPACITY = 0.16;
@@ -33,6 +35,137 @@ function carMesh(color: number): THREE.Group {
     car.add(part);
   }
   return car;
+}
+
+const LIVERIES = [0xd8483a, 0x2f6fb0, 0xe0a020, 0x3f8f5f, 0x8a4fa0, 0xd06a2a];
+
+function trainMesh(color: number): THREE.Group {
+  const train = new THREE.Group();
+  const { length, height, width } = TRAIN_HALF;
+  const part = (size: [number, number, number], y: number, material: THREE.Material, x = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.position.set(x, y, 0);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    train.add(mesh);
+  };
+  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.7 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.2, metalness: 0.4 });
+  const warning = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.6 });
+  part([length * 2, height * 2 - 0.6, width * 2], 0.3, paint);
+  part([length * 2 - 0.4, 0.6, width * 2 - 0.5], -height + 0.3, dark);
+  part([length * 2 - 3, 0.8, width * 2 + 0.04], 0.75, glass);
+  part([length * 2 - 1, 0.2, width * 2 - 0.6], height + 0.1, dark);
+  // A yellow nose at each end, since they run both ways.
+  for (const end of [-1, 1]) part([0.5, height * 2 - 0.6, width * 2 + 0.04], 0.3, warning, end * (length - 0.2));
+  return train;
+}
+
+/** Spilt oil: overlapping dark pools with a sheen, and a few streaks of colour where it is thin. */
+function slickMesh(slicks: SlickDesc[]): THREE.Group {
+  const group = new THREE.Group();
+  const rand = mulberry32(11);
+  const oil = new THREE.MeshStandardMaterial({ color: 0x16181e, roughness: 0.12, metalness: 0.35, transparent: true, opacity: 0.92, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const sheens = [0x7a4fd0, 0x2fb0a8, 0xd0a030].map(
+    (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.2, metalness: 0.6, transparent: true, opacity: 0.28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+  );
+  const disc = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
+  let layer = 0;
+  const pool = (x: number, z: number, rx: number, rz: number, material: THREE.Material) => {
+    const mesh = new THREE.Mesh(disc, material);
+    // Each a hair above the last, so that none of them shimmer against each other.
+    mesh.position.set(x, 0.03 + layer++ * 0.0015, z);
+    mesh.scale.set(rx, 1, rz);
+    mesh.rotation.y = rand() * Math.PI;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  for (const { pos, half } of slicks) {
+    const count = Math.round((half[0] * half[1]) / 7);
+    const inside = (radius: number): [number, number] => [
+      pos[0] + (rand() * 2 - 1) * Math.max(0, half[0] - radius),
+      pos[1] + (rand() * 2 - 1) * Math.max(0, half[1] - radius),
+    ];
+    for (let i = 0; i < count; i++) {
+      const radius = 1.6 + rand() * 2.6;
+      pool(...inside(radius), radius, radius * (0.6 + rand() * 0.4), oil);
+    }
+    for (let i = 0; i < count / 2; i++) {
+      const radius = 0.6 + rand() * 1.4;
+      pool(...inside(radius), radius * 1.6, radius * 0.5, sheens[i % sheens.length]);
+    }
+  }
+  return group;
+}
+
+/** The face of a 'slippery road' sign: a yellow triangle with a skidding car, and the words under it. */
+function slipperyTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 320;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#f4f4f0';
+  g.fillRect(0, 0, 256, 320);
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(128, 22);
+  g.lineTo(236, 208);
+  g.lineTo(20, 208);
+  g.closePath();
+  g.fillStyle = '#ffd21f';
+  g.fill();
+  g.lineWidth = 14;
+  g.strokeStyle = '#16181c';
+  g.stroke();
+  // The car, seen from behind and leaning, over two wavy skid marks.
+  g.save();
+  g.translate(128, 128);
+  g.rotate(-0.22);
+  g.fillStyle = '#16181c';
+  g.fillRect(-30, -22, 60, 30);
+  g.fillRect(-22, -42, 44, 24);
+  g.fillRect(-34, 6, 16, 14);
+  g.fillRect(18, 6, 16, 14);
+  g.restore();
+  g.lineWidth = 7;
+  g.lineCap = 'round';
+  for (const x of [100, 156]) {
+    g.beginPath();
+    g.moveTo(x, 158);
+    g.bezierCurveTo(x - 16, 170, x + 16, 180, x - 6, 194);
+    g.stroke();
+  }
+  g.fillStyle = '#16181c';
+  g.font = '900 52px "Microsoft JhengHei", "PingFang TC", sans-serif';
+  g.textAlign = 'center';
+  g.fillText('小心地滑', 128, 282);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+function signMeshes(signs: SignDesc[]): THREE.Group {
+  const group = new THREE.Group();
+  const face = new THREE.MeshBasicMaterial({ map: slipperyTexture() });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
+  for (const sign of signs) {
+    const root = new THREE.Group();
+    root.position.set(...sign.pos);
+    root.rotation.y = sign.rotY;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.2, 8), steel);
+    post.position.y = 1.1;
+    post.castShadow = true;
+    // Leaning well back: the game is watched from above, and a sign stood upright would be edge-on.
+    const board = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.06), [steel, steel, steel, steel, face, steel]);
+    board.position.set(0, 2.5, -0.5);
+    board.rotation.x = -0.9;
+    board.castShadow = true;
+    root.add(post, board);
+    group.add(root);
+  }
+  return group;
 }
 
 /** Unit shapes that an instance matrix scales up to a prop's size. */
@@ -82,11 +215,13 @@ export class LevelView {
   private readonly syncs: BodySync[] = [];
   private readonly faders: Fader[] = [];
   private readonly finishGlow: THREE.Mesh | null = null;
+  /** One pair of materials per railway track: the lamps and the panels that show its signal. */
+  private readonly signals: { lamp: THREE.MeshBasicMaterial; panel: THREE.MeshBasicMaterial }[] = [];
   private readonly ray = new THREE.Ray();
   private readonly hit = new THREE.Vector3();
   private time = 0;
 
-  constructor(scene: THREE.Scene, sim: Sim) {
+  constructor(scene: THREE.Scene, private readonly sim: Sim) {
     const { props, decals, finish } = sim.level;
 
     scene.add(...staticProps(props.filter((p) => p.mass === undefined && !p.fade)));
@@ -108,6 +243,15 @@ export class LevelView {
       scene.add(mesh);
       this.syncs.push(new BodySync(car.body, mesh));
     }
+
+    for (const train of sim.trains.trains) {
+      const mesh = trainMesh(LIVERIES[train.track % LIVERIES.length]);
+      scene.add(mesh);
+      this.syncs.push(new BodySync(train.body, mesh));
+    }
+    this.addSignals(scene);
+    if (sim.level.slicks?.length) scene.add(slickMesh(sim.level.slicks));
+    if (sim.level.signs?.length) scene.add(signMeshes(sim.level.signs));
 
     if (decals.length) scene.add(this.decalMesh(sim));
 
@@ -142,6 +286,16 @@ export class LevelView {
       (this.finishGlow.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(this.time * 3) * 0.07;
     }
 
+    // Signals: flashing red while a train is due, steady green otherwise.
+    const flash = Math.sin(this.time * 14) > 0;
+    this.signals.forEach(({ lamp, panel }, track) => {
+      const red = this.sim.trains.warning(track);
+      lamp.color.set(red ? (flash ? 0xff2a1a : 0x551008) : 0x30ff70);
+      // The lamps flash; the ground under the train's path just turns red, steadily.
+      panel.color.set(red ? 0xff2a1a : 0x30d868);
+      panel.opacity = red ? 0.6 : 0.22;
+    });
+
     const reach = camera.position.distanceTo(truck);
     this.ray.origin.copy(camera.position);
     this.ray.direction.copy(truck).sub(camera.position).normalize();
@@ -161,6 +315,31 @@ export class LevelView {
         f.material.depthWrite = !transparent;
         f.material.needsUpdate = true;
       }
+    }
+  }
+
+  private addSignals(scene: THREE.Scene): void {
+    const lampShape = new THREE.SphereGeometry(0.3, 12, 8);
+    const hoodShape = new THREE.BoxGeometry(0.9, 0.9, 0.5);
+    const hood = new THREE.MeshStandardMaterial({ color: 0x20242a, roughness: 0.8 });
+    for (const signal of this.sim.level.signals ?? []) {
+      const materials = (this.signals[signal.track] ??= {
+        lamp: new THREE.MeshBasicMaterial({ color: 0x30ff70 }),
+        panel: new THREE.MeshBasicMaterial({ color: 0x30d868, transparent: true, opacity: 0.3, depthWrite: false }),
+      });
+      if (signal.panel) {
+        const panel = new THREE.Mesh(new THREE.PlaneGeometry(signal.panel[0], signal.panel[1]).rotateX(-Math.PI / 2), materials.panel);
+        panel.position.set(...signal.pos);
+        scene.add(panel);
+        continue;
+      }
+      const lamp = new THREE.Mesh(lampShape, materials.lamp);
+      lamp.position.set(...signal.pos);
+      const box = new THREE.Mesh(hoodShape, hood);
+      box.position.set(...signal.pos);
+      // The lamp faces up as much as sideways: it is mostly seen from above.
+      lamp.scale.set(1, 1.6, 1.2);
+      scene.add(lamp, box);
     }
   }
 

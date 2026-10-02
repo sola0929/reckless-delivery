@@ -5,8 +5,8 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
-await page.goto('http://localhost:5183/');
-await page.waitForFunction(() => window.game, null, { timeout: 20000 });
+await page.goto('http://localhost:5183/?level=city');
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 20000 });
 await page.waitForTimeout(1500);
 const go = async (name, x, z, zoomOut = 0) => {
   await page.evaluate(([x, z]) => {
@@ -20,14 +20,11 @@ const go = async (name, x, z, zoomOut = 0) => {
   await page.waitForTimeout(1200);
   await page.screenshot({ path: `dev/out/tour-${name}.png` });
 };
-await go('1-start', -5.25, 30);
-await go('2-roadworks', 1, 96);
-await go('3-humpback', 147, 196);
-await go('4-school', 144.5, 310);
-await go('5-roundabout', 143, 362);
-await go('6-market', 148, 392);
-await go('7-site', 152, 452);
-await go('8-park-wide', 70, 300, 700);
+// Map squares are 16 m: x = (17.5 - column) * 16, z = row * 16, rows counted from the south.
+const sq = (c, r) => [(17.5 - c) * 16, r * 16];
+await go('1-oil-signs', ...sq(17.2, 41.22));
+await go('2-oil', ...sq(14.8, 41.22));
+await go('3-oil-wide', ...sq(14, 41.3), 700);
 const fps = await page.evaluate(() => new Promise((resolve) => { let n = 0; const t0 = performance.now(); const tick = () => (++n < 60 ? requestAnimationFrame(tick) : resolve(Math.round(60000 / (performance.now() - t0)))); requestAnimationFrame(tick); }));
 console.log('fps', fps, errors.length ? errors.join('\n') : 'no console errors');
 await browser.close();

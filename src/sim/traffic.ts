@@ -25,6 +25,8 @@ const BRAKING = 6;
 const ACCELERATION = 3;
 /** How far ahead a car looks for something to stop for. */
 const LOOKAHEAD = 40;
+/** The truck counts as going a lane's way when it points within about 40 degrees of it (as a cosine). */
+const SAME_WAY = 0.75;
 const CAR_MASS = 1200;
 /** How long a car lies where it was knocked before returning to its lane. */
 const KNOCKED_SECONDS = 8;
@@ -96,7 +98,10 @@ export class Traffic {
             RAPIER.ColliderDesc.cuboid(...part.half)
               .setTranslation(...part.pos)
               .setMass(CAR_MASS * part.massShare)
-              .setFriction(0.6)
+              // A car is on wheels: once it has been hit it rolls away from a shove. With an
+              // ordinary box's grip, two wrecks against the bumper are more than the truck can push.
+              .setFriction(0.15)
+              .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
               .setCollisionGroups(groups(GROUP.prop, GROUP.all)),
             body,
           );
@@ -138,8 +143,10 @@ export class Traffic {
         gap = Math.min(gap, ahead - CAR_HALF.length * 2);
       }
 
-      // The truck, if any part of it is in this lane ahead. Its reach along and across
-      // the lane depends on which way it is pointing.
+      // The truck, if any part of it is in this lane ahead and it is going their way: then it
+      // is slow traffic, to be followed. Across the lane or coming the wrong way it is not
+      // something a driver in town expects, and they drive straight into it. Its reach along
+      // and across the lane depends on which way it is pointing.
       v.set(t.x - lane.from.x, 0, t.z - lane.from.z);
       const along = v.dot(lane.dir) - car.s;
       const across = Math.abs(v.x * lane.dir.z - v.z * lane.dir.x);
@@ -147,7 +154,8 @@ export class Traffic {
       const alongS = Math.abs(truckSide.dot(lane.dir));
       const reachAlong = alongF * TRUCK_HALF_LENGTH + alongS * TRUCK_HALF_WIDTH;
       const reachAcross = alongS * TRUCK_HALF_LENGTH + alongF * TRUCK_HALF_WIDTH;
-      if (across < reachAcross + CAR_HALF.width + 0.4 && along > -reachAlong) {
+      const sameWay = truckForward.dot(lane.dir) > SAME_WAY;
+      if (sameWay && across < reachAcross + CAR_HALF.width + 0.4 && along > -reachAlong) {
         gap = Math.min(gap, along - reachAlong - CAR_HALF.length);
       }
 

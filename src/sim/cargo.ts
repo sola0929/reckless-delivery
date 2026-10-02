@@ -73,6 +73,8 @@ function shapeCollider(shape: PartDesc['shape'], size: Vec3): RAPIER.ColliderDes
     case 'cylinder': return RAPIER.ColliderDesc.cylinder(b, a);
     case 'capsule': return RAPIER.ColliderDesc.capsule(b, a);
     case 'sphere': return RAPIER.ColliderDesc.ball(a);
+    // Near enough: a squat drum of the same height, so that it lies on its face or its back.
+    case 'dome': return RAPIER.ColliderDesc.cylinder(a * 0.45, a * 0.9);
   }
 }
 
@@ -302,6 +304,16 @@ export class CargoSystem {
       }
 
       if (item.body) this.settle(item, onBed, dt);
+    }
+  }
+
+  /**
+   * Shake everything on the bed as if the truck had been checked by this many m/s: what
+   * hitting a tree does to the load, beyond the little the solver passes on by itself.
+   */
+  jolt(amount: number, truck: Truck): void {
+    for (const item of this.items) {
+      if (item.body && !item.held && truck.isOnBed(item.body.translation())) item.knock += amount;
     }
   }
 

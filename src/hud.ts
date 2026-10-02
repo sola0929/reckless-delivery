@@ -1,5 +1,8 @@
+import { soundButtons } from './jukebox';
 import type { LevelDef } from './levels/types';
-import type { Result } from './sim/sim';
+import { soundSettings } from './sound-settings';
+import { CARGO_TYPES, type CargoType } from './sim/cargo-types';
+import type { Failure, Result } from './sim/sim';
 
 export const money = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 
@@ -10,10 +13,16 @@ function clock(seconds: number): string {
 
 const el = (id: string) => document.getElementById(id)!;
 
+const FAILURES: Record<Failure, [string, string]> = {
+  overturned: ['翻車了', '貨車翻覆，配送失敗'],
+  pit: ['掉進坑裡了', '貨車開不出來，配送失敗'],
+  water: ['掉進河裡了', '貨車沉入水中，配送失敗'],
+};
+
 const HELP_DRIVING =
-  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>C</b> 下車　<b>R</b> 重來　<b>滾輪</b> 縮放';
+  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>C</b> 下車　<b>R</b> 重來　<b>Esc</b> 暫停　<b>滾輪</b> 縮放';
 const HELP_ON_FOOT =
-  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>R</b> 重來';
+  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>R</b> 重來　<b>Esc</b> 暫停';
 
 export class Hud {
   private readonly speedEl = el('speed');
@@ -31,6 +40,13 @@ export class Hud {
   private readonly prompt = el('prompt');
   private readonly help = el('help');
   private promptText = '';
+  /** Called when a retry button is clicked, on the result page or the pause menu. */
+  onRetry: (() => void) | null = null;
+  /** Called by the pause menu's resume button, and by any button that goes back to the main menu. */
+  onResume: (() => void) | null = null;
+  onMenu: (() => void) | null = null;
+  /** Called by the pause button in the corner of the screen. */
+  onPause: (() => void) | null = null;
   private onFoot: boolean | null = null;
   private speedText = '';
   private cargoText = '';
@@ -42,22 +58,84 @@ export class Hud {
     const goal = el('value-goal');
     const freePlay = !level.finish;
     goal.hidden = freePlay;
-    goal.style.left = `${level.stars[0] * 100}%`;
+    // The mark on the value bar is the second star: the first is for arriving at all.
+    goal.style.left = `${level.stars[1] * 100}%`;
     el('timer-stat').hidden = freePlay;
     this.nav.hidden = freePlay;
+    for (const id of ['result-retry', 'pause-retry']) el(id).addEventListener('click', () => this.onRetry?.());
+    // Leaving from the result page loses nothing. Leaving mid-run does, so it asks first.
+    for (const id of ['result-menu', 'pause-leave']) el(id).addEventListener('click', () => this.onMenu?.());
+    el('pause-menu').addEventListener('click', () => this.askToLeave(true));
+    el('pause-stay').addEventListener('click', () => this.askToLeave(false));
+    el('pause-resume').addEventListener('click', () => this.onResume?.());
+    el('pause-button').addEventListener('click', () => this.onPause?.());
+    el('pause-level').textContent = level.name;
+    soundButtons(el('hud'));
+
+    // The volume controls in the pause menu.
+    const sfx = el('vol-sfx') as HTMLInputElement;
+    const music = el('vol-music') as HTMLInputElement;
+    const mute = el('vol-mute') as HTMLInputElement;
+    soundSettings.watch((settings) => {
+      sfx.value = String(Math.round(settings.sfx * 100));
+      music.value = String(Math.round(settings.music * 100));
+      mute.checked = settings.muted;
+    });
+    sfx.addEventListener('input', () => soundSettings.set({ sfx: Number(sfx.value) / 100 }));
+    music.addEventListener('input', () => soundSettings.set({ music: Number(music.value) / 100 }));
+    mute.addEventListener('change', () => soundSettings.set({ muted: mute.checked }));
     this.showBanner();
   }
 
   /** The level's name and goal, shown briefly at the start. */
   showBanner(): void {
     el('banner-title').textContent = this.level.name;
+    const [pass, two] = this.level.stars;
+    const first = pass > 0 ? `送達 ${Math.round(pass * 100)}% 過關` : '抵達卸貨區即過關';
     el('banner-brief').textContent = this.level.finish
-      ? `${this.level.brief}，送達價值需達 ${Math.round(this.level.stars[0] * 100)}%`
+      ? `${this.level.brief}　★ ${first}　★★ 送達 ${Math.round(two * 100)}%　★★★ 並在 ${clock(this.level.par)} 內`
       : this.level.brief;
-    // Restart the fade-out animation.
-    this.banner.hidden = true;
-    void this.banner.offsetWidth;
+    el('banner-list').innerHTML = this.level.finish ? this.manifest() : '';
+    this.banner.classList.remove('leaving');
     this.banner.hidden = false;
+  }
+
+  /** Fade the banner out: the run has begun. */
+  dismissBanner(): void {
+    this.banner.classList.add('leaving');
+  }
+
+  /** Swap the pause menu's choices for the question of whether to really leave, or back again. */
+  private askToLeave(asking: boolean): void {
+    el('pause-choices').hidden = asking;
+    el('pause-confirm').hidden = !asking;
+    el(asking ? 'pause-stay' : 'pause-resume').focus();
+  }
+
+  /** Open or close the pause menu. Opening it, say how the run stands. */
+  showPause(on: boolean, run?: { seconds: number; value: number; fullValue: number; onTruck: number; total: number }): void {
+    el('pause').hidden = !on;
+    this.askToLeave(false);
+    if (!on || !run) return;
+    el('pause-time').textContent = clock(run.seconds);
+    el('pause-value').textContent = money(run.value);
+    el('pause-cargo').textContent = `${run.onTruck} / ${run.total}`;
+    el('pause-resume').focus();
+  }
+
+  /** The load, a line for each kind of thing: how many, and what one is worth. */
+  private manifest(): string {
+    const counts = new Map<CargoType, number>();
+    for (const { type } of this.level.cargo) {
+      const kind: CargoType = CARGO_TYPES[type];
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+    }
+    const kinds = [...counts].sort(([a], [b]) => b.value - a.value);
+    const rows = kinds.map(([kind, n]) => `<div class="manifest-row"><span>${kind.name}</span><span>× ${n}</span><span>${money(kind.value)}</span></div>`);
+    const total = kinds.reduce((sum, [kind, n]) => sum + kind.value * n, 0);
+    const items = kinds.reduce((sum, [, n]) => sum + n, 0);
+    rows.push(`<div class="manifest-row total"><span>合計</span><span>${items} 件</span><span>${money(total)}</span></div>`);
+    return rows.join('');
   }
 
   update(speedMps: number, cargoOnTruck: number, cargoTotal: number, value: number, fullValue: number, seconds: number): void {
@@ -77,11 +155,15 @@ export class Hud {
       const kept = fullValue > 0 ? value / fullValue : 0;
       this.valueFill.style.width = `${kept * 100}%`;
       const [pass, two] = this.level.stars;
-      this.valueFill.style.backgroundColor = kept >= two ? '#6fd08c' : kept >= pass ? '#ffd166' : '#ff6b5a';
+      this.valueFill.style.backgroundColor = kept >= two ? '#6fd08c' : kept >= Math.max(pass, two / 2) ? '#ffd166' : '#ff6b5a';
     }
 
     const time = clock(seconds);
-    if (time !== this.timerText) this.timerEl.textContent = this.timerText = time;
+    if (time !== this.timerText) {
+      this.timerEl.textContent = this.timerText = time;
+      // Past the par time, the third star is gone.
+      this.timerEl.classList.toggle('lost', seconds > this.level.par && !!this.level.finish);
+    }
   }
 
   /** Point the arrow at the delivery bay. `angle` is clockwise from straight up the screen, radians. */
@@ -108,24 +190,40 @@ export class Hud {
     this.prompt.classList.toggle('warning', warning);
   }
 
+  /** The page shown when a run ends: what arrived, what it was worth, and which stars that earns. */
   showResult(result: Result, fullValue: number): void {
-    if (result.overturned) {
-      el('result-title').textContent = '翻車了';
-      el('result-title').className = 'failed';
-      el('result-stars').textContent = '☆☆☆';
-      el('result-value').textContent = '貨車翻覆，配送失敗';
-      el('result-detail').textContent = `用時 ${clock(result.seconds)}`;
-      this.result.hidden = false;
-      return;
-    }
-    const passed = result.stars > 0;
-    el('result-title').textContent = passed ? '送達！' : '未達標';
+    const failed = result.failure !== undefined;
+    const passed = !failed && result.stars > 0;
+    const [title, reason] = failed ? FAILURES[result.failure!] : [passed ? '送達！' : '未達標', ''];
+    el('result-title').textContent = title;
     el('result-title').className = passed ? 'passed' : 'failed';
     el('result-stars').textContent = '★'.repeat(result.stars) + '☆'.repeat(3 - result.stars);
-    el('result-value').textContent = `${money(result.value)} / ${money(fullValue)}`;
-    const needed = Math.round(this.level.stars[0] * 100);
-    el('result-detail').textContent =
-      `送達 ${Math.floor(result.fraction * 100)}%（需 ${needed}%）　用時 ${clock(result.seconds)}`;
+    el('result-reason').textContent = reason;
+
+    const { intact, damaged, destroyed, lost } = result.tally;
+    const total = intact + damaged + destroyed + lost;
+    const count = (n: number, bad = false) => `<span${bad && n > 0 ? ' class="bad"' : ''}>${n} 件</span>`;
+    const row = (label: string, value: string, main = false) =>
+      `<div class="result-row${main ? ' main' : ''}"><span>${label}</span>${value}</div>`;
+    el('result-rows').innerHTML = [
+      row('送達價值', `<span>${money(result.value)} / ${money(fullValue)}（${Math.floor(result.fraction * 100)}%）</span>`, true),
+      row('完好送達', `<span>${intact} / ${total} 件</span>`),
+      row('受損', count(damaged, true)),
+      row('全毀', count(destroyed, true)),
+      row('遺失', count(lost, true)),
+      row('用時', `<span>${clock(result.seconds)}</span>`),
+    ].join('');
+
+    const [pass, two] = this.level.stars;
+    const enough = !failed && result.fraction >= two;
+    const goals: [string, boolean][] = [
+      [pass > 0 ? `送達價值 ${Math.round(pass * 100)}% 以上` : '抵達卸貨區', !failed && result.fraction >= pass],
+      [`送達價值 ${Math.round(two * 100)}% 以上`, enough],
+      [`達成兩星，並在 ${clock(this.level.par)} 內送達`, enough && result.seconds <= this.level.par],
+    ];
+    el('result-goals').innerHTML = goals
+      .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}${met ? '　✓' : ''}</div>`)
+      .join('');
     this.result.hidden = false;
   }
 

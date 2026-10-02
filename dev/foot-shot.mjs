@@ -6,7 +6,7 @@ const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
 await page.goto('http://localhost:5183/?level=sandbox');
-await page.waitForFunction(() => window.game, null, { timeout: 20000 });
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 20000 });
 await page.waitForTimeout(1200);
 const shot = (name) => page.screenshot({ path: `dev/out/foot-${name}.png` });
 const state = () => page.evaluate(() => { const { sim } = window.game; const d = sim.driver; return { mode: d.mode, held: d.held?.type.id ?? null, charge: +d.charge.toFixed(2), inBed: d.plan?.inBed ?? null, value: Math.round(sim.cargoValue()), onTruck: sim.cargoOnTruck(), prompt: document.getElementById('prompt').textContent }; });

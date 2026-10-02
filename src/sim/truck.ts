@@ -14,7 +14,9 @@ export interface DriveInput {
 
 const WHEEL_DOWN = { x: 0, y: -1, z: 0 };
 const WHEEL_AXLE = { x: -1, y: 0, z: 0 };
-const WHEEL_RAY_GROUPS = groups(GROUP.all, GROUP.ground | GROUP.prop);
+// The wheels stand on the ground and on nothing else. Were loose things ground to them, the
+// truck would climb onto whatever it hit and sit there instead of shoving it aside.
+const WHEEL_RAY_GROUPS = groups(GROUP.all, GROUP.ground);
 const TRUCK_GROUPS = groups(GROUP.truck, GROUP.all);
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -24,6 +26,8 @@ export class Truck {
   readonly controller: RAPIER.DynamicRayCastVehicleController;
   /** True while the boost is actually driving the wheels. */
   boosting = false;
+  /** How well the tyres hold the road, 1 normally; less on a slick. Set by whoever knows what the truck is driving on. */
+  grip = 1;
   /** 0 when off the brakes, up to 1 for a full emergency stop. */
   brakeLevel = 0;
   private steer = 0;
@@ -122,6 +126,10 @@ export class Truck {
     this.steer += clamp(target - this.steer, -step, step);
 
     const c = this.controller;
+    for (let i = 0; i < 4; i++) {
+      c.setWheelFrictionSlip(i, TRUCK.wheel.frictionSlip * this.grip);
+      c.setWheelSideFrictionStiffness(i, TRUCK.wheel.sideFrictionStiffness * this.grip);
+    }
     c.setWheelSteering(0, this.steer);
     c.setWheelSteering(1, this.steer);
     // Rear-wheel drive. A wheel only brakes while its engine force is zero.

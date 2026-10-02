@@ -18,7 +18,9 @@ const MARKER_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffd166, depthTest
 const textures = new Map<string, THREE.Texture>();
 
 /** Surface texture for a damage stage: the base pattern with cracks drawn over it. */
-function damageTexture(base: 'plain' | 'crate', stage: Stage): THREE.Texture {
+type Surface = NonNullable<PartDesc['texture']> | 'plain';
+
+function damageTexture(base: Surface, stage: Stage): THREE.Texture {
   const key = `${base}${stage}`;
   const cached = textures.get(key);
   if (cached) return cached;
@@ -29,6 +31,41 @@ function damageTexture(base: 'plain' | 'crate', stage: Stage): THREE.Texture {
   const g = canvas.getContext('2d')!;
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, size, size);
+
+  if (base === 'melon') {
+    // Rind: green, with darker wavy stripes running from one end to the other.
+    g.fillStyle = '#4f9a4a';
+    g.fillRect(0, 0, size, size);
+    g.strokeStyle = '#1f5a2a';
+    g.lineWidth = 6;
+    g.lineCap = 'round';
+    for (let i = 0; i < 9; i++) {
+      const x = ((i + 0.5) * size) / 9;
+      g.beginPath();
+      for (let y = 0; y <= size; y += 8) g.lineTo(x + Math.sin(y * 0.22 + i * 1.7) * 3.2, y);
+      g.stroke();
+    }
+  }
+  if (base === 'flesh') {
+    // A cut face: pale rind at the rim, red inside, a ring of seeds.
+    const mid = size / 2;
+    g.fillStyle = '#3f8a42';
+    g.fillRect(0, 0, size, size);
+    for (const [radius, color] of [[0.49, '#d9efc0'], [0.44, '#f2959a'], [0.4, '#e0454d']] as const) {
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(mid, mid, size * radius, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = '#1c1210';
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const r = size * (i % 2 ? 0.2 : 0.29);
+      g.beginPath();
+      g.ellipse(mid + Math.cos(a) * r, mid + Math.sin(a) * r, 3.4, 2, a, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
 
   if (base === 'crate') {
     g.strokeStyle = 'rgba(0, 0, 0, 0.35)';
@@ -52,13 +89,15 @@ function damageTexture(base: 'plain' | 'crate', stage: Stage): THREE.Texture {
     return seed / 4294967296;
   };
   const cracks = [0, 3, 8, 12][stage];
-  g.strokeStyle = 'rgba(15, 8, 4, 0.85)';
+  // A split melon shows red through the rind, not a dark line.
+  const red = base === 'melon';
+  g.strokeStyle = red ? 'rgba(226, 60, 70, 0.96)' : 'rgba(15, 8, 4, 0.85)';
   g.lineCap = 'round';
   for (let i = 0; i < cracks; i++) {
     let x = rand() * size;
     let y = rand() * size;
     let angle = rand() * Math.PI * 2;
-    g.lineWidth = 1.5 + rand() * (stage >= 2 ? 3 : 1.2);
+    g.lineWidth = (1.5 + rand() * (stage >= 2 ? 3 : 1.2)) * (red ? 2.2 : 1);
     g.beginPath();
     g.moveTo(x, y);
     const segments = 3 + Math.floor(rand() * 4);
@@ -74,7 +113,7 @@ function damageTexture(base: 'plain' | 'crate', stage: Stage): THREE.Texture {
   if (stage >= 2) {
     // Scuffed, dirty patches.
     for (let i = 0; i < 6; i++) {
-      g.fillStyle = `rgba(20, 12, 6, ${0.12 + rand() * 0.14})`;
+      g.fillStyle = red ? `rgba(200, 40, 52, ${0.5 + rand() * 0.3})` : `rgba(20, 12, 6, ${0.12 + rand() * 0.14})`;
       g.beginPath();
       g.arc(rand() * size, rand() * size, 8 + rand() * 16, 0, Math.PI * 2);
       g.fill();
@@ -93,8 +132,11 @@ function partGeometry(part: PartDesc): THREE.BufferGeometry {
     case 'box': return new THREE.BoxGeometry(a * 2, b * 2, c * 2);
     case 'cylinder': return new THREE.CylinderGeometry(a, a, b * 2, 20);
     case 'capsule': return new THREE.CapsuleGeometry(a, b * 2, 4, 10);
-    case 'sphere': return new THREE.SphereGeometry(a, 16, 12);
+    case 'sphere': return new THREE.SphereGeometry(a, 20, 14);
+    // The top half of a ball, moved down so that it is centred on its own middle.
+    case 'dome': return new THREE.SphereGeometry(a, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, -a / 2, 0);
   }
+  throw new Error(`no geometry for a ${part.shape}`);
 }
 
 function partMesh(part: PartDesc, stage: Stage): THREE.Mesh {
@@ -108,6 +150,17 @@ function partMesh(part: PartDesc, stage: Stage): THREE.Mesh {
   mesh.receiveShadow = true;
   mesh.position.set(...part.pos);
   if (part.rot) mesh.rotation.set(...part.rot);
+  if (part.shape === 'dome') {
+    // The cut face, closing the open side of the half.
+    const radius = part.size[0];
+    const face = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 24).rotateX(Math.PI / 2),
+      new THREE.MeshStandardMaterial({ map: damageTexture('flesh', 0), roughness: 0.6 }),
+    );
+    face.position.y = -radius / 2;
+    face.receiveShadow = true;
+    mesh.add(face);
+  }
   return mesh;
 }
 
@@ -144,7 +197,7 @@ export class CargoViews {
       const group = new THREE.Group();
       const meshes = item.type.parts.map((part) => {
         const mesh = partMesh(part, 0);
-        if (item.type.id === 'skeleton' && part.shape === 'sphere') addEyeSockets(mesh, part.size[0]);
+        if (item.type.id === 'skeleton' && part.shape === 'sphere') addFace(mesh, part.size[0]);
         group.add(mesh);
         return mesh;
       });
@@ -197,7 +250,7 @@ export class CargoViews {
         this.scene.remove(view.group);
         view.sync = null;
         view.leakLeft = 0;
-        this.bursts.emit(item.lastPos, item.type.burst, item.type.burst === 'water' ? 60 : 30, 4.5);
+        this.bursts.emit(item.lastPos, item.type.burst, item.type.burst === 'water' || item.type.burst === 'pulp' ? 60 : 30, 4.5);
         break;
       case 'fallen':
       case 'recovered':
@@ -238,7 +291,8 @@ export class CargoViews {
         view.leakTimer += dt;
         if (view.leakTimer >= LEAK_INTERVAL) {
           view.leakTimer = 0;
-          this.bursts.emit(this.at.copy(view.group.position), 'water', 1, 0.8);
+          // Whatever it is full of: water from a jar, juice from a melon.
+          this.bursts.emit(this.at.copy(view.group.position), item.type.burst === 'pulp' ? 'pulp' : 'water', 1, 0.8);
         }
       }
     }
@@ -261,13 +315,25 @@ export class CargoViews {
   }
 }
 
-function addEyeSockets(skull: THREE.Mesh, radius: number): void {
-  const socket = new THREE.SphereGeometry(radius * 0.26, 8, 6);
+/** A skull's face: eye sockets, a nose hole and a row of teeth. */
+function addFace(skull: THREE.Mesh, radius: number): void {
   const dark = new THREE.MeshBasicMaterial({ color: 0x15120e });
-  // The skeleton lies on its back, so the face points up.
+  const socket = new THREE.SphereGeometry(radius * 0.27, 10, 8);
+  // The skeleton lies on its back, so the face points up, and its chin is toward its feet (-Z).
   for (const x of [-0.42, 0.42]) {
     const eye = new THREE.Mesh(socket, dark);
-    eye.position.set(x * radius, radius * 0.8, radius * 0.25);
+    eye.position.set(x * radius, radius * 0.8, radius * 0.22);
     skull.add(eye);
+  }
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.14, radius * 0.3, 3), dark);
+  nose.position.set(0, radius * 0.93, -radius * 0.22);
+  nose.rotation.x = -Math.PI / 2;
+  skull.add(nose);
+  const tooth = new THREE.BoxGeometry(radius * 0.13, radius * 0.1, radius * 0.2);
+  const ivory = new THREE.MeshStandardMaterial({ color: 0xf6f1e0, roughness: 0.6 });
+  for (let i = -2; i <= 2; i++) {
+    const t = new THREE.Mesh(tooth, ivory);
+    t.position.set(i * radius * 0.17, radius * 0.66, -radius * 0.72);
+    skull.add(t);
   }
 }

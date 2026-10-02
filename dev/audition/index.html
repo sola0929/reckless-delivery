@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>音效試聽</title>
+    <style>
+      body { margin: 0; padding: 28px 40px 60px; background: #131a24; color: #fff; font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; }
+      h1 { margin: 0 0 6px; font-size: 28px; }
+      p { margin: 0 0 22px; opacity: 0.75; line-height: 1.7; }
+      h2 { margin: 30px 0 10px; font-size: 18px; color: #ffd166; letter-spacing: 3px; }
+      .row { display: grid; grid-template-columns: 64px 76px 1fr 70px; gap: 14px; align-items: center; padding: 7px 12px; border-radius: 8px; }
+      .row:nth-child(odd) { background: rgba(255, 255, 255, 0.05); }
+      .row.playing { background: rgba(255, 209, 102, 0.22); }
+      .code { font-size: 20px; font-weight: 800; color: #ffd166; }
+      button { padding: 7px 0; border: 0; border-radius: 6px; background: #ffd166; color: #131a24; font: inherit; font-weight: 700; cursor: pointer; }
+      button:hover { background: #ffe09a; }
+      .title small { display: block; opacity: 0.55; font-size: 12px; }
+      .seconds { text-align: right; opacity: 0.7; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <h1>音效試聽</h1>
+    <p>
+      每一列按「播放」聽一次。聽到合適的，把左邊的編號告訴我（例如「樹用 T3、T7，攤位用 W2、W5、W11」）。<br />
+      可以多選：同一類我會隨機輪流播放。有些錄音比較長，裡面有好幾下，我會只切出其中一下來用。<br />
+      都不合適也請直接說，我再找別的。
+    </p>
+    <div id="lists"></div>
+    <script type="module">
+      const sounds = await (await fetch('manifest.json')).json();
+      const groups = [
+        ['tree', 'T', '樹被撞倒'],
+        ['wood', 'W', '攤位、木箱、長椅這類木製品被撞爛'],
+        ['pot', 'P', '水罐破掉'],
+        ['clink', 'C', '水罐互碰（沒破）'],
+        ['melon', 'M', '西瓜爆開'],
+        ['skid', 'S', '輪胎打滑（急煞、手煞車、急加速）'],
+        ['train', 'R', '火車經過'],
+        ['bell', 'B', '平交道警鈴'],
+        ['splash', 'L', '落水'],
+        ['bgm', 'G', '背景音樂'],
+        ['jingle', 'J', '過關／失敗的短音樂'],
+      ];
+      const lists = document.getElementById('lists');
+      let current = null;
+      for (const [category, letter, heading] of groups) {
+        const title = document.createElement('h2');
+        title.textContent = heading;
+        lists.append(title);
+        const box = document.createElement('div');
+        sounds.filter((s) => s.category === category).forEach((sound, i) => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = `<span class="code">${letter}${i + 1}</span><button type="button">播放</button><span class="title">${sound.title}<small>${sound.user}　#${sound.id}</small></span><span class="seconds">${sound.seconds ? `${sound.seconds.toFixed(1)} 秒` : ''}</span>`;
+          const audio = new Audio(`sounds/${sound.file ?? `${sound.id}.mp3`}`);
+          audio.addEventListener('ended', () => row.classList.remove('playing'));
+          row.querySelector('button').addEventListener('click', () => {
+            if (current) {
+              current.audio.pause();
+              current.row.classList.remove('playing');
+            }
+            audio.currentTime = 0;
+            void audio.play();
+            row.classList.add('playing');
+            current = { audio, row };
+          });
+          box.append(row);
+        });
+        lists.append(box);
+      }
+    </script>
+  </body>
+</html>

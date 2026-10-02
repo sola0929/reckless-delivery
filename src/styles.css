@@ -52,7 +52,8 @@ body {
   opacity: 0.7;
 }
 
-#cargo.lost {
+#cargo.lost,
+#timer.lost {
   color: #ff8a7a;
 }
 
@@ -129,9 +130,18 @@ body {
   background: #fff;
 }
 
-#nav {
+/* The top right corner: the pointer to the delivery bay, and the pause button beside it, the same height. */
+#corner {
+  position: absolute;
   top: 16px;
   right: 16px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+#nav {
+  position: static;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -165,12 +175,16 @@ body {
 
 #banner {
   position: absolute;
-  top: 22%;
+  top: 12%;
   left: 0;
   right: 0;
   text-align: center;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
-  animation: banner-fade 5s ease-in forwards;
+}
+
+/* It stays until the run begins, then goes. */
+#banner.leaving {
+  animation: banner-fade 1.4s ease-in forwards;
 }
 
 #banner-title {
@@ -183,17 +197,55 @@ body {
   font-size: 18px;
 }
 
+/* What is on the truck and what each thing is worth. */
+#banner-list {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  background: rgba(20, 26, 34, 0.78);
+  font-size: 16px;
+  text-align: left;
+  text-shadow: none;
+}
+
+#banner-list:empty {
+  display: none;
+}
+
+.manifest-row {
+  display: grid;
+  grid-template-columns: 7em 3.2em 5em;
+  gap: 10px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.manifest-row span:nth-child(2) {
+  opacity: 0.75;
+}
+
+.manifest-row span:last-child {
+  text-align: right;
+}
+
+.manifest-row.total {
+  margin-top: 6px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+}
+
 @keyframes banner-fade {
-  0%, 70% { opacity: 1; }
+  0% { opacity: 1; }
   100% { opacity: 0; }
 }
 
-/* Kept high, so the truck and what is left of its load stay in view below. */
 #result {
-  top: 30%;
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 28px 44px;
+  padding: 22px 44px;
   text-align: center;
   background: rgba(20, 26, 34, 0.9);
 }
@@ -218,26 +270,130 @@ body {
   color: #ffd166;
 }
 
-#result-value {
-  font-size: 26px;
-  font-weight: 700;
+#result-reason {
+  margin-bottom: 12px;
+  font-size: 17px;
+  opacity: 0.9;
+}
+
+#result-reason:empty {
+  display: none;
+}
+
+/* What was delivered, one line each: a label on the left, the figure on the right. */
+#result-rows {
+  min-width: 320px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 16px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 3px 0;
   font-variant-numeric: tabular-nums;
 }
 
-#result-detail {
-  margin-top: 6px;
-  font-size: 15px;
-  opacity: 0.85;
+.result-row span:first-child {
+  opacity: 0.75;
 }
 
-#result-hint {
-  margin-top: 18px;
+.result-row.main {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.result-row .bad {
+  color: #ff8a7a;
+}
+
+/* The three stars and what each one asks for. */
+#result-goals {
+  margin-top: 10px;
   font-size: 14px;
-  opacity: 0.8;
+  text-align: left;
 }
 
-#result-hint b {
+.result-goal {
+  padding: 2px 0;
+  opacity: 0.5;
+}
+
+.result-goal.met {
+  opacity: 1;
+}
+
+.result-goal .star {
+  display: inline-block;
+  width: 58px;
   color: #ffd166;
+  letter-spacing: 2px;
+}
+
+button {
+  font-family: inherit;
+}
+
+.buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+#result-menu {
+  margin-top: 16px;
+}
+
+/* Buttons on the result page: one bright, the other quiet. */
+#result-retry,
+#result-menu {
+  padding: 9px 26px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffd166;
+  color: #1c222b;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+button.quiet {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #fff !important;
+}
+
+button.quiet:hover {
+  background: rgba(255, 255, 255, 0.26) !important;
+}
+
+#result-retry {
+  margin-top: 16px;
+  padding: 9px 26px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffd166;
+  color: #1c222b;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#result-retry:hover {
+  background: #ffe09a;
+}
+
+#result-retry b {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.16);
+  font-size: 13px;
 }
 
 #minimap {

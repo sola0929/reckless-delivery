@@ -2,11 +2,11 @@ import type { DriveInput } from './sim/truck';
 
 const HANDLED = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'KeyE',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'Escape', 'KeyP',
 ]);
 
 /** Keys whose presses are picked up once each, rather than read as held. */
-export type PressKey = 'KeyR' | 'KeyC' | 'KeyE' | 'Space';
+export type PressKey = 'KeyR' | 'KeyC' | 'KeyE' | 'Space' | 'Escape' | 'KeyP';
 
 export class Input {
   private readonly down = new Set<string>();
@@ -82,6 +82,12 @@ export class Input {
   /** True once per press of a key. */
   take(code: PressKey): boolean {
     return this.pressed.delete(code);
+  }
+
+  /** Forget every press not yet acted on: whatever was pressed while paused shouldn't happen on resuming. */
+  clearPresses(): void {
+    this.pressed.clear();
+    this.rightPressed = false;
   }
 
   /** True once per click of the right mouse button. */

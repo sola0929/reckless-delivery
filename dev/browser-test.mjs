@@ -28,7 +28,7 @@ const state = () =>
 
 // The sandbox first: driving, damage and reset.
 await page.goto(base + '?level=sandbox');
-await page.waitForFunction(() => window.game, null, { timeout: 15000 });
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 15000 });
 await page.waitForTimeout(1500);
 await shot('1-start');
 console.log('start      ', await state());
@@ -66,8 +66,8 @@ await shot('6-reset');
 console.log('after reset', await state());
 
 // Then the city level: the start, a stretch of driving, and the result screen.
-await page.goto(base);
-await page.waitForFunction(() => window.game, null, { timeout: 15000 });
+await page.goto(base + '?level=city');
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 15000 });
 await page.waitForTimeout(1500);
 await shot('7-city-start');
 // A short run that stops before the first busy street.

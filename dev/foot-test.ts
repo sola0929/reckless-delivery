@@ -22,6 +22,14 @@ const wait = (seconds: number, f: FootInput = NO_FOOT_INPUT) => {
   for (let i = 0; i < Math.round(seconds * 60); i++) step(f);
 };
 const truckAt = () => sim.truck.body.translation();
+/** Carry the truck and its load somewhere else, keeping them together. */
+function carryTo(x: number, z: number): void {
+  const t = truckAt();
+  for (const body of [...sim.cargo.flatMap((c) => (c.body ? [c.body] : [])), sim.truck.body]) {
+    const p = body.translation();
+    body.setTranslation({ x: p.x + x - t.x, y: p.y, z: p.z + z - t.z }, true);
+  }
+}
 const fromTruck = () => Math.hypot(sim.driver.pos.x - truckAt().x, sim.driver.pos.z - truckAt().z);
 
 /** Walk toward a point until close to it. Returns the seconds it took. */
@@ -81,7 +89,7 @@ check('picks up cargo within reach', sim.driver.held === crate && crate.held);
 const carryFrom = sim.driver.pos.clone();
 wait(1, foot({ moveX: 0, moveZ: 1, run: true }));
 const carried = sim.driver.pos.distanceTo(carryFrom);
-check('is slower with a load and cannot run', carried < DRIVER.walkSpeed && carried > 1, `${carried.toFixed(1)} m in 1 s`);
+check('can still run with a load, a little slower', carried < DRIVER.runSpeed && carried > DRIVER.walkSpeed, `${carried.toFixed(1)} m in 1 s`);
 
 // Aim at the middle of the bed and wind up until the landing point is over it.
 const bed = () => {
@@ -145,15 +153,15 @@ check('and can drive off', sim.truck.forwardSpeed() > 3);
 // 9. In the city: stand in a busy lane and get run down.
 sim = await Sim.create(city());
 wait(1);
-while (truckAt().z < 60) step(NO_FOOT_INPUT, { throttle: 0.5, steer: 0, handbrake: false });
-while (sim.truck.forwardSpeed() > 0.2) step(NO_FOOT_INPUT, { throttle: -1, steer: 0, handbrake: false });
+// Past the chicane, a little short of the boulevard.
+carryTo(4.5, 168);
 wait(0.5);
 step(foot({ vehiclePressed: true }));
 const jar = sim.cargo.find((c) => c.type.id === 'jar')!;
 jar.body!.setTranslation({ x: sim.driver.pos.x + 1, y: 0.4, z: sim.driver.pos.z }, true);
 wait(3);
 step(foot({ grabPressed: true }));
-walkTo(sim.driver.pos.x, 81.75, false, 0.3);
+walkTo(sim.driver.pos.x, 188.5, false, 0.3);
 let hit = false;
 for (let i = 0; i < 60 * 40 && !hit; i++) {
   step();
@@ -173,11 +181,14 @@ const at = truckAt();
 sim.truck.body.setTranslation({ x: at.x, y: at.y + 1.5, z: at.z }, true);
 sim.truck.body.setRotation({ x: 0, y: 0, z: 1, w: 0 }, true);
 wait(5);
-check('an overturned truck fails the level', sim.result?.overturned === true && sim.result.stars === 0);
+check('an overturned truck fails the level', sim.result?.failure === 'overturned' && sim.result.stars === 0);
 
 // 11. Nothing they walk into should hold on to them: walking straight back off it must work.
 sim = await Sim.create(city());
 wait(1);
+// Beside the cars parked along the street east of the depot.
+carryTo(-107.5, 150);
+wait(0.5);
 step(foot({ vehiclePressed: true }));
 function walksAwayFrom(name: string, fromX: number, fromZ: number, intoX: number): void {
   walkTo(fromX, fromZ, true, 0.4);

@@ -1,5 +1,6 @@
 import type { Vec3 } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
+import type { ObjectDesc } from './objects';
 
 // A level, as plain data shared by the physics and the renderer.
 
@@ -48,6 +49,65 @@ export interface TrafficLane {
   speed: number;
 }
 
+/** A patch of ground with people wandering about on it. */
+export interface CrowdDesc {
+  /** [minX, minZ, maxX, maxZ] */
+  area: [number, number, number, number];
+  count: number;
+  /** Height of the ground there. */
+  y: number;
+}
+
+/** A hole dug in the ground. Driving into one ends the run. */
+export interface PitDesc {
+  pos: Vec2;
+  half: Vec2;
+  depth: number;
+  /** Set when it is full of water: how far below the ground the surface lies. What falls in sinks. */
+  water?: number;
+}
+
+/** A patch of road with something slippery on it. */
+export interface SlickDesc {
+  pos: Vec2;
+  half: Vec2;
+  /** How much of their usual hold the tyres keep there, 0 to 1. */
+  grip: number;
+}
+
+/** A warning sign beside the road. Drawn large and tilted back, to be read from above. */
+export interface SignDesc {
+  pos: Vec3;
+  /** The way it faces: radians about Y, 0 = toward +Z. */
+  rotY: number;
+  kind: 'slippery';
+}
+
+/** A railway track running along X, with trains passing at a steady interval. */
+export interface TrackDesc {
+  z: number;
+  /** 1 for trains heading toward +X, -1 toward -X. */
+  direction: 1 | -1;
+  /** m/s. */
+  speed: number;
+  /** Seconds between one train and the next. */
+  period: number;
+  /** Where in that interval the track starts out, 0 to 1. */
+  phase: number;
+  /** The X of the road that crosses it, where the signal watches for trains. */
+  watchX: number;
+}
+
+/** A signal at a crossing: red while a train is coming on its track, green otherwise. */
+export interface SignalDesc {
+  /** Where the lamp is; or the middle of the panel, when it is one. */
+  pos: Vec3;
+  /** Index into the level's tracks. */
+  track: number;
+  /** Set to make it a panel painted flat on the road, this wide (X) and long (Z), instead of a lamp. */
+  panel?: Vec2;
+}
+
 export interface FinishZone {
   pos: Vec2;
   half: Vec2;
@@ -65,13 +125,30 @@ export interface LevelDef {
   /** Direction the truck faces at the start: radians about Y, 0 = toward +Z. */
   heading: number;
   props: PropDesc[];
+  /** Loose things that go flying when hit: trees, lamps, bins, stalls. */
+  objects?: ObjectDesc[];
+  crowds?: CrowdDesc[];
+  pits?: PitDesc[];
+  slicks?: SlickDesc[];
+  signs?: SignDesc[];
+  tracks?: TrackDesc[];
+  signals?: SignalDesc[];
+  /** The intended way through, as points along the road, for the minimap. */
+  route?: Vec2[];
   decals: DecalDesc[];
   cargo: CargoPlacement[];
   traffic: TrafficLane[];
+  /**
+   * Where the run begins: the clock starts once the middle of the truck has crossed the
+   * line through `pos`, going the way of `dir`. Without one it starts at once.
+   */
+  startLine?: { pos: Vec2; dir: Vec2 };
   /** Where to deliver. Without one the level is free play. */
   finish?: FinishZone;
   /** Multiplies all impact damage to cargo. Below 1 makes the level forgiving; defaults to 1. */
   damageScale?: number;
-  /** Share of the load's full value that must arrive to pass, and to earn two and three stars. */
-  stars: [number, number, number];
+  /** Share of the load's full value that must arrive to pass with one star (0: arriving at all is enough), and to earn two. */
+  stars: [number, number];
+  /** The third star: two stars' worth delivered within this many seconds. */
+  par: number;
 }

@@ -5,7 +5,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 await page.goto('http://localhost:5183/?level=sandbox');
-await page.waitForFunction(() => window.game, null, { timeout: 20000 });
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 20000 });
 await page.waitForTimeout(1000);
 await page.keyboard.press('KeyC');
 await page.keyboard.down('KeyA'); await page.waitForTimeout(900); await page.keyboard.up('KeyA');

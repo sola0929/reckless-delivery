@@ -3,6 +3,7 @@ import { Quaternion, Vector3 } from 'three';
 import { DRIVER, GROUP, PHYSICS, TRUCK, groups } from '../config';
 import type { CargoItem, CargoSystem } from './cargo';
 import { CAR_HALF, type Traffic } from './traffic';
+import type { Trains } from './trains';
 import type { Truck } from './truck';
 
 /** What the player is asking of the driver this step. Presses are true for one step only. */
@@ -103,6 +104,7 @@ export class Driver {
   /** A cancelled wind-up stays cancelled until the button is let go. */
   private cancelled = false;
   private wasCharging = false;
+  private seed = 5;
 
   constructor(private readonly world: RAPIER.World) {
     const halfHeight = DRIVER.height / 2 - DRIVER.radius;
@@ -121,7 +123,7 @@ export class Driver {
   }
 
   /** Call once per physics step, before the world steps. `canAct` is false once the level is over. */
-  update(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem, traffic: Traffic, canAct: boolean): void {
+  update(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem, traffic: Traffic, trains: Trains, canAct: boolean): void {
     this.plan = null;
     this.atLeash = false;
     if (this.mode === 'driving') {
@@ -160,7 +162,7 @@ export class Driver {
       this.held.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
     }
 
-    if (this.safeLeft <= 0) this.checkTraffic(traffic, cargo);
+    if (this.safeLeft <= 0) this.checkTraffic(traffic, trains, cargo);
   }
 
   reset(): void {
@@ -172,6 +174,31 @@ export class Driver {
     this.downLeft = 0;
     this.safeLeft = 0;
     this.speed = 0;
+  }
+
+  /** Out of their depth: put back beside the truck, flat on the ground, without whatever they were carrying. */
+  fishOut(truck: Truck, cargo: CargoSystem): void {
+    if (this.held) {
+      v.set(this.pos.x, this.pos.y + DRIVER.carryHeight, this.pos.z);
+      cargo.release(this.held, v, new Vector3(), false);
+      this.held.immune = 0;
+      this.held = null;
+    }
+    for (const side of [-1, 1]) {
+      this.doorPoint(truck, side, v);
+      const centre = { x: v.x, y: v.y + DRIVER.height / 2 + 0.05, z: v.z };
+      // The first side tried is kept if both are blocked: better there than in the river.
+      if (side < 0 && this.world.intersectionWithShape(centre, { x: 0, y: 0, z: 0, w: 1 }, this.shape, undefined, WORLD, this.collider)) continue;
+      this.pos.copy(v);
+      this.body.setTranslation(centre, true);
+      break;
+    }
+    this.velocity.set(0, 0, 0);
+    this.mode = 'down';
+    this.downLeft = DRIVER.downSeconds;
+    this.charge = 0;
+    this.speed = 0;
+    this.rise = 0;
   }
 
   /** How far a load of this mass can be thrown, in metres. */
@@ -222,7 +249,7 @@ export class Driver {
     const moving = Math.hypot(input.moveX, input.moveZ) > 0.01;
     // Winding up a throw roots them to the spot.
     if (moving && this.charge === 0) {
-      pace = input.run && !this.held ? DRIVER.runSpeed : DRIVER.walkSpeed;
+      pace = input.run ? DRIVER.runSpeed : DRIVER.walkSpeed;
       if (this.held) pace *= Math.max(DRIVER.carrySlowest, 1 - this.held.mass * DRIVER.carrySlowPerKg);
     }
     const scale = moving ? pace / Math.hypot(input.moveX, input.moveZ) : 0;
@@ -296,7 +323,9 @@ export class Driver {
   /** Sweep their shape from where they stand (optionally raised) along a unit direction; the first thing hit within `distance`, if any. */
   private sweep(dir: { x: number; y: number; z: number }, distance: number, raised = 0): RAPIER.ColliderShapeCastHit | null {
     const centre = { x: this.pos.x, y: this.pos.y + DRIVER.height / 2 + raised, z: this.pos.z };
-    return this.world.castShape(centre, UPRIGHT, dir, this.shape, 0, distance, false, undefined, WORLD, this.collider);
+    // Whatever they are carrying rides just above their head and must not count as in their way.
+    const carried = this.held?.body ?? undefined;
+    return this.world.castShape(centre, UPRIGHT, dir, this.shape, 0, distance, false, undefined, WORLD, this.collider, carried);
   }
 
   /** Move across the ground: up to a wall and then along it, or up onto a low step. */
@@ -350,7 +379,7 @@ export class Driver {
     this.ray.origin.x = this.pos.x;
     this.ray.origin.y = this.pos.y + PROBE_FROM;
     this.ray.origin.z = this.pos.z;
-    const hit = this.world.castRay(this.ray, PROBE_FROM + PROBE, true, undefined, WORLD, this.collider);
+    const hit = this.world.castRay(this.ray, PROBE_FROM + PROBE, true, undefined, WORLD, this.collider, this.held?.body ?? undefined);
     if (!hit || this.rise > 0) return false;
     // Stand exactly on it. Usually that means settling the last few centimetres down. But the
     // surface can also be a little above their feet: coming over the edge of a car roof at the
@@ -447,8 +476,8 @@ export class Driver {
     };
   }
 
-  /** Run down by a moving car: thrown aside, dropping whatever was held. */
-  private checkTraffic(traffic: Traffic, cargo: CargoSystem): void {
+  /** Run down by a moving car or a train: thrown aside, dropping whatever was held. */
+  private checkTraffic(traffic: Traffic, trains: Trains, cargo: CargoSystem): void {
     for (const car of traffic.cars) {
       if (car.knocked > 0 || car.speed < 2) continue;
       const { lane } = car;
@@ -457,27 +486,32 @@ export class Driver {
       const along = dx * lane.dir.x + dz * lane.dir.z;
       const across = dx * lane.dir.z - dz * lane.dir.x;
       if (Math.abs(along) > CAR_HALF.length + DRIVER.radius || Math.abs(across) > CAR_HALF.width + DRIVER.radius) continue;
-
-      // Flung forward with the car and off to whichever side they were nearer.
-      const side = across < 0 ? -1 : 1;
-      this.velocity.set(
-        lane.dir.x * car.speed * 0.9 + lane.dir.z * side * 2.5,
-        4.5,
-        lane.dir.z * car.speed * 0.9 - lane.dir.x * side * 2.5,
-      );
-      this.mode = 'down';
-      this.downLeft = DRIVER.downSeconds;
-      this.charge = 0;
-      this.speed = 0;
-      if (this.held) {
-        v.set(this.pos.x, this.pos.y + DRIVER.carryHeight, this.pos.z);
-        cargo.release(this.held, v, this.velocity.clone().multiplyScalar(0.8).setY(5.5), false);
-        // It was knocked out of their hands, not set down: the landing counts.
-        this.held.immune = 0;
-        this.held = null;
-      }
+      this.knockDown(lane.dir.x, lane.dir.z, car.speed, across < 0 ? -1 : 1, cargo);
       return;
     }
+    const train = trains.at(this.pos.x, this.pos.z, DRIVER.radius);
+    if (train) this.knockDown(train.direction, 0, train.speed, this.random() < 0.5 ? -1 : 1, cargo);
+  }
+
+  /** Flung forward with whatever hit them and off to one side, losing hold of their load. */
+  private knockDown(dirX: number, dirZ: number, speed: number, side: number, cargo: CargoSystem): void {
+    this.velocity.set(dirX * speed * 0.9 + dirZ * side * 2.5, 4.5, dirZ * speed * 0.9 - dirX * side * 2.5);
+    this.mode = 'down';
+    this.downLeft = DRIVER.downSeconds;
+    this.charge = 0;
+    this.speed = 0;
+    if (this.held) {
+      v.set(this.pos.x, this.pos.y + DRIVER.carryHeight, this.pos.z);
+      cargo.release(this.held, v, this.velocity.clone().multiplyScalar(0.8).setY(5.5), false);
+      // It was knocked out of their hands, not set down: the landing counts.
+      this.held.immune = 0;
+      this.held = null;
+    }
+  }
+
+  private random(): number {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    return this.seed / 4294967296;
   }
 
   /** Fly, land and slide to a stop after being hit. */

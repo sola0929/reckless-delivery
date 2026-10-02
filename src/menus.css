@@ -1,0 +1,612 @@
+/* The main menu, the pause menu, and the pause button on the HUD. */
+
+:root {
+  --accent: #ffd166;
+  --ink: #131a24;
+  --panel: rgba(17, 23, 33, 0.82);
+  --line: rgba(255, 255, 255, 0.14);
+}
+
+body.in-menu #game,
+body.in-menu #hud {
+  display: none;
+}
+
+/* ---------- Main menu: a scene behind, the logo and a short list down the left. ---------- */
+
+#menu {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(#5f9fd4 0%, #a9d0ea 46%, #f3d9a8 62%, #f3d9a8 100%);
+}
+
+#menu[hidden] {
+  display: none;
+}
+
+/* The scene: sun, two rows of buildings sliding by, a road, and the truck bouncing along it. */
+.scene {
+  position: absolute;
+  inset: 0;
+}
+
+.scene .sun {
+  position: absolute;
+  top: 12%;
+  right: 16%;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(#fff7d6 0%, #ffe08a 55%, rgba(255, 224, 138, 0) 72%);
+}
+
+.scene .skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+}
+
+.scene .skyline.far {
+  bottom: 30%;
+  height: 34%;
+  opacity: 0.55;
+  background-size: 720px 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 300' preserveAspectRatio='none'%3E%3Cg fill='%23566f8c'%3E%3Crect x='0' y='120' width='70' height='180'/%3E%3Crect x='80' y='60' width='55' height='240'/%3E%3Crect x='145' y='150' width='90' height='150'/%3E%3Crect x='245' y='30' width='60' height='270'/%3E%3Crect x='315' y='110' width='80' height='190'/%3E%3Crect x='405' y='170' width='70' height='130'/%3E%3Crect x='485' y='80' width='65' height='220'/%3E%3Crect x='560' y='140' width='85' height='160'/%3E%3Crect x='655' y='95' width='60' height='205'/%3E%3C/g%3E%3C/svg%3E");
+  animation: slide 60s linear infinite;
+}
+
+.scene .skyline.near {
+  bottom: 30%;
+  height: 24%;
+  background-size: 900px 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 240' preserveAspectRatio='none'%3E%3Cg fill='%23324a63'%3E%3Crect x='0' y='90' width='110' height='150'/%3E%3Crect x='125' y='40' width='80' height='200'/%3E%3Crect x='220' y='120' width='130' height='120'/%3E%3Crect x='365' y='70' width='90' height='170'/%3E%3Crect x='470' y='130' width='120' height='110'/%3E%3Crect x='605' y='20' width='85' height='220'/%3E%3Crect x='705' y='100' width='110' height='140'/%3E%3Crect x='830' y='150' width='70' height='90'/%3E%3C/g%3E%3Cg fill='%23ffd98a' opacity='.7'%3E%3Crect x='140' y='60' width='10' height='14'/%3E%3Crect x='170' y='60' width='10' height='14'/%3E%3Crect x='140' y='100' width='10' height='14'/%3E%3Crect x='380' y='90' width='10' height='14'/%3E%3Crect x='420' y='130' width='10' height='14'/%3E%3Crect x='620' y='40' width='10' height='14'/%3E%3Crect x='650' y='80' width='10' height='14'/%3E%3Crect x='620' y='120' width='10' height='14'/%3E%3Crect x='30' y='110' width='10' height='14'/%3E%3Crect x='730' y='120' width='10' height='14'/%3E%3C/g%3E%3C/svg%3E");
+  animation: slide 26s linear infinite;
+}
+
+.scene .road {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30%;
+  background: linear-gradient(#5a616b, #3d434c);
+  border-top: 10px solid #8f969e;
+}
+
+.scene .road::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 52%;
+  height: 8px;
+  background: repeating-linear-gradient(90deg, #f0f0ea 0 70px, transparent 70px 150px);
+  animation: dashes 0.55s linear infinite;
+}
+
+.scene .truck {
+  position: absolute;
+  right: 9%;
+  bottom: 17%;
+  width: min(44vw, 620px);
+  filter: drop-shadow(0 18px 14px rgba(0, 0, 0, 0.35));
+}
+
+.scene .truck .body {
+  animation: bounce 0.42s ease-in-out infinite alternate;
+}
+
+.scene .truck .load > * {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: jostle 0.42s ease-in-out infinite alternate;
+}
+
+.scene .truck .load > :nth-child(2n) {
+  animation-delay: -0.2s;
+}
+
+.scene .truck .load > :nth-child(3n) {
+  animation-duration: 0.31s;
+}
+
+.scene .truck .wheel {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 0.5s linear infinite;
+}
+
+@keyframes slide {
+  to { background-position-x: -900px; }
+}
+
+@keyframes dashes {
+  to { background-position-x: -150px; }
+}
+
+@keyframes bounce {
+  to { transform: translateY(5px); }
+}
+
+@keyframes jostle {
+  to { transform: translateY(-7px) rotate(-2.5deg); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* A dark wedge down the left, for the words to stand on. */
+#menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, rgba(13, 19, 28, 0.94) 0%, rgba(13, 19, 28, 0.86) 30%, rgba(13, 19, 28, 0) 56%);
+  z-index: 1;
+}
+
+.menu-side {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(46vw, 560px);
+  padding: 9vh 0 6vh 7vw;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* One line, whatever the width of the window: the type shrinks before it wraps. */
+.logo {
+  white-space: nowrap;
+  font-size: clamp(48px, 6.4vw, 96px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 4px;
+  transform: skewX(-7deg);
+  text-shadow: 5px 5px 0 #d2452b, 9px 9px 0 rgba(0, 0, 0, 0.35);
+}
+
+.logo span {
+  color: var(--accent);
+}
+
+.tagline {
+  margin: 20px 0 0 4px;
+  font-size: 18px;
+  letter-spacing: 2px;
+  opacity: 0.85;
+}
+
+.menu-page {
+  margin-top: 6vh;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  animation: page-in 0.22s ease-out;
+}
+
+.menu-page[hidden] {
+  display: none;
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(-18px); }
+}
+
+/* The list: plain words, with a bar and a nudge for whichever is under the cursor or the keys. */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 3px 0;
+  padding: 13px 18px;
+  border: 0;
+  border-left: 5px solid transparent;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.menu-item svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: currentColor;
+  opacity: 0.8;
+}
+
+.menu-item small {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  opacity: 0.6;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  outline: none;
+  transform: translateX(10px);
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, rgba(255, 209, 102, 0.22), rgba(255, 209, 102, 0));
+  color: var(--accent);
+}
+
+.menu-item.primary {
+  font-size: 30px;
+}
+
+.menu-item.back {
+  margin-top: auto;
+  font-size: 18px;
+  opacity: 0.85;
+}
+
+.menu-foot {
+  margin-top: auto;
+  padding-left: 22px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  opacity: 0.55;
+}
+
+.menu-foot b {
+  padding: 1px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.page-title {
+  margin: 0 0 12px 22px;
+  font-size: 15px;
+  letter-spacing: 6px;
+  color: var(--accent);
+}
+
+/* Level cards: a picture strip, the name, what it is, and the best run so far. */
+.level-card {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  margin: 6px 0;
+  padding: 12px 18px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.level-card:hover,
+.level-card:focus-visible {
+  outline: none;
+  transform: translateX(10px);
+  border-color: var(--accent);
+  background: rgba(30, 40, 56, 0.92);
+}
+
+.level-thumb {
+  height: 72px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.level-thumb.city {
+  background: linear-gradient(160deg, #4f8fc8, #f0b56a);
+}
+
+.level-thumb.sandbox {
+  background: repeating-linear-gradient(45deg, #5b626b 0 12px, #666d77 12px 24px);
+}
+
+.level-name {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.level-note {
+  margin-top: 3px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.level-best {
+  margin-top: 7px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.level-best .stars {
+  margin-right: 10px;
+  color: var(--accent);
+  letter-spacing: 3px;
+}
+
+.level-best .none {
+  opacity: 0.5;
+}
+
+/* The controls, as keys and what they do. Used on the menu and in the pause menu. */
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 14px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.keys h4 {
+  grid-column: 1 / -1;
+  margin: 10px 0 2px;
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+.keys h4:first-child {
+  margin-top: 0;
+}
+
+.keys kbd {
+  justify-self: start;
+  padding: 2px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#menu-help .keys {
+  margin-left: 22px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: auto;
+}
+
+/* ---------- The pause button on the HUD. ---------- */
+
+#pause-button {
+  position: relative;
+  width: 54px;
+  min-height: 46px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(20, 26, 34, 0.72);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.12s, transform 0.12s;
+}
+
+#pause-button::before,
+#pause-button::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 10px);
+  width: 7px;
+  height: 20px;
+  border-radius: 2px;
+  background: #fff;
+}
+
+#pause-button::before {
+  left: 17px;
+}
+
+#pause-button::after {
+  right: 17px;
+}
+
+#pause-button:hover {
+  background: var(--accent);
+  transform: scale(1.06);
+}
+
+#pause-button:hover::before,
+#pause-button:hover::after {
+  background: var(--ink);
+}
+
+/* ---------- Pause: the game blurred and dimmed, a card of choices over it. ---------- */
+
+#pause {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 18, 0.5);
+  -webkit-backdrop-filter: blur(7px) saturate(0.7);
+  backdrop-filter: blur(7px) saturate(0.7);
+  pointer-events: auto;
+  /* Over everything else on the HUD, whatever order it comes in. */
+  z-index: 20;
+  animation: pause-in 0.16s ease-out;
+}
+
+#pause[hidden] {
+  display: none;
+}
+
+@keyframes pause-in {
+  from { opacity: 0; }
+}
+
+#pause-card {
+  display: grid;
+  grid-template-columns: 300px auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(17, 23, 33, 0.94);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: card-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes card-in {
+  from { transform: translateY(14px) scale(0.96); }
+}
+
+.pause-main {
+  padding: 26px 0 22px;
+}
+
+.pause-head {
+  padding: 0 28px 16px;
+}
+
+#pause-title {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 8px;
+}
+
+#pause-level {
+  margin-top: 4px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+/* How the run stands: the time, what the load is worth, how much of it is aboard. */
+.pause-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 0 12px;
+  padding: 12px 28px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pause-stats span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  opacity: 0.6;
+}
+
+.pause-stats b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+#pause .menu-item {
+  font-size: 19px;
+  padding: 11px 24px;
+}
+
+#pause .menu-item.primary {
+  font-size: 22px;
+}
+
+#pause .menu-item.leave {
+  margin-top: 10px;
+  color: #ff9a8a;
+}
+
+#pause .menu-item.leave:hover,
+#pause .menu-item.leave:focus-visible {
+  border-left-color: #ff6b5a;
+  background: linear-gradient(90deg, rgba(255, 107, 90, 0.22), rgba(255, 107, 90, 0));
+  color: #ff8a7a;
+}
+
+/* Volume: two sliders and a mute, under the choices. */
+.pause-sound {
+  display: grid;
+  gap: 8px;
+  margin: 14px 28px 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.pause-sound label {
+  display: grid;
+  grid-template-columns: 3em 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.pause-sound input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pause-sound .mute {
+  grid-template-columns: auto 1fr;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.pause-sound .mute input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+#pause-confirm:not([hidden]) ~ .pause-sound,
+#pause-confirm:not([hidden]) + .pause-sound {
+  display: none;
+}
+
+#pause-confirm p {
+  margin: 6px 28px 14px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+#pause-confirm .menu-item.leave {
+  margin-top: 0;
+}
+
+.pause-keys {
+  padding: 26px 28px;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+@media (max-width: 760px) {
+  #pause-card {
+    grid-template-columns: 300px;
+  }
+
+  .pause-keys {
+    display: none;
+  }
+}

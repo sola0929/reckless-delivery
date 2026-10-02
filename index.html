@@ -4,8 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
-    <title>貨運快遞</title>
+    <title>胡鬧快遞</title>
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/menus.css" />
   </head>
   <body>
     <canvas id="game"></canvas>
@@ -16,25 +17,152 @@
         <div class="stat"><span class="label">車上貨物</span><span class="value" id="cargo">0 / 0</span></div>
         <div class="stat" id="timer-stat"><span class="label">時間</span><span class="value" id="timer">0:00</span></div>
       </div>
-      <div class="panel" id="nav" hidden>
-        <div id="nav-arrow"></div>
-        <div><span class="label">卸貨區</span><span class="value" id="nav-distance">0</span><span class="unit">m</span></div>
+      <div id="corner">
+        <div class="panel" id="nav" hidden>
+          <div id="nav-arrow"></div>
+          <div><span class="label">卸貨區</span><span class="value" id="nav-distance">0</span><span class="unit">m</span></div>
+        </div>
+        <button id="pause-button" type="button" title="暫停（Esc）" aria-label="暫停"></button>
       </div>
       <div id="banner" hidden>
         <div id="banner-title"></div>
         <div id="banner-brief"></div>
+        <div id="banner-list"></div>
       </div>
       <canvas id="minimap"></canvas>
       <div id="popups"></div>
       <div class="panel" id="result" hidden>
         <div id="result-title"></div>
         <div id="result-stars"></div>
-        <div id="result-value"></div>
-        <div id="result-detail"></div>
-        <div id="result-hint">按 <b>R</b> 再玩一次</div>
+        <div id="result-reason"></div>
+        <div id="result-rows"></div>
+        <div id="result-goals"></div>
+        <div class="buttons">
+          <button id="result-retry" type="button">再玩一次 <b>R</b></button>
+          <button id="result-menu" class="quiet" type="button">回到主選單</button>
+        </div>
+      </div>
+      <div id="pause" hidden>
+        <div id="pause-card">
+          <div class="pause-main">
+            <div class="pause-head">
+              <div id="pause-title">暫停</div>
+              <div id="pause-level"></div>
+            </div>
+            <div class="pause-stats">
+              <div><span>時間</span><b id="pause-time">0:00</b></div>
+              <div><span>貨物價值</span><b id="pause-value">$0</b></div>
+              <div><span>車上貨物</span><b id="pause-cargo">0 / 0</b></div>
+            </div>
+            <div id="pause-choices">
+              <button id="pause-resume" class="menu-item primary" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>繼續<small>Esc</small></button>
+              <button id="pause-retry" class="menu-item" type="button"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 7.7 10h-2.6A5.5 5.5 0 1 1 12 6.5c1.5 0 2.9.6 3.9 1.6L13 11h8V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg>重新開始<small>R</small></button>
+              <button id="pause-menu" class="menu-item leave" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l10 9h-3v9h-5v-6h-4v6H5v-9H2z"/></svg>回到主選單</button>
+            </div>
+            <div class="pause-sound">
+              <label><span>音效</span><input id="vol-sfx" type="range" min="0" max="100" /></label>
+              <label><span>音樂</span><input id="vol-music" type="range" min="0" max="100" /></label>
+              <label class="mute"><input id="vol-mute" type="checkbox" /><span>靜音</span></label>
+            </div>
+            <div id="pause-confirm" hidden>
+              <p>確定要回到主選單嗎？<br />這一趟的進度不會保留。</p>
+              <button id="pause-leave" class="menu-item leave" type="button">回到主選單</button>
+              <button id="pause-stay" class="menu-item" type="button">取消，繼續送貨</button>
+            </div>
+          </div>
+          <div class="pause-keys">
+            <div class="keys">
+            <h4>開車</h4>
+            <kbd>W</kbd><span>前進</span>
+            <kbd>S</kbd><span>煞車（按住越久越重）、倒車</span>
+            <kbd>A / D</kbd><span>左右轉向</span>
+            <kbd>Shift</kbd><span>急加速</span>
+            <kbd>空白鍵</kbd><span>手煞車</span>
+            <h4>下車</h4>
+            <kbd>C</kbd><span>上下車</span>
+            <kbd>E</kbd><span>舉起、放下貨物</span>
+            <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
+            <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
+            <h4>其他</h4>
+            <kbd>Esc</kbd><span>暫停</span>
+            <kbd>R</kbd><span>重來</span>
+            <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="prompt" hidden></div>
       <div class="panel" id="help"></div>
+    </div>
+    <div id="menu" hidden>
+      <div class="scene">
+        <div class="sun"></div>
+        <div class="skyline far"></div>
+        <div class="skyline near"></div>
+        <div class="road"></div>
+        <svg class="truck" viewBox="0 0 380 200" aria-hidden="true">
+          <g class="body">
+            <g class="load">
+              <rect x="196" y="14" width="34" height="78" rx="3" fill="#e9ecee" stroke="#b9c0c6" stroke-width="2"/>
+              <rect x="152" y="22" width="40" height="70" rx="2" fill="#8a5a34" stroke="#6a4326" stroke-width="2"/>
+              <rect x="104" y="54" width="40" height="38" fill="#b98a55" stroke="#8a6238" stroke-width="3"/>
+              <rect x="70" y="62" width="30" height="30" fill="#d9b36c" stroke="#a8843f" stroke-width="3"/>
+              <circle cx="46" cy="78" r="14" fill="#3f8f45" stroke="#1f5a2a" stroke-width="3"/>
+              <rect x="112" y="24" width="26" height="28" fill="#d9b36c" stroke="#a8843f" stroke-width="3"/>
+            </g>
+            <rect x="22" y="92" width="222" height="30" rx="3" fill="#e2532f"/>
+            <rect x="22" y="92" width="222" height="7" fill="#b23f22"/>
+            <rect x="18" y="120" width="238" height="16" fill="#2a2f36"/>
+            <path d="M248 136V66q0-10 10-10h52q12 0 18 12l14 30q4 8 4 16v22z" fill="#e2532f"/>
+            <path d="M270 68h38q6 0 9 6l11 24h-58z" fill="#1b2a3a"/>
+            <rect x="248" y="50" width="62" height="8" rx="3" fill="#b23f22"/>
+            <rect x="336" y="126" width="22" height="12" rx="3" fill="#d0d4d8"/>
+            <rect x="338" y="108" width="10" height="9" rx="2" fill="#fff3c2"/>
+            <rect x="262" y="104" width="3" height="30" fill="#b23f22"/>
+          </g>
+          <g class="wheel"><circle cx="84" cy="150" r="26" fill="#17181a"/><circle cx="84" cy="150" r="11" fill="#c8ccd0"/><rect x="82" y="128" width="4" height="44" fill="#17181a"/></g>
+          <g class="wheel"><circle cx="296" cy="150" r="26" fill="#17181a"/><circle cx="296" cy="150" r="11" fill="#c8ccd0"/><rect x="294" y="128" width="4" height="44" fill="#17181a"/></g>
+        </svg>
+      </div>
+      <div class="menu-side">
+        <div class="logo">胡鬧<span>快遞</span></div>
+        <div class="tagline">保證送達，不保證完整。</div>
+
+        <div class="menu-page" id="menu-home">
+          <button class="menu-item primary" id="menu-start" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>開始遊戲</button>
+          <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
+          <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
+          <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b>Enter</b> 確定</div>
+        </div>
+
+        <div class="menu-page" id="menu-levels" hidden>
+          <div class="page-title">關卡選擇</div>
+          <div id="menu-level-list"></div>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+        </div>
+
+        <div class="menu-page" id="menu-help" hidden>
+          <div class="page-title">操作說明</div>
+          <div class="keys">
+            <h4>開車</h4>
+            <kbd>W</kbd><span>前進</span>
+            <kbd>S</kbd><span>煞車（按住越久越重）、倒車</span>
+            <kbd>A / D</kbd><span>左右轉向</span>
+            <kbd>Shift</kbd><span>急加速</span>
+            <kbd>空白鍵</kbd><span>手煞車</span>
+            <h4>下車</h4>
+            <kbd>C</kbd><span>上下車</span>
+            <kbd>E</kbd><span>舉起、放下貨物</span>
+            <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
+            <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
+            <h4>其他</h4>
+            <kbd>Esc</kbd><span>暫停</span>
+            <kbd>R</kbd><span>重來</span>
+            <kbd>滾輪</kbd><span>拉近、拉遠</span>
+          </div>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
