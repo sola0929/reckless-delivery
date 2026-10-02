@@ -27,6 +27,11 @@ export interface ObjectKind {
   effect?: KnockEffect;
   /** Keeps spouting for a while from where it stood, like a broken hydrant. */
   geyser?: boolean;
+  /**
+   * How it looks once it has been hit hard: the same parts, one for one, moved, turned or
+   * shrunk to nothing. Only the look changes; it is still one solid body.
+   */
+  wrecked?: ObjectPart[];
 }
 
 const WOOD = 0x9a7448;
@@ -51,17 +56,29 @@ function tree(crown: number, color: number): ObjectKind {
   };
 }
 
+/**
+ * A market stall: a counter in two halves, four poles and an awning. Hit hard, it folds up:
+ * the counter breaks in the middle, the poles go over, and the awning is gone (the pieces
+ * that fly off are drawn separately).
+ */
 function stall(awning: number): ObjectKind {
+  const pole = (x: number, z: number): ObjectPart => cyl(0.05, 1.25, [x, 1.25, z], DARK, { ghost: true });
+  // A pole lying where it fell, pointing outward.
+  const fallen = (x: number, z: number, turn: number): ObjectPart => cyl(0.05, 1.1, [x, 0.5, z], DARK, { ghost: true, rot: [1.35, turn, 0] });
   return {
     mass: 420,
     effect: 'splinters',
     parts: [
-      box([1.1, 0.42, 0.7], [0, 0.42, 0], WOOD),
-      cyl(0.05, 1.25, [1.0, 1.25, 0.6], DARK, { ghost: true }),
-      cyl(0.05, 1.25, [-1.0, 1.25, 0.6], DARK, { ghost: true }),
-      cyl(0.05, 1.25, [1.0, 1.25, -0.6], DARK, { ghost: true }),
-      cyl(0.05, 1.25, [-1.0, 1.25, -0.6], DARK, { ghost: true }),
+      box([0.55, 0.42, 0.7], [-0.55, 0.42, 0], WOOD),
+      box([0.55, 0.42, 0.7], [0.55, 0.42, 0], WOOD),
+      pole(1.0, 0.6), pole(-1.0, 0.6), pole(1.0, -0.6), pole(-1.0, -0.6),
       box([1.35, 0.05, 0.95], [0, 2.5, 0], awning, { ghost: true }),
+    ],
+    wrecked: [
+      box([0.55, 0.42, 0.7], [-0.62, 0.3, 0.05], 0x7a5a36, { rot: [0.12, 0.2, 0.42] }),
+      box([0.55, 0.42, 0.7], [0.66, 0.26, -0.08], 0x7a5a36, { rot: [-0.1, -0.25, -0.5] }),
+      fallen(1.3, 0.9, 0.6), fallen(-1.4, 0.7, -0.9), fallen(1.2, -1.0, 2.4), fallen(-1.1, -1.1, 3.6),
+      box([0, 0, 0], [0, 0.4, 0], awning, { ghost: true }),
     ],
   };
 }

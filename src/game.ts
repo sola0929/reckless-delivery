@@ -14,6 +14,7 @@ import { Bursts, Smoke } from './render/effects';
 import { LevelView } from './render/levelView';
 import { BodySync, TruckMesh } from './render/meshes';
 import { ObjectsView, PedestriansView } from './render/objectsView';
+import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
 import type { CargoEvent, CargoItem } from './sim/cargo';
 import type { FootInput } from './sim/driver';
@@ -51,6 +52,7 @@ const bursts = new Bursts();
 view.scene.add(smoke.mesh, engineSmoke.mesh, bursts.mesh);
 
 const objectsView = new ObjectsView(view.scene, sim.objects.objects);
+const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const cargoViews = new CargoViews(view.scene, bursts);
 cargoViews.rebuild(sim);
@@ -228,6 +230,13 @@ function showKnock(knock: KnockEvent): void {
   const at = new Vector3(knock.at.x, knock.at.y + 0.6, knock.at.z);
   if (kind.effect === 'leaves') bursts.emit(at.setY(knock.at.y + 3), 'leaves', 26, 4);
   else if (kind.effect) bursts.emit(at, kind.effect, kind.effect === 'sparks' ? 18 : 14, 4);
+  if (knock.object.wrecked) {
+    // A stall in pieces: a cloud of splinters, and its awning and planks sent flying.
+    bursts.emit(at, 'splinters', 46, 6);
+    const push = sim.truck.body.linvel();
+    const awning = kind.parts[kind.parts.length - 1].color;
+    wreckage.stall(knock.at, awning, away < 12 ? push : { x: 0, z: 0 });
+  }
   if (kind.geyser) geysers.push({ at: new Vector3(knock.at.x, knock.at.y + 0.2, knock.at.z), left: GEYSER_SECONDS });
 }
 
@@ -400,6 +409,7 @@ function frame(now: number): void {
     resultShown = false;
     cargoViews.rebuild(sim);
     objectsView.refresh();
+    wreckage.clear();
     geysers.length = 0;
     truckSync.apply(1);
     chase.snap(truckMesh.root.position, truckHeading());
@@ -459,6 +469,7 @@ function frame(now: number): void {
   cargoViews.apply(alpha);
   cargoViews.update(dt);
   objectsView.update();
+  wreckage.update(dt);
   pedestriansView.update(dt);
   spoutGeysers(dt);
   truckMesh.updateWheels(sim.truck);

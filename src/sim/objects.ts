@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
-import { GROUP, groups } from '../config';
+import { GROUP, TRUCK, groups } from '../config';
 import { OBJECT_KINDS, type ObjectDesc, type ObjectKind } from '../levels/objects';
 import type { Truck } from './truck';
 
@@ -12,6 +12,10 @@ export interface LooseObject {
   knocked: boolean;
   /** How tall it stands, metres. */
   height: number;
+  /** Whether it was hit hard enough to be left in pieces, if it is the kind of thing that can be. */
+  wrecked: boolean;
+  /** Seconds it has spent pressed against the front or back of the moving truck. */
+  carried: number;
   /** Its velocity a step ago, once it is loose, to tell when it has hit something. */
   was: { x: number; y: number; z: number } | null;
   /** Seconds before another landing of its will be reported. */
@@ -62,6 +66,19 @@ const UNDER_DROP = 0.42;
 /** The whole of the truck, and a little more: half extents, and how far above its centre. */
 const AROUND_HALF = { x: 1.5, y: 1.1, z: 4.0 };
 const AROUND_RISE = 0.4;
+/**
+ * The space just ahead of the truck's nose and just behind its tail, below the level of the
+ * cab roof: half extents, and how far along the truck it is from the middle.
+ */
+const NOSE_HALF = { x: 1.45, y: 0.9, z: 0.45 };
+const NOSE_ALONG = 4.05;
+/** How far inside the cab's walls something must be to count as having got into it. */
+const CAB_SKIN = 0.15;
+/** Something pressed there this long while the truck is moving is let through. */
+const CARRIED_SECONDS = 0.45;
+const CARRYING_SPEED = 2;
+/** Hit at this speed or more, m/s, a thing that can be wrecked is. */
+const WRECK_SPEED = 3;
 
 /** Whether an object has gone over: tipped more than half way to the ground. */
 function lying(object: LooseObject): boolean {
@@ -83,6 +100,9 @@ export class ObjectSystem {
   private under = new Set<LooseObject>();
   private readonly underShape = new RAPIER.Cuboid(UNDER_HALF.x, UNDER_HALF.y, UNDER_HALF.z);
   private readonly aroundShape = new RAPIER.Cuboid(AROUND_HALF.x, AROUND_HALF.y, AROUND_HALF.z);
+  private readonly noseShape = new RAPIER.Cuboid(NOSE_HALF.x, NOSE_HALF.y, NOSE_HALF.z);
+  private readonly cabShape = new RAPIER.Cuboid(TRUCK.cab.half[0] - CAB_SKIN, TRUCK.cab.half[1] - CAB_SKIN, TRUCK.cab.half[2] - CAB_SKIN);
+  private riding = new Set<LooseObject>();
   private seed = 3;
 
   constructor(private readonly world: RAPIER.World, descs: ObjectDesc[]) {
@@ -97,7 +117,7 @@ export class ObjectSystem {
       );
       const solid = kind.parts.filter((p) => !p.ghost);
       const height = Math.max(...solid.map((p) => p.pos[1] + p.size[1]));
-      const object: LooseObject = { desc, kind, body, knocked: false, height, was: null, hush: 0 };
+      const object: LooseObject = { desc, kind, body, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0 };
       const shares = solid.reduce((sum, p) => sum + (p.weight ?? 1), 0);
       for (const part of solid) {
         const [a, b, c] = part.size;
@@ -140,6 +160,7 @@ export class ObjectSystem {
       const speed = Math.hypot(v.x, v.y, v.z);
       if (speed < KNOCK_SPEED) continue;
       object.knocked = true;
+      object.wrecked = object.kind.wrecked !== undefined && speed >= WRECK_SPEED;
       const [x, y, z] = object.desc.pos;
       const event = { object, at: { x, y, z } };
       this.events.push(event);
@@ -187,8 +208,8 @@ export class ObjectSystem {
     const t = truck.body.translation();
     const r = truck.body.rotation();
     q.set(r.x, r.y, r.z, r.w);
-    const touching = (shape: RAPIER.Cuboid, lift: number, take: (object: LooseObject) => void) => {
-      v.set(0, lift, 0).applyQuaternion(q);
+    const touching = (shape: RAPIER.Cuboid, lift: number, take: (object: LooseObject) => void, along = 0) => {
+      v.set(0, lift, along).applyQuaternion(q);
       this.world.intersectionsWithShape(
         { x: t.x + v.x, y: t.y + v.y, z: t.z + v.z }, r, shape,
         (collider) => {
@@ -203,9 +224,32 @@ export class ObjectSystem {
     touching(this.underShape, -UNDER_DROP, (object) => {
       if (object.height < UNDER_HEIGHT || lying(object)) found.add(object);
     });
+    // Something thin hit fast can end up inside the cab before the physics has caught it.
+    // It is not left there: it is let out the way it came.
+    touching(this.cabShape, TRUCK.cab.pos[1], (object) => found.add(object), TRUCK.cab.pos[2]);
+
+    // A pole or a barrier arm caught across the nose and pushed along for as long as the
+    // truck keeps going: after a moment of that it is let through, to drop where it is.
+    // What has come to rest on the cab roof or in the bed is left alone: it is lying there
+    // like anything else would.
+    const riding = new Set<LooseObject>();
+    if (Math.abs(truck.forwardSpeed()) > CARRYING_SPEED) {
+      for (const along of [NOSE_ALONG, -NOSE_ALONG]) {
+        touching(this.noseShape, 0.3, (object) => {
+          if (object.knocked) riding.add(object);
+        }, along);
+      }
+    }
+    for (const object of this.riding) if (!riding.has(object)) object.carried = 0;
+    for (const object of riding) {
+      object.carried += STEP;
+      if (object.carried > CARRIED_SECONDS) found.add(object);
+    }
+    this.riding = riding;
+
     // Once let through, a thing stays so until it is right out from the truck: turned solid
     // again while still inside it, it would be thrown out like a cork.
-    if (stalled || this.under.size) {
+    if (stalled || this.under.size || found.size) {
       touching(this.aroundShape, AROUND_RISE, (object) => {
         if (stalled || this.under.has(object)) found.add(object);
       });
@@ -273,10 +317,13 @@ export class ObjectSystem {
       object.body.setAngvel(zero, false);
       object.body.sleep();
       object.knocked = false;
+      object.wrecked = false;
+      object.carried = 0;
       object.was = null;
       object.hush = 0;
     }
     this.landings = [];
+    this.riding.clear();
     this.events = [];
     this.seed = 3;
   }

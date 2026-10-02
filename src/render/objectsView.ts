@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { ObjectPart } from '../levels/objects';
 import type { LooseObject } from '../sim/objects';
 import type { Pedestrian } from '../sim/pedestrians';
 
@@ -7,13 +8,19 @@ type Shape = 'box' | 'cylinder' | 'cone';
 interface PartSlot {
   mesh: THREE.InstancedMesh;
   index: number;
-  /** The part's place, turn and size within its object. */
+  /** The part's place, turn and size within its object; and the same once the object is wrecked, if that differs. */
   local: THREE.Matrix4;
+  wrecked: THREE.Matrix4 | null;
+  /** Its colour, whole and wrecked. */
+  color: number;
+  wreckedColor: number;
 }
 
 interface Entry {
   object: LooseObject;
   slots: PartSlot[];
+  /** Whether it is drawn as a wreck at the moment. */
+  wrecked: boolean;
   /** Whether it was already drawn at rest, so needn't be touched again until it wakes. */
   settled: boolean;
 }
@@ -37,6 +44,7 @@ export class ObjectsView {
   private readonly pos = new THREE.Vector3();
   private readonly rot = new THREE.Quaternion();
   private readonly one = new THREE.Vector3(1, 1, 1);
+  private readonly color = new THREE.Color();
 
   constructor(scene: THREE.Scene, objects: readonly LooseObject[]) {
     const counts: Record<Shape, number> = { box: 0, cylinder: 0, cone: 0 };
@@ -61,17 +69,20 @@ export class ObjectsView {
     const scale = new THREE.Vector3();
     const color = new THREE.Color();
     for (const object of objects) {
-      const slots = object.kind.parts.map((part) => {
-        const mesh = byShape[part.shape];
-        const index = next[part.shape]++;
+      const place = (part: ObjectPart): THREE.Matrix4 => {
         const [a, b, c] = part.size;
         scale.set(a, b, part.shape === 'box' ? c : a);
         const [rx, ry, rz] = part.rot ?? [0, 0, 0];
-        const local = new THREE.Matrix4().compose(new THREE.Vector3(...part.pos), turn.setFromEuler(euler.set(rx, ry, rz)), scale);
+        return new THREE.Matrix4().compose(new THREE.Vector3(...part.pos), turn.setFromEuler(euler.set(rx, ry, rz)), scale);
+      };
+      const slots = object.kind.parts.map((part, i) => {
+        const mesh = byShape[part.shape];
+        const index = next[part.shape]++;
+        const after = object.kind.wrecked?.[i];
         mesh.setColorAt(index, color.set(part.color));
-        return { mesh, index, local };
+        return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color };
       });
-      this.entries.push({ object, slots, settled: false });
+      this.entries.push({ object, slots, wrecked: false, settled: false });
     }
     for (const mesh of this.meshes) mesh.instanceColor!.needsUpdate = true;
     this.update();
@@ -85,17 +96,28 @@ export class ObjectsView {
 
   update(): void {
     let changed = false;
+    let recoloured = false;
     for (const entry of this.entries) {
       const asleep = entry.object.body.isSleeping();
+      if (entry.wrecked !== entry.object.wrecked) {
+        // Whole to wrecked, or back again on a reset: other colours, and other places below.
+        entry.wrecked = entry.object.wrecked;
+        entry.settled = false;
+        recoloured = true;
+        for (const slot of entry.slots) slot.mesh.setColorAt(slot.index, this.color.set(entry.wrecked ? slot.wreckedColor : slot.color));
+      }
       if (asleep && entry.settled) continue;
       entry.settled = asleep;
       changed = true;
       const t = entry.object.body.translation();
       const r = entry.object.body.rotation();
       this.body.compose(this.pos.set(t.x, t.y, t.z), this.rot.set(r.x, r.y, r.z, r.w), this.one);
-      for (const slot of entry.slots) slot.mesh.setMatrixAt(slot.index, this.world.multiplyMatrices(this.body, slot.local));
+      for (const slot of entry.slots) {
+        slot.mesh.setMatrixAt(slot.index, this.world.multiplyMatrices(this.body, entry.wrecked && slot.wrecked ? slot.wrecked : slot.local));
+      }
     }
     if (changed) for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    if (recoloured) for (const mesh of this.meshes) mesh.instanceColor!.needsUpdate = true;
   }
 }
 
