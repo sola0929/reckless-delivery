@@ -1,3 +1,4 @@
+import type { RecordsSet } from './best';
 import { soundButtons } from './jukebox';
 import type { LevelDef } from './levels/types';
 import { soundSettings } from './sound-settings';
@@ -88,15 +89,21 @@ export class Hud {
     this.showBanner();
   }
 
-  /** The level's name and goal, shown briefly at the start. */
+  /** The level's name, what each star asks for and what is on the truck: up until the run begins. */
   showBanner(): void {
     el('banner-title').textContent = this.level.name;
+    el('banner-brief').textContent = this.level.brief;
+    const scored = !!this.level.finish;
     const [pass, two] = this.level.stars;
-    const first = pass > 0 ? `送達 ${Math.round(pass * 100)}% 過關` : '抵達卸貨區即過關';
-    el('banner-brief').textContent = this.level.finish
-      ? `${this.level.brief}　★ ${first}　★★ 送達 ${Math.round(two * 100)}%　★★★ 並在 ${clock(this.level.par)} 內`
-      : this.level.brief;
-    el('banner-list').innerHTML = this.level.finish ? this.manifest() : '';
+    const goals = [
+      pass > 0 ? `送達 ${Math.round(pass * 100)}%` : '抵達卸貨區',
+      `送達 ${Math.round(two * 100)}% 的價值`,
+      `並在 ${clock(this.level.par)} 內完成`,
+    ];
+    el('banner-goals').innerHTML = scored ? goals.map((text, i) => `<div class="goal"><span>${'★'.repeat(i + 1)}</span>${text}</div>`).join('') : '';
+    el('banner-list').innerHTML = scored ? this.manifest() : '';
+    el('banner-foot').innerHTML = scored ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em>` : '';
+    this.banner.classList.toggle('plain', !scored);
     this.banner.classList.remove('leaving');
     this.banner.hidden = false;
   }
@@ -124,7 +131,12 @@ export class Hud {
     el('pause-resume').focus();
   }
 
-  /** The load, a line for each kind of thing: how many, and what one is worth. */
+  /** What the whole load is worth. */
+  private loadValue(): number {
+    return this.level.cargo.reduce((sum, { type }) => sum + (CARGO_TYPES[type] as CargoType).value, 0);
+  }
+
+  /** The load, a tile for each kind of thing: its colour, how many, and what one is worth. */
   private manifest(): string {
     const counts = new Map<CargoType, number>();
     for (const { type } of this.level.cargo) {
@@ -132,11 +144,10 @@ export class Hud {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
     const kinds = [...counts].sort(([a], [b]) => b.value - a.value);
-    const rows = kinds.map(([kind, n]) => `<div class="manifest-row"><span>${kind.name}</span><span>× ${n}</span><span>${money(kind.value)}</span></div>`);
-    const total = kinds.reduce((sum, [kind, n]) => sum + kind.value * n, 0);
-    const items = kinds.reduce((sum, [, n]) => sum + n, 0);
-    rows.push(`<div class="manifest-row total"><span>合計</span><span>${items} 件</span><span>${money(total)}</span></div>`);
-    return rows.join('');
+    const swatch = (kind: CargoType) => `#${kind.parts[0].color.toString(16).padStart(6, '0')}`;
+    return kinds
+      .map(([kind, n]) => `<div class="manifest-item"><i style="background:${swatch(kind)}"></i><span>${kind.name}</span><em>× ${n}</em><b>${money(kind.value)}</b></div>`)
+      .join('');
   }
 
   update(speedMps: number, cargoOnTruck: number, cargoTotal: number, value: number, fullValue: number, seconds: number): void {
@@ -191,40 +202,58 @@ export class Hud {
     this.prompt.classList.toggle('warning', warning);
   }
 
-  /** The page shown when a run ends: what arrived, what it was worth, and which stars that earns. */
-  showResult(result: Result, fullValue: number): void {
+  /**
+   * The page shown when a run ends: the stars, what arrived and what it was worth, what
+   * became of the rest, and how the run stands against the best on record.
+   */
+  showResult(result: Result, fullValue: number, records?: RecordsSet): void {
     const failed = result.failure !== undefined;
     const passed = !failed && result.stars > 0;
     const [title, reason] = failed ? FAILURES[result.failure!] : [passed ? '送達！' : '未達標', ''];
+    el('result-level').textContent = this.level.name;
     el('result-title').textContent = title;
     el('result-title').className = passed ? 'passed' : 'failed';
-    el('result-stars').textContent = '★'.repeat(result.stars) + '☆'.repeat(3 - result.stars);
+    el('result-stars').innerHTML = [0, 1, 2].map((n) => `<span class="${n < result.stars ? 'on' : ''}" style="animation-delay:${0.25 + n * 0.22}s">★</span>`).join('');
     el('result-reason').textContent = reason;
 
+    const [pass, two] = this.level.stars;
+    const percent = Math.floor(result.fraction * 100);
+    el('result-value').innerHTML =
+      `<div class="figure"><b>${money(result.value)}</b><span>/ ${money(fullValue)}</span><em>${percent}%</em></div>` +
+      `<div class="bar"><div class="fill${result.fraction >= two ? ' good' : ''}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div></div>`;
+
     const { intact, damaged, destroyed, lost } = result.tally;
-    const total = intact + damaged + destroyed + lost;
-    const count = (n: number, bad = false) => `<span${bad && n > 0 ? ' class="bad"' : ''}>${n} 件</span>`;
-    const row = (label: string, value: string, main = false) =>
-      `<div class="result-row${main ? ' main' : ''}"><span>${label}</span>${value}</div>`;
+    const tile = (label: string, value: string, bad = false) => `<div class="tile${bad ? ' bad' : ''}"><b>${value}</b><span>${label}</span></div>`;
     el('result-rows').innerHTML = [
-      row('送達價值', `<span>${money(result.value)} / ${money(fullValue)}（${Math.floor(result.fraction * 100)}%）</span>`, true),
-      row('完好送達', `<span>${intact} / ${total} 件</span>`),
-      row('受損', count(damaged, true)),
-      row('全毀', count(destroyed, true)),
-      row('遺失', count(lost, true)),
-      row('用時', `<span>${clock(result.seconds)}</span>`),
+      tile('完好', String(intact)),
+      tile('受損', String(damaged), damaged > 0),
+      tile('全毀', String(destroyed), destroyed > 0),
+      tile('遺失', String(lost), lost > 0),
+      tile('用時', clock(result.seconds), !failed && result.seconds > this.level.par),
     ].join('');
 
-    const [pass, two] = this.level.stars;
     const enough = !failed && result.fraction >= two;
     const goals: [string, boolean][] = [
       [pass > 0 ? `送達價值 ${Math.round(pass * 100)}% 以上` : '抵達卸貨區', !failed && result.fraction >= pass],
       [`送達價值 ${Math.round(two * 100)}% 以上`, enough],
-      [`達成兩星，並在 ${clock(this.level.par)} 內送達`, enough && result.seconds <= this.level.par],
+      [`並在 ${clock(this.level.par)} 內送達`, enough && result.seconds <= this.level.par],
     ];
     el('result-goals').innerHTML = goals
-      .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}${met ? '　✓' : ''}</div>`)
+      .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}<i>${met ? '✓' : ''}</i></div>`)
       .join('');
+
+    // The two records, each against what stood before: the most delivered, and the quickest.
+    const before = records?.before ?? null;
+    const line = (label: string, now: string, was: string | null, isNew: boolean) =>
+      `<div class="record${isNew ? ' new' : ''}"><span>${label}</span><b>${isNew ? now : was ?? '－'}</b>` +
+      (isNew ? `<em>新紀錄</em>${was ? `<i>原 ${was}</i>` : ''}` : '') + '</div>';
+    const share = (fraction: number) => `${money(fraction * fullValue)}（${Math.floor(fraction * 100)}%）`;
+    el('result-record').innerHTML = records && (before || records.value || records.time)
+      ? line('最高價值', share(result.fraction), before ? share(before.fraction) : null, records.value) +
+        line('最短時間', clock(result.seconds), before ? clock(before.seconds) : null, records.time)
+      : '';
+    // The card from the start has had its day, if it is somehow still up.
+    this.banner.hidden = true;
     this.result.hidden = false;
   }
 

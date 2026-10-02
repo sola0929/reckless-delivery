@@ -28,16 +28,21 @@
       <div id="banner" hidden>
         <div id="banner-title"></div>
         <div id="banner-brief"></div>
+        <div id="banner-goals"></div>
         <div id="banner-list"></div>
+        <div id="banner-foot"></div>
       </div>
       <canvas id="minimap"></canvas>
       <div id="popups"></div>
       <div class="panel" id="result" hidden>
+        <div id="result-level"></div>
         <div id="result-title"></div>
         <div id="result-stars"></div>
         <div id="result-reason"></div>
+        <div id="result-value"></div>
         <div id="result-rows"></div>
         <div id="result-goals"></div>
+        <div id="result-record"></div>
         <div class="buttons">
           <button id="result-retry" type="button">再玩一次 <b>R</b></button>
           <button id="result-menu" class="quiet" type="button">回到主選單</button>
@@ -137,8 +142,12 @@
         </div>
 
         <div class="menu-page" id="menu-levels" hidden>
-          <div class="page-title">關卡選擇</div>
+          <div class="levels-head">
+            <div class="page-title">關卡選擇</div>
+            <div class="levels-total"><span>★</span><b id="menu-level-stars">0 / 0</b></div>
+          </div>
           <div id="menu-level-list"></div>
+          <button id="menu-free" class="level-free" type="button"></button>
           <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
         </div>
 

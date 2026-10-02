@@ -617,9 +617,10 @@ function frame(now: number): void {
     sim.trains.trains,
   );
   if (sim.result && !resultShown) {
-    saveBest(levelId, sim.result);
+    // Only deliveries keep a record.
+    const records = level.finish ? saveBest(levelId, sim.result) : undefined;
     uiSound(sim.result.failure || sim.result.stars === 0 ? 'fail' : 'win');
-    hud.showResult(sim.result, sim.fullValue);
+    hud.showResult(sim.result, sim.fullValue, records);
     resultShown = true;
   }
   showPopups(dt);

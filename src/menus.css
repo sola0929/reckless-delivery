@@ -280,54 +280,137 @@ body.in-menu #hud {
   color: var(--accent);
 }
 
-/* Level cards: a picture strip, the name, what it is, and the best run so far. */
-.level-card {
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  gap: 16px;
-  align-items: center;
-  width: 100%;
-  margin: 6px 0;
-  padding: 12px 18px 12px 12px;
+/* The level page takes the whole width: the scene behind it is dimmed right across. */
+#menu:has(#menu-levels:not([hidden]))::before {
+  background: rgba(13, 19, 28, 0.9);
+}
+
+.menu-side:has(#menu-levels:not([hidden])) {
+  width: min(1180px, 100vw);
+  padding-right: 7vw;
+}
+
+.menu-side:has(#menu-levels:not([hidden])) .logo {
+  font-size: clamp(34px, 3.6vw, 52px);
+}
+
+.menu-side:has(#menu-levels:not([hidden])) .tagline {
+  display: none;
+}
+
+#menu-levels {
+  margin-top: 4vh;
+}
+
+.levels-head {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.levels-head .page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+/* How many stars have been won, of all there are to win. */
+.levels-total {
+  margin-left: auto;
+  padding: 5px 16px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.levels-total span {
+  margin-right: 8px;
+  color: var(--accent);
+}
+
+#menu-level-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* A card to each delivery: a picture, where it stands, its name, its stars, its best run. */
+.level-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: var(--panel);
   color: #fff;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
-.level-card:hover,
+.level-card:not(:disabled):hover,
 .level-card:focus-visible {
   outline: none;
-  transform: translateX(10px);
+  transform: translateY(-6px);
   border-color: var(--accent);
-  background: rgba(30, 40, 56, 0.92);
+  background: rgba(30, 40, 56, 0.95);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+}
+
+.level-card:disabled {
+  cursor: default;
 }
 
 .level-thumb {
-  height: 72px;
-  border-radius: 8px;
+  position: relative;
+  height: 108px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
+  font-size: 54px;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
 }
 
-.level-thumb.city {
-  background: linear-gradient(160deg, #4f8fc8, #f0b56a);
+.level-thumb svg {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  fill: #fff;
 }
 
-.level-thumb.sandbox {
-  background: repeating-linear-gradient(45deg, #5b626b 0 12px, #666d77 12px 24px);
+.level-thumb.city { background: linear-gradient(160deg, #4f8fc8, #f0b56a); }
+.level-thumb.forest { background: linear-gradient(160deg, #2f6b4a, #9ac46a); }
+.level-thumb.mountain { background: linear-gradient(160deg, #6a5a7a, #d9a27a); }
+.level-thumb.ice { background: linear-gradient(160deg, #6fa8d8, #e8f4fa); }
+.level-thumb.sandbox { background: repeating-linear-gradient(45deg, #5b626b 0 12px, #666d77 12px 24px); }
+
+/* Where it stands, in the corner of the picture. */
+.level-state {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(13, 19, 28, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
 }
+
+.level-card.done .level-state { background: #3f9a62; }
+.level-card.open .level-state { background: var(--accent); color: var(--ink); }
 
 .level-name {
+  margin-top: 12px;
+  padding: 0 4px;
   font-size: 20px;
   font-weight: 800;
   letter-spacing: 2px;
@@ -335,24 +418,112 @@ body.in-menu #hud {
 
 .level-note {
   margin-top: 3px;
+  padding: 0 4px;
+  min-height: 2.6em;
   font-size: 13px;
   opacity: 0.7;
 }
 
+.level-stars {
+  margin-top: 8px;
+  padding: 0 4px;
+  font-size: 26px;
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.level-stars .on {
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(255, 209, 102, 0.5);
+}
+
 .level-best {
-  margin-top: 7px;
-  font-size: 14px;
+  margin-top: 2px;
+  padding: 0 4px;
+  font-size: 13px;
+  opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
 
-.level-best .stars {
-  margin-right: 10px;
-  color: var(--accent);
-  letter-spacing: 3px;
+/* Shut until the one before it is passed: greyed, with a padlock over the picture. */
+.level-card.locked .level-thumb {
+  filter: grayscale(0.85) brightness(0.55);
 }
 
-.level-best .none {
+.level-card.locked .level-thumb span {
+  opacity: 0.25;
+}
+
+.level-card.locked .level-name,
+.level-card.locked .level-note,
+.level-card.soon .level-name,
+.level-card.soon .level-note {
   opacity: 0.5;
+}
+
+/* Not built yet: a dashed outline, and the picture striped over. */
+.level-card.soon {
+  border-style: dashed;
+  background: rgba(17, 23, 33, 0.5);
+}
+
+.level-card.soon .level-thumb {
+  filter: saturate(0.45) brightness(0.7);
+}
+
+.level-card.soon .level-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.28) 0 14px, transparent 14px 28px);
+}
+
+.level-card.soon .level-stars,
+.level-card.locked .level-stars {
+  opacity: 0.4;
+}
+
+/* Free play, under the deliveries: a strip rather than a card. */
+.level-free {
+  position: relative;
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.level-free:hover,
+.level-free:focus-visible {
+  outline: none;
+  transform: translateX(8px);
+  border-color: var(--accent);
+}
+
+.level-free .level-thumb {
+  height: 52px;
+  font-size: 30px;
+}
+
+.level-free .level-name,
+.level-free .level-note {
+  margin-top: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.level-free .level-state {
+  top: 50%;
+  translate: 0 -50%;
 }
 
 /* The controls, as keys and what they do. Used on the menu and in the pause menu. */

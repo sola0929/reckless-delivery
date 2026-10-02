@@ -1179,9 +1179,10 @@ function furnishSite(b: Builder, west: number, east: number, south: number, nort
   b.object('pipe', east - 9, mid + 2.32, 0.6, 0);
 
   // The men: about the yard, and a few out in the lanes, where they have no business to be.
-  b.crowds.push({ area: [east - 19, south + 1.5, east - 2, north - 1.5], count: 7, y: 0, workers: true });
-  b.crowds.push({ area: [west + 3, south - 6, east - 8, south - 1.4], count: 3, y: 0, workers: true });
-  b.crowds.push({ area: [west + 3, north + 1.4, east - 22, north + 6], count: 2, y: 0, workers: true });
+  // Each lot keeps to its own ground: clear of the rails, the hoardings, the office and the heaps.
+  b.crowds.push({ area: [east - 19, mid - 2.8, east - 5.6, north - 1.2], count: 7, y: 0, workers: true, fenced: true });
+  b.crowds.push({ area: [west + 3, south - 6, east - 8, south - 1.2], count: 3, y: 0, workers: true, fenced: true });
+  b.crowds.push({ area: [west + 3, north + 1.2, east - 22, north + 6], count: 2, y: 0, workers: true, fenced: true });
 }
 
 /**

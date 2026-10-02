@@ -21,7 +21,7 @@ await page.keyboard.press('Escape');
 await page.click('[data-page="menu-levels"]');
 await page.waitForTimeout(350);
 await page.screenshot({ path: 'dev/out/menu-1b-levels.png' });
-check('the level page lists the levels', (await page.locator('.level-card').count()) === 2);
+check('the level page lists the levels', (await page.locator('.level-card').count()) >= 4 && (await page.locator('.level-card:disabled').count()) >= 3);
 check('the bare address shows the main menu, not the game', (await shown('menu')) && !(await shown('hud')));
 await page.click('.level-card');
 await page.waitForFunction(() => window.game?.sim, null, { timeout: 20000 });

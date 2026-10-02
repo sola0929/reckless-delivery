@@ -77,6 +77,8 @@ export interface CrowdDesc {
   y: number;
   /** People at work: in a hard hat and an orange vest. */
   workers?: boolean;
+  /** Walled in: whatever happens, they stay on their patch, and are not chased or thrown through its edges. */
+  fenced?: boolean;
   /** Set for people who go after a vehicle of this kind, wherever it goes: those with their rubbish, after the refuse lorry. */
   follows?: VehicleKind;
   /**

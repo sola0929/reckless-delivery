@@ -220,7 +220,7 @@ function fridge(): CargoType {
   return {
     id: 'fridge',
     name: '冰箱',
-    value: 500,
+    value: 600,
     threshold: 7.5,
     maxHit: 26,
     give: 22,
@@ -277,7 +277,7 @@ function wardrobe(): CargoType {
   return {
     id: 'wardrobe',
     name: '衣櫃',
-    value: 350,
+    value: 400,
     threshold: 5,
     maxHit: 40,
     give: 15,
@@ -322,7 +322,7 @@ function safe(): CargoType {
   return {
     id: 'safe',
     name: '保險箱',
-    value: 450,
+    value: 500,
     threshold: 12,
     maxHit: 14,
     give: 30,
@@ -363,7 +363,7 @@ function watermelon(): CargoType {
   return {
     id: 'watermelon',
     name: '西瓜',
-    value: 60,
+    value: 100,
     threshold: 4,
     maxHit: 75,
     give: 7,

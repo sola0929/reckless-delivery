@@ -114,6 +114,7 @@ export class Pedestrians {
     q.set(r.x, r.y, r.z, r.w).invert();
 
     for (const p of this.list) {
+      if (p.crowd.fenced) this.keepIn(p);
       if (p.state === 'down') {
         this.tumble(p, dt);
         continue;
@@ -185,6 +186,20 @@ export class Pedestrians {
       p.yaw = Math.atan2(dx, dz);
       p.speed = pace;
     }
+  }
+
+  /** Hold someone to their patch: stopped at its edge, with no speed left to carry them through it. */
+  private keepIn(p: Pedestrian): void {
+    const [x0, z0, x1, z1] = p.crowd.area;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const x = clamp(p.pos.x, x0, x1);
+    const z = clamp(p.pos.z, z0, z1);
+    if (x !== p.pos.x) p.velocity.x = 0;
+    if (z !== p.pos.z) p.velocity.z = 0;
+    p.pos.x = x;
+    p.pos.z = z;
+    p.target.x = clamp(p.target.x, x0, x1);
+    p.target.z = clamp(p.target.z, z0, z1);
   }
 
   /** Whether nothing is about to come past where someone at a crossing is standing. */
