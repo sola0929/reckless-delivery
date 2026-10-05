@@ -89,8 +89,8 @@ const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
 const machinesView = new MachinesView(view.scene, sim.machines.list);
-/** Testing tools: on when run locally, or with ?test in the address. */
-const TESTING = import.meta.env.DEV || new URLSearchParams(location.search).has('test');
+/** Testing tools: only when run locally from the dev server. The published build has none of it. */
+const TESTING = import.meta.env.DEV;
 if (TESTING && sim.level.checkpoints?.length) {
   const list = document.createElement('div');
   list.style.cssText = 'position:fixed;left:12px;bottom:56px;padding:8px 12px;background:rgba(20,24,30,0.78);color:#e8eef4;font:13px/1.6 sans-serif;border-radius:8px;z-index:20;pointer-events:none';
@@ -531,6 +531,9 @@ function showPopups(dt: number): void {
 let resultShown = false;
 // The banner with the manifest stays up until the run begins.
 let bannerUp = true;
+/** Asked for by the banner's close button, or Enter. */
+let closeBanner = false;
+hud.onBannerClose = () => (closeBanner = true);
 let bannerAge = 0;
 let paused = false;
 function setPaused(on: boolean): void {
@@ -656,6 +659,7 @@ function frame(now: number): void {
     setPaused(false);
     bannerUp = true;
     bannerAge = 0;
+    closeBanner = false;
     sim.reset();
     levelView.snap();
     ridersView.snap();
@@ -683,7 +687,10 @@ function frame(now: number): void {
   }
 
   bannerAge += dt;
-  if (bannerUp && (level.startLine ? sim.started : bannerAge > 6)) {
+  // Closed by hand, with its button or Enter; or of itself, once the run has begun.
+  if (input.take('Enter')) closeBanner = true;
+  if (bannerUp && (closeBanner || (level.startLine ? sim.started : bannerAge > 6))) {
+    closeBanner = false;
     bannerUp = false;
     hud.dismissBanner();
   }

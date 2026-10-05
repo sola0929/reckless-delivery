@@ -1,0 +1,21 @@
+// The start card on a level, then closed with Enter: is it gone, and is the minimap its new size? node dev/banner-shot.mjs [level]
+import { chromium } from 'playwright-core';
+const [level = 'uptown'] = process.argv.slice(2);
+const browser = await chromium.launch({ channel: 'msedge' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(String(e)));
+await page.goto('http://localhost:5183/');
+await page.evaluate(() => localStorage.setItem('cargo-best:city', JSON.stringify({ stars: 1, seconds: 200, fraction: 0.5 })));
+await page.goto(`http://localhost:5183/?level=${level}`);
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 30000 });
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `dev/out/banner-${level}.png` });
+const before = await page.evaluate(() => getComputedStyle(document.getElementById('banner')).opacity);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(2000);
+const after = await page.evaluate(() => ({ opacity: getComputedStyle(document.getElementById('banner')).opacity, map: document.getElementById('minimap').clientWidth, clock: window.game.sim.time }));
+await page.screenshot({ path: `dev/out/banner-${level}-closed.png` });
+console.log(`card opacity ${before} -> ${after.opacity} after Enter; minimap ${after.map}px; clock ${after.clock.toFixed(1)} s`);
+console.log(errors.length ? errors.join('\n') : 'no page errors');
+await browser.close();

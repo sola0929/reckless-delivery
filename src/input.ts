@@ -3,11 +3,12 @@ import type { DriveInput } from './sim/truck';
 const HANDLED = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'KeyE', 'KeyH',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'Escape', 'KeyP',
+  'Enter',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0',
 ]);
 
 /** Keys whose presses are picked up once each, rather than read as held. */
-export type PressKey = 'KeyR' | 'KeyC' | 'KeyE' | 'KeyH' | 'Space' | 'Escape' | 'KeyP' | `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+export type PressKey = 'KeyR' | 'KeyC' | 'KeyE' | 'KeyH' | 'Space' | 'Escape' | 'KeyP' | 'Enter' | `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 export class Input {
   private readonly down = new Set<string>();
@@ -22,7 +23,8 @@ export class Input {
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       if (!HANDLED.has(e.code)) return;
-      e.preventDefault();
+      // Enter is left to do its usual work as well: on a focused button, it presses it.
+      if (e.code !== 'Enter') e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
       this.down.add(e.code);
     });

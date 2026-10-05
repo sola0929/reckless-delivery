@@ -30,7 +30,7 @@ export interface LevelEntry {
 /** The deliveries, in the order they are unlocked: each one opens when the one before it has been passed. */
 export const LEVEL_LIST: LevelEntry[] = [
   { id: 'city', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true },
-  { id: 'uptown', name: '山城快遞', badge: '2', note: '從卸貨區出發往山上送：走樓梯下坡、鑽小巷，最後衝上大斜坡', ready: true },
+  { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true },
   { id: 'forest', name: '森林小徑', badge: '3', note: '顛簸的林道，貨物坐不住', ready: false },
   { id: 'ice', name: '冰原', badge: '4', note: '路面結冰，煞車要提早', ready: false },
 ];
@@ -45,5 +45,5 @@ export const FREE_PLAY: LevelEntry[] = [
   { id: 'bends', name: '山路樣品', badge: '∿', note: '不同坡度的上下坡，和靠山臨崖的彎路，看樣子用', ready: true },
   { id: 'steps', name: '階梯地形樣品', badge: '▤', note: '用格子畫的坡街、駁坎和懸崖路，看樣子用', ready: true },
   { id: 'hills', name: '地形試驗場', badge: '⛰', note: '有起伏的地面先在這裡試：連續起伏、凹路、山脊、髮夾彎、坡上的街、彈坑和壕溝', ready: true },
-  { id: 'range', name: '戰場試驗場', badge: '⚑', note: '第二關的機制先在這裡試：砲擊、交火、火箭筒、坦克、煙霧、地雷', ready: true },
+  { id: 'range', name: '戰場試驗場', badge: '⚑', note: '戰場的機制在這裡試：砲擊、交火、火箭筒、坦克、煙霧、地雷', ready: true },
 ];

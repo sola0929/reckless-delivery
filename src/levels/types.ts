@@ -179,6 +179,8 @@ export interface RollerDesc {
   /** For trying things out: left to roll with nothing keeping them straight; and made with their edges sharp. */
   free?: boolean;
   sharp?: boolean;
+  /** Let go only while the truck is within this many metres of the hill they come down (anywhere along their run), rather than anywhere near the line they start from. */
+  within?: number;
 }
 
 /** A hole dug in the ground. Driving into one ends the run. */

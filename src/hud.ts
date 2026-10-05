@@ -88,6 +88,7 @@ export class Hud {
     music.addEventListener('input', () => soundSettings.set({ music: Number(music.value) / 100 }));
     mute.addEventListener('change', () => soundSettings.set({ muted: mute.checked }));
     this.showBanner();
+    el('banner-close').addEventListener('click', () => this.onBannerClose());
   }
 
   /** The level's name, what each star asks for and what is on the truck: up until the run begins. */
@@ -103,11 +104,14 @@ export class Hud {
     ];
     el('banner-goals').innerHTML = scored ? goals.map((text, i) => `<div class="goal"><span>${'★'.repeat(i + 1)}</span>${text}</div>`).join('') : '';
     el('banner-list').innerHTML = scored ? this.manifest() : '';
-    el('banner-foot').innerHTML = scored ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em>` : '';
+    el('banner-foot').innerHTML = scored ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時　·　按 Enter 關閉</em>` : '';
     this.banner.classList.toggle('plain', !scored);
     this.banner.classList.remove('leaving');
     this.banner.hidden = false;
   }
+
+  /** Called when the player closes the banner by hand. */
+  onBannerClose: () => void = () => {};
 
   /** Fade the banner out: the run has begun. */
   dismissBanner(): void {

@@ -400,7 +400,7 @@ function washer(): CargoType {
   return {
     id: 'washer',
     name: '洗衣機',
-    value: 450,
+    value: 600,
     threshold: 7,
     maxHit: 28,
     give: 20,
@@ -444,7 +444,7 @@ function sack(): CargoType {
   return {
     id: 'sack',
     name: '米袋',
-    value: 60,
+    value: 80,
     threshold: 10,
     maxHit: 12,
     give: 30,
@@ -489,7 +489,7 @@ function soda(): CargoType {
   return {
     id: 'soda',
     name: '汽水箱',
-    value: 150,
+    value: 180,
     threshold: 5,
     maxHit: 40,
     give: 14,

@@ -193,6 +193,8 @@ const FOOT_SQUARE: Rect = [xOf(17) - 8, zOf(56) - 8, xOf(16) + 8, zOf(56) + 8];
 /** The school's yard, south of the road (row 51), level with it. */
 /** Where the removals van stands, at the south kerb of the road between the branch north (column 27) and the avenue. */
 const VAN: Vec2 = [xOf(29), zOf(51) - 3.15];
+/** Where the clock starts: a little way north of where the truck stands in the bay. */
+const START_GATE = zOf(45) + 6;
 const SCHOOL: Rect = [xOf(24) - 8, zOf(49) - 8, xOf(22) + 8, zOf(50) + 8];
 
 const PAVED: Look = { tag: 'paved', color: 0x9a948a, wall: 0xa8a59c };
@@ -799,6 +801,14 @@ export function uptown(): LevelDef {
   };
   pair([busX, zOf(46)], [busX, zOf(59) - 6], 7);
 
+  // The start, as on level 1: a barrier with its arms raised across the way out of the bay, and the line the clock starts at.
+  {
+    const y = ground(xOf(12), START_GATE);
+    for (const dx of [-7.2, 0, 7.2]) object('post', xOf(12) + dx, START_GATE);
+    for (const dx of [-3.6, 3.6]) objects.push({ kind: 'gateArm', pos: [xOf(12) + dx, y + 1.0, START_GATE], rotY: 0 });
+    decals.push({ pos: [xOf(12), START_GATE], size: [CELL - 1, 0.6], color: 0xf4f4f0, base: y });
+  }
+
   // The road from the lane to the avenue (row 51), in three: the school, the burst main, the removals.
   const ROAD = zOf(51);
   const SOUTH_KERB = ROAD - 4.5;
@@ -1233,11 +1243,11 @@ export function uptown(): LevelDef {
     ...lifted,
     id: 'uptown',
     name: '第 2 關　山城快遞',
-    brief: '從卸貨區出發往山上送：跟公車搶道、走樓梯下坡、鑽小巷，最後衝上大斜坡',
+    brief: '從卸貨區出發穿過山城：跟公車搶道、走樓梯、繞廟埕、鑽小巷，衝上鋼捲大坡，再沿髮夾彎下山，送到山腳的砂石場',
     ground: { center: [-100, north / 2], half: [400, north / 2 + 20], style: 'asphalt' },
     spawn: [xOf(12), BAY + 0.9, zOf(45) - 6],
     heading: 0,
-    startLine: undefined,
+    startLine: { pos: [xOf(12), START_GATE], dir: [0, 1] },
     props: [...lifted.props, ...props],
     objects: [...(lifted.objects ?? []), ...objects],
     crowds: [...(lifted.crowds ?? []), ...crowds],
@@ -1269,13 +1279,13 @@ export function uptown(): LevelDef {
     signs: [...(lifted.signs ?? []), ...signs],
     // Across the road, and down the pavements too: the pavement is no way round them.
     rollers: [
-      { from: [xOf(31) - 7.5, AV_HEAD - 11], to: [xOf(31) + 7.5, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 2.3, speed: 4, run: AV_HEAD - zOf(51) + 4 },
+      { from: [xOf(31) - 7.5, AV_HEAD - 11], to: [xOf(31) + 7.5, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 2.3, speed: 4, run: AV_HEAD - zOf(51) + 4, within: 70 },
       // And down each pavement, in the middle of it, clear of the house walls.
-      ...[-1, 1].map((side): RollerDesc => ({ from: [xOf(31) + side * 9.4, AV_HEAD - 11], to: [xOf(31) + side * 10.4, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 6, speed: 4, run: AV_HEAD - zOf(51) + 4 })),
+      ...[-1, 1].map((side): RollerDesc => ({ from: [xOf(31) + side * 9.4, AV_HEAD - 11], to: [xOf(31) + side * 10.4, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 6, speed: 4, run: AV_HEAD - zOf(51) + 4, within: 70 })),
     ],
     finish: { pos: [GATE_YARD[0] + 10, (GATE_YARD[1] + GATE_YARD[3]) / 2 - 4], half: [4.5, 6] },
     damageScale: undefined,
     stars: [0, 0.6],
-    par: 300,
+    par: 180,
   };
 }

@@ -68,6 +68,19 @@ export class Rollers {
     }
   }
 
+  /** Whether the truck is within a line's `within` of the strip of hill its things come down. */
+  private near(desc: RollerDesc, truck: { x: number; z: number }): boolean {
+    const [ax, az] = desc.from, [bx, bz] = desc.to, [dx, dz] = desc.down;
+    // Across the line, and down the hill from it.
+    const wide = Math.hypot(bx - ax, bz - az) || 1;
+    const ux = (bx - ax) / wide, uz = (bz - az) / wide;
+    const rx = truck.x - (ax + bx) / 2, rz = truck.z - (az + bz) / 2;
+    const across = Math.max(0, Math.abs(rx * ux + rz * uz) - wide / 2);
+    const down = rx * dx + rz * dz;
+    const along = down < 0 ? -down : Math.max(0, down - desc.run);
+    return Math.hypot(across, along) < desc.within!;
+  }
+
   update(dt: number, truck: { x: number; z: number }): void {
     for (const line of this.lines) {
       const { desc, pool } = line;
@@ -114,7 +127,7 @@ export class Rollers {
         object.body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
       });
       const mx = (desc.from[0] + desc.to[0]) / 2, mz = (desc.from[1] + desc.to[1]) / 2;
-      if (Math.hypot(truck.x - mx, truck.z - mz) > AWAKE_WITHIN) continue;
+      if (desc.within === undefined ? Math.hypot(truck.x - mx, truck.z - mz) > AWAKE_WITHIN : !this.near(desc, truck)) continue;
       // Not like clockwork: each a little sooner or later than the last, but never so soon as to run into it.
       line.clock -= dt;
       while (line.clock <= 0) {
