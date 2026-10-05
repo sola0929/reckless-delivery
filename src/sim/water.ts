@@ -35,7 +35,7 @@ export class Water {
   /** Whether a point is below the surface of a pool. */
   under(p: { x: number; y: number; z: number }): boolean {
     const pool = this.poolAt(p.x, p.z);
-    return pool !== null && p.y < -pool.water!;
+    return pool !== null && p.y < (pool.base ?? 0) - pool.water!;
   }
 
   /** Call every step for each body that might fall in. Returns whether it is under water. */

@@ -30,6 +30,8 @@ export class Truck {
   grip = 1;
   /** How much whatever is under the wheels holds the truck back: 0 on a road, toward 1 in the worst of it. */
   drag = 0;
+  /** Whether it runs away down a hill when it is left without the handbrake on. Otherwise it stays wherever it stops. */
+  rolls = false;
   private dragged = 0;
   /** 0 when off the brakes, up to 1 for a full emergency stop. */
   brakeLevel = 0;
@@ -111,8 +113,11 @@ export class Truck {
     // A tap brakes gently; holding ramps up to an emergency stop.
     this.brakeTime = braking ? this.brakeTime + dt : 0;
     const ramp = clamp(this.brakeTime / TRUCK.brakeRamp, 0, 1);
-    const parked = engine === 0 && input.throttle === 0 && Math.abs(speed) < 0.5;
-    let decel = TRUCK.rollingDecel + TRUCK.coastDrag * Math.abs(speed);
+    // On a hill, where the level has it so, only the handbrake holds it: let go, it starts to roll and gathers speed.
+    const turn = this.body.rotation();
+    const hill = this.rolls && !input.handbrake && Math.abs(this.v.set(0, 0, 1).applyQuaternion(this.q.set(turn.x, turn.y, turn.z, turn.w)).y) > TRUCK.rollsAbove;
+    const parked = engine === 0 && input.throttle === 0 && Math.abs(speed) < 0.5 && !hill;
+    let decel = (hill ? TRUCK.rollingDecelHill : TRUCK.rollingDecel) + TRUCK.coastDrag * Math.abs(speed);
     if (braking) decel = TRUCK.brakeDecel + (TRUCK.hardBrakeDecel - TRUCK.brakeDecel) * ramp;
     else if (parked) decel = TRUCK.hardBrakeDecel;
     else if (engine !== 0) decel = 0;

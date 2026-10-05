@@ -17,8 +17,11 @@ import { LevelView } from './render/levelView';
 import { BodySync, TruckMesh } from './render/meshes';
 import { ObjectsView, PedestriansView } from './render/objectsView';
 import { RidersView } from './render/ridersView';
+import { MachinesView } from './render/machinesView';
 import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
+import { heightAt } from './levels/terrain';
+import { OBJECT_KINDS, type ObjectKind } from './levels/objects';
 import type { CargoEvent, CargoItem } from './sim/cargo';
 import type { FootInput } from './sim/driver';
 import type { KnockEvent } from './sim/objects';
@@ -34,7 +37,9 @@ const sim = await Sim.create(level);
 const view = createView(canvas, level);
 const input = new Input(canvas);
 const hud = new Hud(level);
-const chase = new ChaseCamera(view.camera);
+// On ground that rises and falls, the view is from lower and further back, looking further ahead: from high above, a hill looks flat.
+const terrain = level.terrain;
+const chase = new ChaseCamera(view.camera, terrain ? { height: 9, distance: 13, lookAhead: 7, ground: (x, z) => heightAt(terrain, x, z, sim.truck.body.translation().y + 3) } : undefined);
 const graphics = new Graphics(view);
 // The switch in the pause menu: one of four, the one in force lit. On automatic it says what it has settled on.
 const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('#gfx-quality button')];
@@ -72,14 +77,26 @@ const engineSmoke = new Smoke(0x3a3734, 0.34, 2.4, 1.25);
 const WEAR_STAGES = [15, 45, 80];
 const ENGINE_SMOKE_INTERVAL = [0, 0, 0.14, 0.04];
 const RISING = new Vector3(0, 1.2, 0);
+// A wreck burning: thick black smoke in a tall column that leans with the wind.
+const wreckSmoke = new Smoke(0x1c1a19, 0.5, 6, 2.8);
+const PLUME = new Vector3(0.6, 2.2, 0.3);
 let engineTimer = 0;
 const bursts = new Bursts();
-view.scene.add(smoke.mesh, engineSmoke.mesh, bursts.mesh);
+view.scene.add(smoke.mesh, engineSmoke.mesh, wreckSmoke.mesh, bursts.mesh);
 
 const objectsView = new ObjectsView(view.scene, sim.objects.objects);
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
+const machinesView = new MachinesView(view.scene, sim.machines.list);
+/** Testing tools: on when run locally, or with ?test in the address. */
+const TESTING = import.meta.env.DEV || new URLSearchParams(location.search).has('test');
+if (TESTING && sim.level.checkpoints?.length) {
+  const list = document.createElement('div');
+  list.style.cssText = 'position:fixed;left:12px;bottom:56px;padding:8px 12px;background:rgba(20,24,30,0.78);color:#e8eef4;font:13px/1.6 sans-serif;border-radius:8px;z-index:20;pointer-events:none';
+  list.innerHTML = '<b>測試跳點</b><br>' + sim.level.checkpoints.slice(0, 10).map((spot, k) => `${(k + 1) % 10}　${spot.name}`).join('<br>');
+  document.body.appendChild(list);
+}
 const battleView = new BattleView(view.scene, sim.battle, level.battle);
 battleView.onTrail = (at) => smoke.emit(at, NO_DRIFT);
 // The warning that something has the truck in its sights: a ring that closes on it, and what it is.
@@ -89,6 +106,7 @@ lockRing.innerHTML = '<i></i><span></span>';
 lockRing.hidden = true;
 document.getElementById('hud')!.append(lockRing);
 let beepWait = 0;
+let hornWait = 0;
 const cargoViews = new CargoViews(view.scene, bursts);
 cargoViews.rebuild(sim);
 
@@ -145,6 +163,35 @@ function bellRinging(): boolean {
   return (level.tracks ?? []).some((track, i) => Math.abs(at.x - track.watchX) < 45 && Math.abs(at.z - track.z) < 45 && sim.trains.warning(i));
 }
 
+/** Rice drying on a tarp, run over: each wheel on it throws it up behind, more the faster it goes. */
+let riceTimer = 0;
+function kickRice(dt: number, speed: number): void {
+  const spreads = level.spreads;
+  if (!spreads?.length || Math.abs(speed) < 1) return;
+  riceTimer += dt;
+  if (riceTimer < 0.04) return;
+  riceTimer = 0;
+  const { truck } = sim;
+  for (let i = 0; i < 4; i++) {
+    if (!truck.controller.wheelIsInContact(i)) continue;
+    const at = truckMesh.wheelContact(i, contact);
+    if (!spreads.some(({ pos, half }) => Math.abs(at.x - pos[0]) < half[0] && Math.abs(at.z - pos[1]) < half[1])) continue;
+    bursts.emit(at.setY(at.y + 0.1), 'rice', Math.min(14, 3 + Math.abs(speed) * 1.2), 1.5 + Math.abs(speed) * 0.25, 1.4);
+  }
+}
+
+/** Hens in the air: a feather or two off each, every so often, while she is still going. */
+const hens = sim.objects.objects.filter((o) => o.kind.flee);
+function moult(): void {
+  for (const hen of hens) {
+    if (!hen.knocked || Math.random() > 0.35) continue;
+    const v = hen.body.linvel();
+    if (Math.hypot(v.x, v.y, v.z) < 1.2) continue;
+    const p = hen.body.translation();
+    bursts.emit(splashAt.set(p.x, p.y + 0.3, p.z), 'feathers', 2, 1.2, 0.6);
+  }
+}
+
 function emitSmoke(dt: number, drive: DriveInput, speed: number): void {
   smokeTimer += dt;
   if (smokeTimer < SMOKE_INTERVAL) return;
@@ -195,12 +242,14 @@ function showHit(at: { x: number; y: number; z: number }, shouts: string[], scoo
   if (spot) hud.popup(shouts[Math.floor(Math.random() * shouts.length)], spot.x, spot.y, 'big');
 }
 const GEYSER_SECONDS = 7;
+/** How long water comes up out of a manhole each time it blows. */
+const SPOUT_SECONDS = 2.5;
 const splashAt = new Vector3();
 /** Broken hydrants, still spouting where they stood. */
-const geysers: { at: Vector3; left: number }[] = [];
+const geysers: { at: Vector3; left: number; strong?: boolean }[] = [];
 const CRACKLE_SECONDS = 3.2;
 /** Strings of firecrackers going off where they fell, and how long until each one's next bang. */
-const crackles: { at: Vector3; left: number; next: number }[] = [];
+const crackles: { at: Vector3; left: number; next: number; laid?: boolean }[] = [];
 /** Loose ends of live wire, each spitting sparks for a while yet, and how long until its next flash. */
 const arcs: { at: Vector3; left: number; next: number }[] = [];
 const ARC_SECONDS = 3.5;
@@ -209,16 +258,21 @@ const SPLASH_REACH = 7;
 
 /** Something has just been sent flying: throw up whatever it is made of. */
 /** Things that sound of neither wood nor metal when hit. */
-const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet']);
+const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa']);
 /** Hollow metal: a boom rather than a ring. */
 const HOLLOW = new Set(['barrel', 'bin']);
+/** Rock. */
+const STONE = new Set(['boulder', 'rockSmall']);
 
 /** What a roadside object sounds like, from what it is. */
 function materialOfObject(object: KnockEvent['object']): Material {
   const { kind, desc } = object;
+  if (kind.effect === 'shards') return 'ceramic';
   if (kind.effect === 'leaves') return 'tree';
   if (kind.effect === 'splinters') return 'wood';
   if (HOLLOW.has(desc.kind)) return 'barrel';
+  // Stone: no ring to it, only the dead weight; the crash is the truck's, as against a wall.
+  if (STONE.has(desc.kind)) return 'heavy';
   return SOFT.has(desc.kind) ? 'soft' : 'metal';
 }
 
@@ -256,7 +310,8 @@ function soundKnocks(dt: number): void {
   for (const { object, strength } of sim.drainLandings()) {
     const at = object.body.translation();
     const near = hearing(Math.hypot(at.x - truckAt.x, at.z - truckAt.z));
-    if (near === 0) continue;
+    // A hen coming down is a hen landing: nothing to hear over her wings.
+    if (near === 0 || object.kind.flee) continue;
     heard.push({ material: materialOfObject(object), strength: Math.min(1, strength / 10) * near, weight: Math.min(1, object.body.mass() / 400) });
   }
 
@@ -278,7 +333,8 @@ function showKnock(knock: KnockEvent): void {
   // Heard only if it happened near the truck, and louder the faster the truck was going.
   const truckAt = sim.truck.body.translation();
   const away = Math.hypot(knock.at.x - truckAt.x, knock.at.z - truckAt.z);
-  if (away < 30) {
+  // A hen is not hit: she flies off, and her wings and her squawking are all that is heard.
+  if (away < 30 && !kind.flee) {
     const speed = Math.abs(sim.truck.forwardSpeed());
     const weight = Math.min(1, knock.object.body.mass() / 400);
     audio.knock(materialOfObject(knock.object), Math.min(1, speed / 18) / (1 + away / 15), weight);
@@ -295,9 +351,27 @@ function showKnock(knock: KnockEvent): void {
       if (sim.driver.mode === 'driving') hud.splat(kind.juice, Math.min(1, Math.abs(sim.truck.forwardSpeed()) / 12) * (kind.wrecked ? 1 : 0.45));
     }
   }
-  if (kind.crackle) crackles.push({ at: new Vector3(knock.at.x, knock.at.y + 0.3, knock.at.z), left: CRACKLE_SECONDS, next: 0 });
+  if (kind.effect === 'shards') audio.smash('ceramic', 0.5);
+  if (kind.flee) audio.hen(Math.max(0, 1 - away / 35));
+  if (kind.crackle) {
+    const left = typeof kind.crackle === 'number' ? kind.crackle : CRACKLE_SECONDS;
+    crackles.push({ at: new Vector3(knock.at.x, knock.at.y + 0.3, knock.at.z), left, next: 0, laid: kind.trip === true });
+    // A string laid on the ground is heard as the recording of a whole string; a hanging one bang by bang.
+    const truckAt = sim.truck.body.translation();
+    if (kind.trip) audio.string(hearing(Math.hypot(knock.at.x - truckAt.x, knock.at.z - truckAt.z)), left);
+  }
   if (kind.effect === 'leaves') bursts.emit(at.setY(knock.at.y + 3), 'leaves', 26, 4);
-  else if (kind.effect) bursts.emit(at, kind.effect, kind.effect === 'sparks' ? 18 : 14, 4);
+  else if (kind.effect === 'paper') bursts.emit(at.setY(knock.at.y + 0.4), 'paper', 90, 5, 1.6);
+  else if (kind.effect === 'ash') {
+    // A furnace knocked over: a cloud of ash and smoke, dust, burning paper and sparks.
+    const from = at.setY(knock.at.y + 1.6);
+    for (let k = 0; k < 26; k++) engineSmoke.emit(from, new Vector3((Math.random() - 0.5) * 3, Math.random() * 1.5, (Math.random() - 0.5) * 3));
+    for (let k = 0; k < 16; k++) smoke.emit(from, new Vector3((Math.random() - 0.5) * 4, 0.5, (Math.random() - 0.5) * 4));
+    bursts.emit(from, 'dust', 50, 5);
+    bursts.emit(from, 'fire', 24, 4);
+    bursts.emit(from, 'sparks', 40, 6);
+    bursts.emit(from, 'paper', 40, 4, 1.4);
+  } else if (kind.effect) bursts.emit(at, kind.effect, kind.effect === 'sparks' ? 18 : kind.effect === 'rice' || kind.effect === 'feathers' || kind.effect === 'straw' ? 40 : 14, 4);
   if (knock.object.wrecked) {
     // A stall in pieces: a cloud of splinters, and its awning and planks sent flying.
     bursts.emit(at, 'splinters', 46, 6);
@@ -313,13 +387,31 @@ function spoutGeysers(dt: number): void {
     const g = geysers[i];
     g.left -= dt;
     if (g.left <= 0) geysers.splice(i, 1);
+    // A main burst under a manhole: a thick column, higher than a house, and spray drifting off it.
+    else if (g.strong) {
+      const f = g.left / SPOUT_SECONDS;
+      bursts.emit(g.at, 'water', 12, 9 + 6 * f, 4);
+      if (Math.random() < 0.3) smoke.emit(splashAt.set(g.at.x, g.at.y + 4 + Math.random() * 6, g.at.z), RISING);
+    }
     // A column of water, weakening as the pressure drops.
     else bursts.emit(g.at, 'water', 3, 5 + 5 * (g.left / GEYSER_SECONDS), 3);
   }
 }
 
+/** Fires burning in the level (a paper furnace): a column of grey smoke from the chimney, until the thing is knocked over. */
+function smoulder(): void {
+  for (const index of sim.level.fires ?? []) {
+    const thing = sim.objects.objects[index];
+    if (!thing || thing.knocked || Math.random() > 0.35) continue;
+    const p = thing.body.translation();
+    engineSmoke.emit(splashAt.set(p.x, p.y + 5, p.z), RISING);
+  }
+  for (const [x, y, z] of sim.level.smokes ?? []) if (Math.random() < 0.5) wreckSmoke.emit(splashAt.set(x + (Math.random() - 0.5) * 1.5, y, z + (Math.random() - 0.5) * 1.5), PLUME);
+}
+
 /** Firecrackers: a run of flashes and bangs, jumping about as the string does. */
 function crackle(dt: number): void {
+  smoulder();
   const truckAt = sim.truck.body.translation();
   for (let i = crackles.length - 1; i >= 0; i--) {
     const c = crackles[i];
@@ -329,12 +421,19 @@ function crackle(dt: number): void {
       continue;
     }
     if ((c.next -= dt) > 0) continue;
-    c.next = 0.05 + Math.random() * 0.09;
+    c.next = c.laid ? 0.03 + Math.random() * 0.05 : 0.05 + Math.random() * 0.09;
     splashAt.set(c.at.x + (Math.random() - 0.5) * 1.6, c.at.y, c.at.z + (Math.random() - 0.5) * 1.6);
-    bursts.emit(splashAt, Math.random() < 0.5 ? 'sparks' : 'fire', 5, 3.5, 1.4);
-    if (Math.random() < 0.3) smoke.emit(splashAt, RISING);
+    if (c.laid) {
+      // Laid on the ground: a hard white flash on the ground, shreds of red paper jumping up, a puff of grey smoke.
+      bursts.emit(splashAt.setY(c.at.y + 0.1), 'flash', 3, 0.6, 1);
+      bursts.emit(splashAt, 'paper', 4, 3, 1.8, 0xd0302a);
+      smoke.emit(splashAt, RISING);
+    } else {
+      bursts.emit(splashAt, Math.random() < 0.5 ? 'sparks' : 'fire', 5, 3.5, 1.4);
+      if (Math.random() < 0.3) smoke.emit(splashAt, RISING);
+    }
     const near = hearing(Math.hypot(c.at.x - truckAt.x, c.at.z - truckAt.z));
-    if (near > 0) audio.thud('bone', (0.5 + Math.random() * 0.5) * near, 0.1);
+    if (near > 0) if (!c.laid) audio.pop((0.6 + Math.random() * 0.4) * near);
   }
 }
 
@@ -537,6 +636,20 @@ function frame(now: number): void {
     return;
   }
 
+  // For testing: a number key puts the truck down just before that part of the level.
+  if (TESTING && sim.driver.mode === 'driving') {
+    const spots = sim.level.checkpoints ?? [];
+    spots.forEach((spot, k) => {
+      if (k > 9 || !input.take(`Digit${(k + 1) % 10}` as `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`)) return;
+      sim.teleport(spot.pos[0], spot.pos[1], spot.yaw);
+      truckSync.snap();
+      cargoViews.rebuild(sim);
+      truckSync.apply(1);
+      chase.snap(truckMesh.root.position, truckHeading());
+      hud.popup(`跳到：${spot.name}`, window.innerWidth / 2, window.innerHeight * 0.3, 'big');
+    });
+  }
+
   if (input.take('KeyR') || retryAsked) {
     retryAsked = false;
     setPaused(false);
@@ -545,6 +658,7 @@ function frame(now: number): void {
     sim.reset();
     levelView.snap();
     ridersView.snap();
+    machinesView.snap();
     truckSync.snap();
     hud.hideResult();
     hud.showBanner();
@@ -560,6 +674,7 @@ function frame(now: number): void {
     chase.snap(truckMesh.root.position, truckHeading());
     smoke.clear();
     engineSmoke.clear();
+    wreckSmoke.clear();
     bursts.clear();
     pendingLoss.clear();
     hud.clearPopups();
@@ -609,7 +724,14 @@ function frame(now: number): void {
       const at = sim.truck.body.translation();
       const near = hearing(Math.hypot(crash.x - at.x, crash.z - at.z));
       if (near > 0) audio.crunch(Math.min(1, crash.speed / 12) * near);
-      bursts.emit(splashAt.set(crash.x, 0.8, crash.z), 'sparks', 12, 4);
+      // Something of tonnes into it: a crash as loud as a wall, and the ground shakes.
+      if (crash.heavy && near > 0) {
+        audio.crunch(near);
+        audio.thud('heavy', near, 1);
+        audio.bump(near);
+      }
+      const y = (terrain ? heightAt(terrain, crash.x, crash.z) : 0) + 0.8;
+      bursts.emit(splashAt.set(crash.x, y, crash.z), 'sparks', crash.heavy ? 30 : 12, crash.heavy ? 7 : 4);
     }
     for (const horn of sim.drainHorns()) {
       const at = sim.truck.body.translation();
@@ -632,9 +754,32 @@ function frame(now: number): void {
       audio.splash(big);
     }
     for (const person of sim.drainPedestrianHits()) showHit(person.pos, SHOUTS, false);
-    for (const rider of sim.drainRiderHits()) showHit(rider.person, RIDER_SHOUTS, true);
+    // Water up out of the road: a column, for a while, and the sound of it.
+    for (const spout of sim.drainSpouts()) {
+      geysers.push({ at: new Vector3(spout.x, spout.y + 0.1, spout.z), left: SPOUT_SECONDS, strong: true });
+      const t = sim.truck.body.translation();
+      const away = Math.hypot(spout.x - t.x, spout.z - t.z);
+      if (away < 40) {
+        audio.splash(true);
+        // The iron lid knocked up off its seat.
+        if (spout.lifted) audio.thud('metal', Math.max(0.2, 1 - away / 40), 0.6);
+      }
+    }
+    for (const rider of sim.drainRiderHits()) {
+      if (rider.kind !== 'scooter') {
+        // A god's chair, or a mover's sofa or wardrobe: wood splitting, stuffing, and the bearers' cries.
+        const load: ObjectKind | undefined = rider.load ? OBJECT_KINDS[rider.load] : undefined;
+        const metal = load?.effect === 'sparks';
+        audio.smash(metal ? 'metal' : 'wood', 0.8);
+        audio.thud(metal ? 'metal' : 'wood', 0.9, 0.8);
+        bursts.emit(splashAt.set(rider.person.x, rider.person.y + 1.5, rider.person.z), load?.effect && load.effect !== 'ash' ? load.effect : 'splinters', 30, 5);
+        const spot = toScreen(rider.person, 1.8);
+        if (spot) hud.popup(RIDER_SHOUTS[Math.floor(Math.random() * RIDER_SHOUTS.length)], spot.x, spot.y, 'big');
+      } else showHit(rider.person, RIDER_SHOUTS, true);
+    }
     levelView.capture();
     ridersView.capture();
+    machinesView.capture();
     truckSync.capture();
     cargoViews.capture();
     accumulator -= PHYSICS.dt;
@@ -646,6 +791,7 @@ function frame(now: number): void {
   const alpha = accumulator / PHYSICS.dt;
   levelView.apply(alpha);
   ridersView.apply(alpha);
+  machinesView.apply(alpha);
   truckSync.apply(alpha);
   cargoViews.apply(alpha);
   cargoViews.update(dt);
@@ -657,6 +803,13 @@ function frame(now: number): void {
   crackle(dt);
   arcWires(dt);
   battleView.update(dt, truckMesh.root.position, level.battle);
+  // The truck's horn: from the cab only, and not again until it has finished. Whoever is near on foot runs.
+  hornWait -= dt;
+  if (input.take('KeyH') && sim.driver.mode === 'driving' && !sim.result && hornWait <= 0) {
+    hornWait = 0.7;
+    sim.honk();
+    audio.truckHorn();
+  }
   // Locked on to: the ring closes in on the truck as the moment comes, and the beeps crowd together.
   const threat = sim.result ? null : sim.battle.threat;
   const ringAt = threat ? toScreen(truckMesh.root.position, 1) : null;
@@ -702,9 +855,14 @@ function frame(now: number): void {
   });
   chase.addZoom(input.takeWheel());
   if (!debug.freeze) chase.update(dt, focus, onFoot ? null : truckHeading(), speed, sim.truck.boosting);
-  if (!onFoot) emitSmoke(dt, drive, speed);
+  if (!onFoot) {
+    emitSmoke(dt, drive, speed);
+    kickRice(dt, speed);
+  }
+  moult();
   smoke.update(dt);
   engineSmoke.update(dt);
+  wreckSmoke.update(dt);
   bursts.update(dt);
   levelView.update(dt, view.camera, focus);
   aimSun(view, focus);

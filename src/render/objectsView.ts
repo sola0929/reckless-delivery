@@ -160,13 +160,16 @@ export class PedestriansView {
   private readonly bodies: THREE.InstancedMesh;
   private readonly heads: THREE.InstancedMesh;
   private readonly legs: THREE.InstancedMesh;
+  private readonly arms: THREE.InstancedMesh;
   private readonly strides: number[];
+  private beat = 0;
   private readonly base = new THREE.Matrix4();
   private readonly part = new THREE.Matrix4();
   private readonly out = new THREE.Matrix4();
   private readonly turn = new THREE.Quaternion();
   private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly one = new THREE.Vector3(1, 1, 1);
+  private readonly size = new THREE.Vector3(1, 1, 1);
 
   constructor(scene: THREE.Scene, private readonly people: readonly Pedestrian[]) {
     const n = Math.max(1, people.length);
@@ -174,6 +177,8 @@ export class PedestriansView {
     this.bodies = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.24, 0.5, 4, 10), material(), n);
     this.heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 12, 10), material(), n);
     this.legs = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.085, 0.42, 3, 8).translate(0, -0.25, 0), material(), n * 2);
+    // Arms: only dancers' are seen; everyone else keeps theirs out of sight, as before.
+    this.arms = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.06, 0.4, 3, 8).translate(0, -0.24, 0), material(), n * 2);
     this.strides = people.map((_, i) => i * 1.7);
     const color = new THREE.Color();
     people.forEach((p, i) => {
@@ -181,8 +186,10 @@ export class PedestriansView {
       this.heads.setColorAt(i, color.set(p.hat ?? SKIN));
       this.legs.setColorAt(i * 2, color.set(TROUSERS));
       this.legs.setColorAt(i * 2 + 1, color.set(TROUSERS));
+      this.arms.setColorAt(i * 2, color.set(p.color));
+      this.arms.setColorAt(i * 2 + 1, color.set(p.color));
     });
-    for (const mesh of [this.bodies, this.heads, this.legs]) {
+    for (const mesh of [this.bodies, this.heads, this.legs, this.arms]) {
       mesh.castShadow = true;
       mesh.frustumCulled = false;
       mesh.count = people.length;
@@ -190,14 +197,80 @@ export class PedestriansView {
       scene.add(mesh);
     }
     this.legs.count = people.length * 2;
+    this.arms.count = people.length * 2;
+  }
+
+  /** How big to draw someone: children smaller. */
+  private sized(p: Pedestrian): THREE.Vector3 {
+    return p.crowd.size ? this.size.setScalar(p.crowd.size) : this.one;
   }
 
   update(dt: number): void {
+    this.beat += dt * Math.PI * 2 * 0.9;
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
     this.people.forEach((p, i) => {
       const down = p.state === 'down';
+      if ((p.crowd.motion === 'cook' || p.crowd.motion === 'perform') && p.state === 'wait') {
+        const cook = p.crowd.motion === 'cook';
+        // A cook stirring a wok, one arm going round; a performer on the stage, arms sweeping, turning to one side and the other.
+        const b = Math.sin(this.beat * (cook ? 1.4 : 0.45) + i * 2);
+        this.euler.set(0, p.yaw + (cook ? 0 : b * 0.6), 0);
+        this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
+        this.place(this.bodies, i, 0, 1.05, 0, 0);
+        this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.place(this.legs, i * 2, 0.11, 0.72, 0, cook ? 0 : Math.max(0, b) * 0.4);
+        this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, cook ? 0 : Math.max(0, -b) * 0.4);
+        this.placeArm(i * 2, 0.3, cook ? 1.3 + b * 0.4 : 1.6 + b * 1.0, cook ? b * 0.6 : 0.6);
+        this.placeArm(i * 2 + 1, -0.3, cook ? 0.9 : 1.6 - b * 1.0, cook ? 0 : -0.6);
+        return;
+      }
+      if (p.crowd.motion === 'carry' && p.state === 'wait') {
+        // Standing with a carton held out in both arms, shifting their weight, waiting their turn.
+        const b = Math.sin(this.beat * 0.5 + i);
+        this.euler.set(0, p.yaw + b * 0.1, 0);
+        this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
+        this.place(this.bodies, i, 0, 1.05, 0, 0);
+        this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.place(this.legs, i * 2, 0.11, 0.72, 0, b * 0.15);
+        this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, -b * 0.15);
+        this.placeArm(i * 2, 0.3, 1.2, 0);
+        this.placeArm(i * 2 + 1, -0.3, 1.2, 0);
+        return;
+      }
+      if (p.crowd.motion === 'toss' && p.state === 'wait') {
+        // Crouched, an arm swinging forward to throw another sheet in.
+        const swing = Math.max(0, Math.sin(this.beat * 0.7 + i * 1.3));
+        this.euler.set(0.25, p.yaw, 0);
+        this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
+        this.base.multiply(this.part.makeTranslation(0, -0.35, 0));
+        this.place(this.bodies, i, 0, 1.05, 0, 0);
+        this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.place(this.legs, i * 2, 0.11, 0.72, 0.15, -1.1);
+        this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0.15, -1.1);
+        this.placeArm(i * 2, 0.3, 0.6 + swing * 1.3, 0);
+        this.placeArm(i * 2 + 1, -0.3, 0.4, 0);
+        return;
+      }
+      if (p.crowd.dance !== undefined && p.state === 'wait') {
+        // Two steps to a bar: sway and step to one side, arms up; then the other.
+        const b = Math.sin(this.beat);
+        const up = Math.abs(Math.sin(this.beat * 2));
+        this.euler.set(0, p.yaw + b * 0.25, 0);
+        this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
+        this.base.multiply(this.part.makeTranslation(b * 0.18, up * 0.06, 0));
+        this.place(this.bodies, i, 0, 1.05, 0, 0);
+        this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.place(this.legs, i * 2, 0.11, 0.72, 0, Math.max(0, b) * 0.5);
+        this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, Math.max(0, -b) * 0.5);
+        this.placeArm(i * 2, 0.3, Math.PI - 0.4 - up * 0.9, -0.5);
+        this.placeArm(i * 2 + 1, -0.3, Math.PI - 0.4 - (1 - up) * 0.9, 0.5);
+        return;
+      }
+      this.arms.setMatrixAt(i * 2, hidden);
+      this.arms.setMatrixAt(i * 2 + 1, hidden);
       // Standing, they turn to face where they are going. Knocked down, they lie on their back.
       this.euler.set(down ? -Math.PI / 2 : 0, p.yaw, 0);
-      this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.one);
+      this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
       const lift = down ? 0.25 : 0;
       this.place(this.bodies, i, 0, 1.05 + lift, 0, 0);
       this.place(this.heads, i, 0, 1.62 + lift, 0, 0);
@@ -206,7 +279,13 @@ export class PedestriansView {
       this.place(this.legs, i * 2, 0.11, 0.72 + lift, 0, swing);
       this.place(this.legs, i * 2 + 1, -0.11, 0.72 + lift, 0, -swing);
     });
-    for (const mesh of [this.bodies, this.heads, this.legs]) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of [this.bodies, this.heads, this.legs, this.arms]) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** A dancer's arm, from the shoulder: raised `lift` radians from hanging, and out to the side by `out`. */
+  private placeArm(index: number, x: number, lift: number, out: number): void {
+    this.part.makeRotationFromEuler(new THREE.Euler(0, 0, out * Math.sin(lift) * 0.6 + (x > 0 ? 1 : -1) * 0.15)).premultiply(new THREE.Matrix4().makeRotationX(-lift)).setPosition(x, 1.38, 0);
+    this.arms.setMatrixAt(index, this.out.multiplyMatrices(this.base, this.part));
   }
 
   /** Set one instance, at an offset within the figure and swung about its own top. */

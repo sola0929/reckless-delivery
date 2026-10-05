@@ -1,7 +1,7 @@
 // The kinds of vehicle in the traffic. Each is solid as two boxes, a lower and an upper,
 // which is also roughly how it is drawn: so what can be stood on is what is seen.
 
-export type VehicleKind = 'car' | 'taxi' | 'pickup' | 'bus' | 'garbage';
+export type VehicleKind = 'car' | 'taxi' | 'pickup' | 'bus' | 'garbage' | 'float' | 'palanquin' | 'van';
 
 interface Box {
   half: [number, number, number];
@@ -43,5 +43,11 @@ export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
   pickup: spec(0.9, 0.7, 2.2, 1300, { width: 0.95, length: 0.34, share: 0.25, z: 0.6 }, 0.45),
   bus: spec(1.25, 1.45, 5.2, 4500, { width: 0.97, length: 0.98, share: 0.25, z: 0 }, 0.35),
   // The refuse lorry, which goes at a walk with the street behind it.
+  // The festival float: as big as a bus, and heavier for its stage and its lights.
+  float: spec(1.25, 1.45, 5.2, 9000, { width: 0.97, length: 0.98, share: 0.25, z: 0 }, 0.35),
+  // A god's sedan chair and the four who carry it: small, but heavy with its carving and its god.
+  palanquin: spec(0.9, 0.9, 1.9, 900, { width: 0.6, length: 0.6, share: 0.3, z: 0 }, 0.5, 1.4),
   garbage: spec(1.2, 1.3, 3.3, 5000, { width: 0.97, length: 0.97, share: 0.25, z: 0 }, 0.35, 2.6),
+  // A removals van: a cab, and a tall box on the back, its doors open.
+  van: spec(1.15, 1.4, 3.7, 6000, { width: 0.97, length: 0.97, share: 0.25, z: 0 }, 0.35),
 };

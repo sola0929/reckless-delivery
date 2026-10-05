@@ -17,8 +17,6 @@ import type { BattleDesc, CrowdDesc, DecalDesc, LevelDef, PitDesc, PropDesc } fr
 // standing, lying or about to land where that would take the truck. The ground itself is
 // broken all the way: wrecks to go round, mounds that tip the truck, craters that jolt it.
 
-const WRECK = 0x4a4f48;
-const EARTH = 0x6e6048;
 /** Wrecks: [x, z, turned]. */
 const WRECKS = [
   [4, 46, 0.3], [-3, 80, -0.5], [6, 92, 1.1],
@@ -51,24 +49,22 @@ export function range(): LevelDef {
   const objects: ObjectDesc[] = [];
   const decals: DecalDesc[] = [];
   const crowds: CrowdDesc[] = [];
-  const battle: Required<BattleDesc> = { shelling: [], crossfire: [], launchers: [], tanks: [], patches: [], smoke: [] };
+  const battle: Required<BattleDesc> = { shelling: [], gunners: [], launchers: [], tanks: [], patches: [], smoke: [], banks: [], mounds: [], craters: [], wrecks: [] };
   const pits: PitDesc[] = CRATERS.map(([x, z, half]) => ({ pos: [x, z], half: [half, half], depth: 0.3 }));
-  for (const [x, z, turn] of WRECKS) props.push({ shape: 'box', size: [1.5, 0.95, 2.8], pos: [x, 0.95, z], rot: [0, turn, 0], color: WRECK });
-  for (const [x, z, radius, height] of MOUNDS) props.push({ shape: 'cone', size: [radius, height / 2, 0], pos: [x, height / 2, z], color: EARTH });
+  for (const [x, z, half] of CRATERS) battle.craters.push({ pos: [x, z], radius: half });
+  for (const [x, z, turn] of WRECKS) battle.wrecks.push({ kind: 'truck', pos: [x, z], rotY: turn });
+  for (const [x, z, radius, height] of MOUNDS) battle.mounds.push({ pos: [x, z], radius, height });
 
   // The road, and a line across it at the start of each stretch.
   decals.push({ pos: [0, 260], size: [18, 560], color: 0x6b6558 });
   for (const z of [40, 130, 225, 310, 400, 470]) decals.push({ pos: [0, z - 4], size: [18, 0.5], color: 0xe8e8e8 });
 
-  battle.shelling.push({ area: [-9, 40, 9, 110], every: 0.4 });
+  battle.shelling.push({ area: [-9, 40, 9, 110], every: 0.8 });
 
   // The two armies, each along its own side of the road, firing across it. In the road: wrecks,
   // each of which is shelter from one side, and wire lying across the straight way through.
-  battle.crossfire.push({ area: [-15, 130, 15, 205], rate: 30 });
-  for (const army of [0, 1] as const) {
-    const x = army ? 16.5 : -16.5;
-    crowds.push({ area: [x - 1.5, 130, x + 1.5, 205], count: 12, y: 0, army, fenced: true });
-    for (let z = 133; z < 205; z += 3) objects.push({ kind: 'sandbag', pos: [army ? 14.6 : -14.6, 0, z], rotY: Math.PI / 2 });
+  for (let z = 136; z <= 200; z += 13) {
+    battle.gunners.push({ pos: [-12, z], aim: Math.PI / 2, side: 0 }, { pos: [12, z + 6], aim: -Math.PI / 2, side: 1 });
   }
   battle.patches.push({ pos: [3.5, 148], half: [2.6, 2], kind: 'wire' }, { pos: [-4, 164], half: [2.6, 2], kind: 'wire' }, { pos: [3.5, 181], half: [2.6, 2], kind: 'wire' });
 

@@ -31,6 +31,11 @@ there is no restriction on use. They are listed anyway, so that each can be trac
 | `splash-0.wav` | A big splash | "Big Splash" by Bird_man, https://freesound.org/people/Bird_man/sounds/316744/ |
 | `music-level.mp3` | Music, for the menu and the level | "Numskull" by Beetlemuse, https://freesound.org/people/Beetlemuse/sounds/650939/ |
 | `train-loop.wav` | A freight train passing (six seconds cut from it) | "freight train pass fast short heavy rail track clacks" by kyles, https://freesound.org/people/kyles/sounds/455775/ |
+| `cracker-0.mp3` | One firecracker | "firecracker" by grobbd, https://freesound.org/people/grobbd/sounds/263536/ |
+| `cracker-1.mp3` | One firecracker | "Firecracker Explosion" by unfa, https://freesound.org/people/unfa/sounds/609588/ |
+| `flap-0.mp3` | Hens flapping and squawking | "Chickens Flapping-1.mp3" by mrrap4food, https://freesound.org/people/mrrap4food/sounds/619017/ |
+| `crackers-0.mp3` | A string of firecrackers going off | "Firecrackers Crackling" by CAT-FOX_ALEX, https://freesound.org/people/CAT-FOX_ALEX/sounds/867807/ |
+| `crackers-1.mp3` | A string of firecrackers going off | "Firecracker - Multiple String" by iliyabylich04, https://freesound.org/people/iliyabylich04/sounds/651328/ |
 | `ui-*.ogg` | Menu clicks and chimes | "Interface Sounds" by Kenney (`select_001`, `confirmation_001`, `confirmation_002`, `back_001`, `open_001`, `close_001`, `error_003`), https://kenney.nl/assets/interface-sounds |
 
 The Freesound files are the site's MP3 previews of the originals, some of them cut down and saved as WAV.

@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../levels/sandbox';
+import { heightAt } from '../levels/terrain';
 import type { GateDesc, PropDesc, SignDesc, SlickDesc } from '../levels/types';
 import type { Sim } from '../sim/sim';
 import { TRAIN_HALF } from '../sim/trains';
 import { buildingMesh } from './buildings';
 import { BodySync, propMesh } from './meshes';
 import { Shapes } from './shapes';
-import { vehicleMesh } from './vehicles';
+import { brakeLights, vehicleMesh } from './vehicles';
 
 const FADED_OPACITY = 0.16;
 const FADE_RATE = 8;
@@ -53,16 +54,18 @@ function slickMesh(slicks: SlickDesc[]): THREE.Group {
   );
   const disc = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
   let layer = 0;
+  let ground = 0;
   const pool = (x: number, z: number, rx: number, rz: number, material: THREE.Material) => {
     const mesh = new THREE.Mesh(disc, material);
     // Each a hair above the last, so that none of them shimmer against each other.
-    mesh.position.set(x, 0.03 + layer++ * 0.0015, z);
+    mesh.position.set(x, ground + 0.03 + layer++ * 0.0015, z);
     mesh.scale.set(rx, 1, rz);
     mesh.rotation.y = rand() * Math.PI;
     mesh.receiveShadow = true;
     group.add(mesh);
   };
-  for (const { pos, half } of slicks) {
+  for (const { pos, half, y } of slicks) {
+    ground = y ?? 0;
     const count = Math.round((half[0] * half[1]) / 7);
     const inside = (radius: number): [number, number] => [
       pos[0] + (rand() * 2 - 1) * Math.max(0, half[0] - radius),
@@ -127,19 +130,236 @@ function slipperyTexture(): THREE.Texture {
   return texture;
 }
 
+/** The face of a 'people on foot only' sign: a blue disc with a walking figure, and the words under it. */
+function pedestrianTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 320;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#f4f4f0';
+  g.fillRect(0, 0, 256, 320);
+  g.fillStyle = '#1f5fbf';
+  g.beginPath();
+  g.arc(128, 118, 100, 0, Math.PI * 2);
+  g.fill();
+  // A figure walking: head, body, a leg forward and a leg back, an arm swinging.
+  g.fillStyle = '#ffffff';
+  g.strokeStyle = '#ffffff';
+  g.lineCap = 'round';
+  g.beginPath();
+  g.arc(132, 54, 14, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = 20;
+  g.beginPath();
+  g.moveTo(128, 80);
+  g.lineTo(120, 140);
+  g.moveTo(120, 140);
+  g.lineTo(150, 196);
+  g.moveTo(120, 140);
+  g.lineTo(96, 196);
+  g.moveTo(126, 92);
+  g.lineTo(158, 128);
+  g.moveTo(126, 92);
+  g.lineTo(100, 124);
+  g.stroke();
+  g.fillStyle = '#1f2a36';
+  g.font = 'bold 50px sans-serif';
+  g.textAlign = 'center';
+  g.fillText('行人專用', 128, 290);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/** The faces of the diversion signs: a blue square with a white turn-round arrow; a yellow board with an arrow to the left and
+ * the words for a diversion; a blue board with an arrow straight on, to the temple square. */
+/** The faces of the notices: a yellow board with two children and the word for a school; an orange one for works in the road. */
+function noticeTexture(kind: 'school' | 'works' | 'bends'): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 320;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#f4f4f0';
+  g.fillRect(0, 0, 256, 320);
+  g.fillStyle = kind === 'school' ? '#f2c12e' : '#f07a1a';
+  g.beginPath();
+  g.moveTo(128, 14);
+  g.lineTo(242, 128);
+  g.lineTo(128, 242);
+  g.lineTo(14, 128);
+  g.closePath();
+  g.fill();
+  g.strokeStyle = '#1f2a36';
+  g.lineWidth = 8;
+  g.stroke();
+  g.fillStyle = '#1f2a36';
+  g.strokeStyle = '#1f2a36';
+  g.lineCap = 'round';
+  if (kind === 'bends') {
+    // The road winding one way and back the other, and back again.
+    g.lineWidth = 16;
+    g.beginPath();
+    g.moveTo(128, 205);
+    g.bezierCurveTo(70, 175, 190, 150, 128, 120);
+    g.bezierCurveTo(70, 95, 180, 75, 140, 52);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(152, 34);
+    g.lineTo(118, 50);
+    g.lineTo(150, 70);
+    g.closePath();
+    g.fill();
+  } else if (kind === 'school') {
+    // Two children walking, the bigger holding the smaller's hand.
+    for (const [x, s] of [[104, 1], [156, 0.8]] as const) {
+      g.beginPath();
+      g.arc(x, 92 + (1 - s) * 30, 12 * s, 0, Math.PI * 2);
+      g.fill();
+      g.lineWidth = 14 * s;
+      g.beginPath();
+      g.moveTo(x, 110 + (1 - s) * 30);
+      g.lineTo(x, 150);
+      g.moveTo(x, 150);
+      g.lineTo(x - 12 * s, 182);
+      g.moveTo(x, 150);
+      g.lineTo(x + 12 * s, 182);
+      g.stroke();
+    }
+    g.lineWidth = 8;
+    g.beginPath();
+    g.moveTo(104, 128);
+    g.lineTo(156, 134);
+    g.stroke();
+  } else {
+    // A man with a shovel at a heap.
+    g.beginPath();
+    g.arc(112, 84, 13, 0, Math.PI * 2);
+    g.fill();
+    g.lineWidth = 14;
+    g.beginPath();
+    g.moveTo(110, 100);
+    g.lineTo(100, 148);
+    g.lineTo(84, 184);
+    g.moveTo(100, 148);
+    g.lineTo(122, 182);
+    g.moveTo(108, 112);
+    g.lineTo(150, 140);
+    g.stroke();
+    g.lineWidth = 6;
+    g.beginPath();
+    g.moveTo(130, 110);
+    g.lineTo(170, 168);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(150, 190);
+    g.quadraticCurveTo(180, 150, 200, 190);
+    g.fill();
+  }
+  g.font = 'bold 44px sans-serif';
+  g.textAlign = 'center';
+  g.fillText(kind === 'school' ? '前有學校' : kind === 'bends' ? '連續彎路' : '水管搶修', 128, 292);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/** A school's name in white on blue, in a gold frame. */
+function nameTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 112;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#d9a62e';
+  g.fillRect(0, 0, 512, 112);
+  g.fillStyle = '#1f4f9a';
+  g.fillRect(8, 8, 496, 96);
+  g.fillStyle = '#ffffff';
+  g.font = 'bold 72px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('山城國小', 256, 60);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 320;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#f4f4f0';
+  g.fillRect(0, 0, 256, 320);
+  const board = kind === 'detour' ? '#f2c12e' : '#1f5fbf';
+  const ink = kind === 'detour' ? '#1f2a36' : '#ffffff';
+  g.fillStyle = board;
+  g.fillRect(16, 16, 224, 224);
+  g.strokeStyle = ink;
+  g.fillStyle = ink;
+  g.lineWidth = 26;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const head = (x: number, y: number, dx: number, dy: number) => {
+    g.beginPath();
+    g.moveTo(x + dx * 34, y + dy * 34);
+    g.lineTo(x - dy * 30, y + dx * 30);
+    g.lineTo(x + dy * 30, y - dx * 30);
+    g.closePath();
+    g.fill();
+  };
+  g.beginPath();
+  if (kind === 'uturn') {
+    g.moveTo(170, 200);
+    g.lineTo(170, 110);
+    g.arc(128, 110, 42, 0, Math.PI, true);
+    g.lineTo(86, 160);
+    g.stroke();
+    head(86, 170, 0, 1);
+  } else if (kind === 'detour') {
+    g.moveTo(190, 128);
+    g.lineTo(80, 128);
+    g.stroke();
+    head(70, 128, -1, 0);
+  } else {
+    g.moveTo(128, 210);
+    g.lineTo(128, 80);
+    g.stroke();
+    head(128, 70, 0, -1);
+  }
+  g.fillStyle = '#1f2a36';
+  g.font = 'bold 44px sans-serif';
+  g.textAlign = 'center';
+  g.fillText(kind === 'uturn' ? '請迴轉' : kind === 'detour' ? '遶境改道' : '往廟埕', 128, 292);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
 function signMeshes(signs: SignDesc[]): THREE.Group {
   const group = new THREE.Group();
-  const face = new THREE.MeshBasicMaterial({ map: slipperyTexture() });
+  const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : arrowTexture(kind) }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
+    if (sign.kind === 'schoolName') {
+      // Upright, its middle where it is put: over a gate, on a wall.
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(6, 1.31, 0.1), [steel, steel, steel, steel, faceOf(sign.kind), steel]);
+      root.add(plate);
+      group.add(root);
+      continue;
+    }
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.2, 8), steel);
     post.position.y = 1.1;
     post.castShadow = true;
     // Leaning well back: the game is watched from above, and a sign stood upright would be edge-on.
-    const board = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.06), [steel, steel, steel, steel, face, steel]);
+    const board = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.06), [steel, steel, steel, steel, faceOf(sign.kind), steel]);
     board.position.set(0, 2.5, -0.5);
     board.rotation.x = -0.9;
     board.castShadow = true;
@@ -228,26 +448,40 @@ function pavedMesh(props: PropDesc[]): THREE.Mesh {
   const colors: number[] = [];
   const index: number[] = [];
   const tint = new THREE.Color();
-  const face = (corners: [number, number, number][], n: [number, number, number]) => {
+  const face = (corners: [number, number, number][], n: [number, number, number], flat: [number, number, number] = n) => {
     const first = position.length / 3;
     for (const [x, y, z] of corners) {
       position.push(x, y, z);
       normal.push(...n);
       // By where it is in the world; up the side of a kerb, by its height.
-      uv.push((n[0] ? z : x) / 2, (n[1] ? z : y) / 2);
+      uv.push((flat[0] ? z : x) / 2, (flat[1] ? z : y) / 2);
       colors.push(tint.r, tint.g, tint.b);
     }
     index.push(first, first + 1, first + 2, first, first + 2, first + 3);
   };
+  const turn = new THREE.Euler();
+  const spot = new THREE.Vector3();
   for (const p of props) {
     const [hx, hy, hz] = p.size;
-    const [x0, x1, y0, y1, z0, z1] = [p.pos[0] - hx, p.pos[0] + hx, p.pos[1] - hy, p.pos[1] + hy, p.pos[2] - hz, p.pos[2] + hz];
     tint.set(p.color);
-    face([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0]);
-    face([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0]);
-    face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0]);
-    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
-    face([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, -1]);
+    // Where each corner is, and which way each face looks: as it lies, or, if it is turned (a pavement on a slope), turned about its middle.
+    turn.set(...(p.rot ?? [0, 0, 0]));
+    const at = (x: number, y: number, z: number): [number, number, number] => {
+      if (!p.rot) return [p.pos[0] + x, p.pos[1] + y, p.pos[2] + z];
+      spot.set(x, y, z).applyEuler(turn);
+      return [p.pos[0] + spot.x, p.pos[1] + spot.y, p.pos[2] + spot.z];
+    };
+    const side = (corners: [number, number, number][], n: [number, number, number]) => {
+      if (!p.rot) return face(corners, n);
+      spot.set(...n).applyEuler(turn);
+      face(corners, [spot.x, spot.y, spot.z], n);
+    };
+    const [x0, x1, y0, y1, z0, z1] = [-hx, hx, -hy, hy, -hz, hz];
+    side([at(x0, y1, z1), at(x1, y1, z1), at(x1, y1, z0), at(x0, y1, z0)], [0, 1, 0]);
+    side([at(x1, y0, z1), at(x1, y0, z0), at(x1, y1, z0), at(x1, y1, z1)], [1, 0, 0]);
+    side([at(x0, y0, z0), at(x0, y0, z1), at(x0, y1, z1), at(x0, y1, z0)], [-1, 0, 0]);
+    side([at(x0, y0, z1), at(x1, y0, z1), at(x1, y1, z1), at(x0, y1, z1)], [0, 0, 1]);
+    side([at(x1, y0, z0), at(x0, y0, z0), at(x0, y1, z0), at(x1, y1, z0)], [0, 0, -1]);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
@@ -289,6 +523,8 @@ interface Gate {
 /** Draws everything in the level that isn't the truck or its cargo. */
 export class LevelView {
   private readonly syncs: BodySync[] = [];
+  /** Each vehicle's brake lights, to light while it brakes. */
+  private readonly brakes: { car: Sim['traffic']['cars'][number]; mesh: THREE.Mesh }[] = [];
   private readonly faders: Fader[] = [];
   private readonly finishGlow: THREE.Mesh | null = null;
   /** One pair of materials per railway track: the lamps and the panels that show its signal. */
@@ -298,11 +534,16 @@ export class LevelView {
   private readonly ray = new THREE.Ray();
   private readonly hit = new THREE.Vector3();
   private time = 0;
+  /** Notes rising from whatever is playing music, and what is playing it. */
+  private readonly notes: { body: Sim['objects']['objects'][number]; sprites: THREE.Sprite[] }[] = [];
+  /** Fires: a glow at the mouth and sparks going up, from each thing with a fire in it. */
+  private readonly fires: { body: Sim['objects']['objects'][number]; glow: THREE.Sprite; sparks: THREE.Sprite[] }[] = [];
 
   constructor(scene: THREE.Scene, private readonly sim: Sim) {
     const { props, decals, finish } = sim.level;
 
-    scene.add(...staticProps(props.filter((p) => p.mass === undefined && !p.fade && !p.paving)));
+    // A level may have none of these: adding nothing is an error to three.
+    for (const mesh of staticProps(props.filter((p) => p.mass === undefined && !p.fade && !p.paving))) scene.add(mesh);
     const paved = props.filter((p) => p.paving);
     if (paved.length) scene.add(pavedMesh(paved));
     for (const desc of props) {
@@ -320,6 +561,9 @@ export class LevelView {
 
     for (const [n, car] of sim.traffic.cars.entries()) {
       const mesh = vehicleMesh(car.kind, car.color, n);
+      const brakes = brakeLights(car.kind);
+      mesh.add(brakes);
+      this.brakes.push({ car, mesh: brakes });
       scene.add(mesh);
       this.syncs.push(new BodySync(car.body, mesh));
     }
@@ -343,6 +587,57 @@ export class LevelView {
     if (sim.level.signs?.length) scene.add(signMeshes(sim.level.signs));
 
     if (decals.length) scene.add(this.decalMesh(sim));
+    // Fires: glowing at the furnace's mouth, sparks drifting up out of its chimney.
+    if (sim.level.fires?.length) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const g = canvas.getContext('2d')!;
+      const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+      grad.addColorStop(0, 'rgba(255,240,180,1)');
+      grad.addColorStop(0.4, 'rgba(255,150,40,0.8)');
+      grad.addColorStop(1, 'rgba(255,80,20,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      const map = new THREE.CanvasTexture(canvas);
+      for (const index of sim.level.fires) {
+        const thing = sim.objects.objects[index];
+        if (!thing) continue;
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        glow.scale.set(1.6, 1.6, 1);
+        scene.add(glow);
+        const sparks = Array.from({ length: 16 }, () => {
+          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+          sprite.scale.set(0.2, 0.2, 1);
+          scene.add(sprite);
+          return sprite;
+        });
+        this.fires.push({ body: thing, glow, sparks });
+      }
+    }
+    // Music: notes drifting up from each radio, a few at a time.
+    if (sim.level.music?.length) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const g = canvas.getContext('2d')!;
+      g.fillStyle = '#ffffff';
+      g.font = 'bold 52px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('♪', 32, 34);
+      const map = new THREE.CanvasTexture(canvas);
+      const tints = [0xff5a8a, 0xffd23a, 0x5ad2ff, 0x9aff6a];
+      for (const index of sim.level.music) {
+        const thing = sim.objects.objects[index];
+        if (!thing) continue;
+        const sprites = tints.map((color) => {
+          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, color, transparent: true, depthWrite: false }));
+          sprite.scale.set(0.9, 0.9, 1);
+          scene.add(sprite);
+          return sprite;
+        });
+        this.notes.push({ body: thing, sprites });
+      }
+    }
 
     if (finish) {
       // A glowing box over the delivery bay, visible from a distance.
@@ -350,7 +645,7 @@ export class LevelView {
         new THREE.BoxGeometry(finish.half[0] * 2, 4, finish.half[1] * 2),
         new THREE.MeshBasicMaterial({ color: 0x4dff88, transparent: true, opacity: 0.2, depthWrite: false }),
       );
-      this.finishGlow.position.set(finish.pos[0], 2, finish.pos[1]);
+      this.finishGlow.position.set(finish.pos[0], 2 + heightAt(sim.level.terrain, finish.pos[0], finish.pos[1]), finish.pos[1]);
       scene.add(this.finishGlow);
     }
   }
@@ -383,6 +678,32 @@ export class LevelView {
   /** Fade out whatever stands between the camera and the truck, and animate the delivery bay. */
   update(dt: number, camera: THREE.Camera, truck: THREE.Vector3): void {
     this.time += dt;
+    for (const { body, glow, sparks } of this.fires) {
+      const p = body.body.translation();
+      const lit = !body.knocked;
+      glow.visible = lit;
+      // At its mouth, which faces the way it is turned; flames licking up out of it.
+      const r = body.body.rotation();
+      const mouth = new THREE.Vector3(0, 1.1, 1.5).applyQuaternion(new THREE.Quaternion(r.x, r.y, r.z, r.w));
+      glow.position.set(p.x + mouth.x, p.y + mouth.y + Math.abs(Math.sin(this.time * 9)) * 0.25, p.z + mouth.z);
+      glow.scale.setScalar(2.2 + Math.sin(this.time * 13) * 0.35 + Math.sin(this.time * 7.3) * 0.3);
+      sparks.forEach((spark, k) => {
+        const t = (this.time * 0.7 + k / sparks.length) % 1;
+        spark.visible = lit;
+        spark.position.set(p.x + Math.sin((t + k) * 9) * 0.3, p.y + 4.9 + t * 4, p.z + Math.cos((t + k) * 7) * 0.3);
+        (spark.material as THREE.SpriteMaterial).opacity = 1 - t;
+      });
+    }
+    for (const { body, sprites } of this.notes) {
+      const p = body.body.translation();
+      sprites.forEach((sprite, k) => {
+        const t = (this.time * 0.55 + k / sprites.length) % 1;
+        sprite.visible = !body.knocked;
+        sprite.position.set(p.x + Math.sin((t + k) * 6) * 0.5, p.y + 1 + t * 2.6, p.z + Math.cos((t + k) * 5) * 0.3);
+        (sprite.material as THREE.SpriteMaterial).opacity = Math.sin(t * Math.PI);
+      });
+    }
+    for (const { car, mesh } of this.brakes) mesh.visible = car.braking && car.knocked <= 0;
     if (this.finishGlow) {
       (this.finishGlow.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(this.time * 3) * 0.07;
     }
@@ -485,11 +806,23 @@ export class LevelView {
     const rotation = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     const color = new THREE.Color();
+    const across = new THREE.Vector3(1, 0, 0);
+    const along = new THREE.Vector3(0, 0, 1);
+    const lean = new THREE.Quaternion();
     decals.forEach((d, i) => {
       rotation.setFromAxisAngle(up, d.rotY ?? 0);
+      // On a slope it lies along the slope: turned first, then leant over, and stretched to cover the same ground.
+      const [sx, sz] = d.tilt ?? [0, 0];
+      const back = -Math.atan(sz);
+      const side = Math.atan(sx * Math.cos(back));
+      if (side) rotation.premultiply(lean.setFromAxisAngle(along, side));
+      if (back) rotation.premultiply(lean.setFromAxisAngle(across, back));
       // Later decals sit a hair higher, so overlapping ones stack in the order they were listed.
-      const y = (d.y ?? DECAL_Y) + i * 1e-5;
-      matrix.compose(new THREE.Vector3(d.pos[0], y, d.pos[1]), rotation, new THREE.Vector3(d.size[0], 1, d.size[1]));
+      const y = (d.base ?? 0) + (d.y ?? DECAL_Y) + i * 1e-5;
+      const turned = Math.abs(Math.sin(d.rotY ?? 0));
+      const wide = 1 / Math.cos(side) - 1;
+      const long = 1 / Math.cos(back) - 1;
+      matrix.compose(new THREE.Vector3(d.pos[0], y, d.pos[1]), rotation, new THREE.Vector3(d.size[0] * (1 + wide * (1 - turned) + long * turned), 1, d.size[1] * (1 + long * (1 - turned) + wide * turned)));
       mesh.setMatrixAt(i, matrix);
       mesh.setColorAt(i, color.set(d.color));
     });

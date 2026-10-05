@@ -1,13 +1,23 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Euler, Quaternion } from 'three';
-import { GROUP, PHYSICS, groups } from '../config';
+import { Euler, Quaternion, Vector3 } from 'three';
+import { GROUP, PHYSICS, TRUCK, groups } from '../config';
+
+/** How long a manhole blows for; and how hard the water under the truck pushes it up at first, as a share of the truck's weight. */
+const JET_SECONDS = 2.5;
+const JET_PUSH = 0.5;
+/** The first moments of a blow, and how hard they kick, as a share of the truck's weight. */
+const JET_KICK = 0.4;
+const JET_KICK_PUSH = 1.4;
 import { sandbox } from '../levels/sandbox';
 import { groundTiles } from '../levels/ground';
+import { heightAt, terrainMesh } from '../levels/terrain';
 import type { LevelDef, PitDesc, PropDesc, TrackDesc } from '../levels/types';
 import { Battle, type BattleSound } from './battle';
 import { CargoSystem, type CargoEvent, type CargoItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
 import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
+import { Rollers } from './rollers';
+import { Machines } from './machines';
 import { Pedestrians, type Pedestrian, type Vehicle } from './pedestrians';
 import { Riders, SCOOTER_MASS, type Rider } from './riders';
 import { Traffic } from './traffic';
@@ -84,6 +94,8 @@ const WEAR_STEP_MAX = 40;
 /** A blast right beside the truck shakes the load by this much, m/s, and shoves the truck this fast. */
 const BLAST_JOLT = 20;
 const BLAST_SHOVE = 2.6;
+/** How far the truck's horn carries, to those on foot: metres. */
+const HORN_REACH = 15;
 /** How hard a direct hit throws the truck, beside a tank's: a small shell only hops it. */
 const FLING = { shell: 0.5, rocket: 0.75, tank: 1 };
 /** How much of that a car passes on, beside what a roadside object of the same weight would: it gives. */
@@ -110,10 +122,12 @@ export class Sim {
   readonly cargoSystem: CargoSystem;
   readonly traffic: Traffic;
   readonly riders: Riders;
+  readonly machines: Machines;
   readonly driver: Driver;
   readonly trains: Trains;
   readonly water: Water;
   readonly objects: ObjectSystem;
+  private readonly rollers: Rollers;
   readonly pedestrians: Pedestrians;
   readonly battle: Battle;
   /** Seconds since the truck was last thrown by a direct hit: while it is in the air from one, landing on its roof is not held against it. */
@@ -140,9 +154,15 @@ export class Sim {
   private readonly truckVel = { x: 0, y: 0, z: 0 };
   private bumps: number[] = [];
   private stalled = 0;
+  /** Seconds since the burst main under the road was first come near, or -1; when each manhole next blows; water thrown up since the last call. */
+  private mainClock = -1;
+  private mainNext: number[] = [];
+  /** Columns of water still coming up out of the road: where, and for how much longer. */
+  private jets: { x: number; y: number; z: number; left: number }[] = [];
+  private spouts: { x: number; y: number; z: number; lifted: boolean }[] = [];
   private strikes: { x: number; y: number; z: number }[] = [];
   private blasts: Blast[] = [];
-  private pileups: { x: number; z: number; speed: number }[] = [];
+  private pileups: { x: number; z: number; speed: number; heavy?: boolean }[] = [];
   private horns: { x: number; z: number; long: number; car: number }[] = [];
   private readonly eventQueue: RAPIER.EventQueue;
   private readonly startPoses: Pose[] = [];
@@ -159,7 +179,12 @@ export class Sim {
     this.eventQueue = new RAPIER.EventQueue(true);
 
     const groundGroups = groups(GROUP.ground, GROUP.all);
-    for (const [x0, z0, x1, z1] of groundTiles(level)) {
+    if (level.terrain) {
+      // Ground that rises and falls: its triangles, as they are drawn. A box sliding over the joins between them is not to catch on them.
+      const { positions, indices } = terrainMesh(level.terrain);
+      this.world.createCollider(RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0.9).setCollisionGroups(groundGroups));
+    }
+    for (const [x0, z0, x1, z1] of level.terrain ? [] : groundTiles(level)) {
       this.world.createCollider(
         RAPIER.ColliderDesc.cuboid((x1 - x0) / 2, GROUND_THICKNESS, (z1 - z0) / 2)
           .setTranslation((x0 + x1) / 2, -GROUND_THICKNESS, (z0 + z1) / 2)
@@ -167,8 +192,8 @@ export class Sim {
           .setCollisionGroups(groundGroups),
       );
     }
-    // Each pit has a floor; its walls are the sides of the ground around it.
-    for (const pit of level.pits ?? []) {
+    // Each pit has a floor; its walls are the sides of the ground around it. Ground that rises and falls has its pits dug in it already.
+    for (const pit of level.terrain ? [] : level.pits ?? []) {
       this.world.createCollider(
         RAPIER.ColliderDesc.cuboid(pit.half[0], 0.5, pit.half[1])
           .setTranslation(pit.pos[0], -pit.depth - 0.5, pit.pos[1])
@@ -202,15 +227,20 @@ export class Sim {
     }
 
     this.truck = new Truck(this.world, level.spawn, level.heading);
-    this.traffic = new Traffic(this.world, level.traffic);
-    this.riders = new Riders(this.world, level.riders ?? []);
-    this.driver = new Driver(this.world);
+    this.traffic = new Traffic(this.world, level.traffic, level.terrain && ((x, z) => heightAt(level.terrain, x, z)));
+    this.riders = new Riders(this.world, level.riders ?? [], level.terrain && ((x, z) => heightAt(level.terrain, x, z)));
+    this.machines = new Machines(this.world, level.machines ?? [], (x, z) => (level.terrain ? heightAt(level.terrain, x, z) : 0));
+    this.driver = new Driver(this.world, !!level.terrain);
+    this.truck.rolls = !!level.rollback;
     this.started = !level.startLine;
     this.water = new Water(level.pits ?? []);
     this.trains = new Trains(this.world, level.tracks ?? [], level.bounds[0][0], level.bounds[1][0]);
-    this.objects = new ObjectSystem(this.world, level.objects ?? []);
+    this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? [])], !!level.terrain);
+    if (level.terrain) this.objects.ground = (x, z) => heightAt(level.terrain!, x, z);
+    this.rollers = new Rollers(this.objects, level.rollers ?? [], level.objects?.length ?? 0, (x, z) => heightAt(level.terrain, x, z));
     this.follow();
-    this.pedestrians = new Pedestrians(level.crowds ?? []);
+    const terrain = level.terrain;
+    this.pedestrians = new Pedestrians(level.crowds ?? [], terrain && ((x, z) => heightAt(terrain, x, z)), level.keepOut);
     this.battle = new Battle(this.world, level.battle);
     this.cargoSystem = new CargoSystem(this.world, level.damageScale ?? 1);
     this.cargoSystem.load(level.cargo, level.spawn, level.heading);
@@ -238,16 +268,33 @@ export class Sim {
     if (train) this.strike(train);
     if (this.truck.isOverturned(PHYSICS.dt)) this.overturn();
     // Down a hole there is no driving out of.
-    this.inPit = this.truck.body.translation().y < TRUCK_REST - PIT_DEPTH ? this.inPit + PHYSICS.dt : 0;
+    // On ground that rises and falls there are no pits to be down: only hollows, which are driven out of.
+    const here = this.truck.body.translation();
+    const under = this.level.sinks && this.level.terrain?.surface?.(here.x, here.z);
+    const down = under
+      ? this.level.sinks!.includes(under.tag) && here.y < under.h + 1.6
+      : this.level.bogs
+      ? this.level.bogs.some(([x0, z0, x1, z1]) => here.x > x0 && here.x < x1 && here.z > z0 && here.z < z1)
+      : this.level.terrain
+      ? // What is under it there is the floor of the pit: its rim is the pit's depth above that.
+        (this.level.pits ?? []).some((p) => Math.abs(here.x - p.pos[0]) < p.half[0] && Math.abs(here.z - p.pos[1]) < p.half[1] && here.y < heightAt(this.level.terrain, here.x, here.z) + p.depth + TRUCK_REST - PIT_DEPTH)
+      : here.y < TRUCK_REST - PIT_DEPTH;
+    this.inPit = down ? this.inPit + PHYSICS.dt : 0;
     if (this.inPit > PIT_SECONDS && this.level.finish) {
       const t = this.truck.body.translation();
       this.fail(this.water.poolAt(t.x, t.z) ? 'water' : 'pit');
     }
     const walkers = this.pedestrians.inRoad().map((p) => p.pos);
     this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
+    // A bus at its stop: people off, people on.
+    for (const { stop, door } of this.traffic.arrivals) {
+      const crowd = stop.crowd !== undefined ? this.level.crowds?.[stop.crowd] : undefined;
+      if (crowd) this.pedestrians.busStop(door, crowd, 1 + (Math.round(door.x * 7) & 1), 2);
+    }
     this.pileups.push(...this.traffic.pileups);
     this.horns.push(...this.traffic.horns);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
+    if (this.machines.list.length) this.machines.update(PHYSICS.dt, this.truck.body.translation());
     this.world.step(this.eventQueue);
     this.eventQueue.drainContactForceEvents((event) => {
       this.cargoSystem.addForce(event.collider1(), event.collider2(), event.totalForceMagnitude());
@@ -258,7 +305,15 @@ export class Sim {
     const trying = driving && (input.throttle !== 0) && !input.handbrake && Math.abs(this.truck.forwardSpeed()) < 0.4;
     this.stalled = trying ? this.stalled + PHYSICS.dt : 0;
     this.objects.update(this.truck, this.stalled > STALL_SECONDS);
+    this.burstMain();
+    this.rollers.update(PHYSICS.dt, this.truck.body.translation());
     for (const blast of this.objects.blasts) this.blast(blast);
+    // A coil of steel through a car: the car is thrown aside, and the coil goes on, a little slower.
+    for (const { body, by } of this.objects.rammed) {
+      const v = by.body.linvel();
+      this.traffic.ram(body, v);
+      if (by.pace !== undefined) by.pace *= 0.85;
+    }
     this.battle.update(PHYSICS.dt, this.truck);
     for (const burst of this.battle.bursts) {
       this.objects.throwFrom(burst);
@@ -305,7 +360,7 @@ export class Sim {
   }
 
   /** Cars run into by other cars since the last call: where, and how fast. */
-  drainPileups(): { x: number; z: number; speed: number }[] {
+  drainPileups(): { x: number; z: number; speed: number; heavy?: boolean }[] {
     const out = this.pileups;
     this.pileups = [];
     return out;
@@ -354,6 +409,85 @@ export class Sim {
   /** Things that have just gone into the water. */
   drainSplashes(): Splash[] {
     return this.water.drainSplashes();
+  }
+
+  /** For testing: the truck, and its load as it lies on the bed, picked up and put down somewhere else, facing `yaw`, at rest. */
+  teleport(x: number, z: number, yaw: number): void {
+    const ground = this.level.terrain ? heightAt(this.level.terrain, x, z) : 0;
+    const to = new Vector3(x, ground + 1.2, z);
+    const from = this.truck.body.translation();
+    const r = this.truck.body.rotation();
+    const facing = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw);
+    const turn = facing.clone().multiply(new Quaternion(r.x, r.y, r.z, r.w).invert());
+    const still = { x: 0, y: 0, z: 0 };
+    for (const item of this.cargo) {
+      if (!item.body) continue;
+      const p = item.body.translation();
+      const q = item.body.rotation();
+      const at = new Vector3(p.x - from.x, p.y - from.y, p.z - from.z).applyQuaternion(turn).add(to);
+      const rot = turn.clone().multiply(new Quaternion(q.x, q.y, q.z, q.w));
+      item.body.setTranslation(at, true);
+      item.body.setRotation({ x: rot.x, y: rot.y, z: rot.z, w: rot.w }, true);
+      item.body.setLinvel(still, true);
+      item.body.setAngvel(still, true);
+    }
+    this.truck.body.setTranslation(to, true);
+    this.truck.body.setRotation({ x: facing.x, y: facing.y, z: facing.z, w: facing.w }, true);
+    this.truck.body.setLinvel(still, true);
+    this.truck.body.setAngvel(still, true);
+    this.stalled = 0;
+  }
+
+  /** A main burst under the road: once the truck comes within reach, each manhole in turn throws up water, and the first time its cover. */
+  private burstMain(): void {
+    const holes = this.level.manholes;
+    if (!holes?.length) return;
+    const t = this.truck.body.translation();
+    const covers = holes.map((hole) => this.objects.objects[hole.cover]);
+    if (this.mainClock < 0) {
+      if (!covers.some((cover) => cover && Math.hypot(cover.desc.pos[0] - t.x, cover.desc.pos[2] - t.z) < 45)) return;
+      this.mainClock = 0;
+      this.mainNext = holes.map((hole) => hole.phase);
+    }
+    this.mainClock += PHYSICS.dt;
+    holes.forEach((hole, k) => {
+      if (this.mainClock < this.mainNext[k]) return;
+      this.mainNext[k] += hole.every;
+      const cover = covers[k];
+      if (!cover) return;
+      const [x, y, z] = cover.desc.pos;
+      // Lying on or by its hole, and still: the water throws it straight up, as high as a house, and it comes down there again.
+      const p = cover.body.translation();
+      const v = cover.body.linvel();
+      const lifted = Math.hypot(p.x - x, p.z - z) < 2.5 && Math.abs(p.y - y) < 0.6 && Math.hypot(v.x, v.y, v.z) < 1.5;
+      if (lifted) this.objects.launch(cover, { x: (x - p.x) * 0.4, y: 12 + (k % 3), z: (z - p.z) * 0.4 }, 0.3);
+      this.spouts.push({ x, y, z, lifted });
+      this.jets.push({ x, y, z, left: JET_SECONDS });
+    });
+    // The water comes up hard: anything of the truck over a hole while it is blowing is thrown up from underneath, there, so
+    // that the truck is bucked up at that corner and the load with it. Hardest at first, falling off as the pressure goes.
+    const r = this.truck.body.rotation();
+    const turn = new Quaternion(r.x, r.y, r.z, r.w).invert();
+    const weight = this.truck.body.mass() * 9.81;
+    this.jets = this.jets.filter((jet) => (jet.left -= PHYSICS.dt) > 0);
+    for (const jet of this.jets) {
+      const local = new Vector3(jet.x - t.x, jet.y - t.y, jet.z - t.z).applyQuaternion(turn);
+      if (Math.abs(local.x) > TRUCK.frame.half[0] + 0.3 || Math.abs(local.z) > TRUCK.frame.half[2] + 0.6 || local.y < -3 || local.y > 1) continue;
+      // The first rush of it a hard kick; then a steady heave, dying away.
+      const share = jet.left > JET_SECONDS - JET_KICK ? JET_KICK_PUSH : JET_PUSH * (jet.left / JET_SECONDS);
+      const push = share * weight * PHYSICS.dt;
+      // Taken mostly under the chassis rails rather than at the very edge: it bucks the truck along its length more than it
+      // rolls it over sideways.
+      const at = new Vector3(local.x * 0.35, 0, local.z).applyQuaternion(turn.clone().invert());
+      this.truck.body.applyImpulseAtPoint({ x: 0, y: push, z: 0 }, { x: t.x + at.x, y: t.y, z: t.z + at.z }, true);
+    }
+  }
+
+  /** Water thrown up out of the road since the last call: where. */
+  drainSpouts(): { x: number; y: number; z: number; lifted: boolean }[] {
+    const out = this.spouts;
+    this.spouts = [];
+    return out;
   }
 
   /** Scooter riders knocked off since the last call. */
@@ -411,10 +545,14 @@ export class Sim {
 
   /** Put everything back at the start. Cargo bodies are rebuilt, so views must be too. */
   reset(): void {
+    this.mainClock = -1;
+    this.jets = [];
+    this.spouts = [];
     this.water.reset();
     this.truck.reset();
     this.traffic.reset();
     this.riders.reset();
+    this.machines.reset();
     this.battle.reset();
     this.flung = 0;
     this.battleSounds = [];
@@ -430,6 +568,7 @@ export class Sim {
     this.driver.reset();
     this.trains.reset();
     this.objects.reset();
+    this.rollers.reset();
     this.pedestrians.reset();
     this.time = 0;
     this.started = !this.level.startLine;
@@ -545,6 +684,17 @@ export class Sim {
     const mass = this.truck.body.mass();
     this.truck.body.applyImpulse({ x: (dx / out) * BLAST_SHOVE * near * mass, y: BLAST_SHOVE * 0.2 * near * mass, z: (dz / out) * BLAST_SHOVE * near * mass }, true);
     this.cargoSystem.jolt(BLAST_JOLT * near, this.truck);
+  }
+
+  /** The truck's horn: whoever is on foot near it runs out of its way. */
+  honk(): void {
+    const t = this.truck.body.translation();
+    const r = this.truck.body.rotation();
+    // The way the truck faces, on the flat.
+    const fx = 2 * (r.x * r.z + r.w * r.y);
+    const fz = 1 - 2 * (r.x * r.x + r.y * r.y);
+    const length = Math.hypot(fx, fz) || 1;
+    this.pedestrians.scare(t.x, t.z, fx / length, fz / length, HORN_REACH);
   }
 
   /**

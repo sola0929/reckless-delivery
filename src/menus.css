@@ -332,7 +332,7 @@ body.in-menu #hud {
 
 #menu-level-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
 }
 
@@ -387,9 +387,12 @@ body.in-menu #hud {
 }
 
 .level-thumb.city { background: linear-gradient(160deg, #4f8fc8, #f0b56a); }
+.level-thumb.hilltown { background: linear-gradient(160deg, #4f8a6a, #d9c27a); }
+.level-thumb.battlefield { background: linear-gradient(160deg, #7a4a3a, #e0a05a); }
 .level-thumb.forest { background: linear-gradient(160deg, #2f6b4a, #9ac46a); }
 .level-thumb.mountain { background: linear-gradient(160deg, #6a5a7a, #d9a27a); }
 .level-thumb.ice { background: linear-gradient(160deg, #6fa8d8, #e8f4fa); }
+.level-thumb.hills { background: linear-gradient(160deg, #5f8a4a, #b9a455); }
 .level-thumb.range { background: linear-gradient(160deg, #5a5f48, #b08a5a); }
 .level-thumb.sandbox { background: repeating-linear-gradient(45deg, #5b626b 0 12px, #666d77 12px 24px); }
 

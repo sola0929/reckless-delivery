@@ -130,6 +130,7 @@ export function buildingMesh(desc: PropDesc, look: BuildingLook): THREE.Mesh {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, map: signSheet(), roughness: 0.85, shadowSide: THREE.FrontSide });
   const mesh = new THREE.Mesh(shapes.geometry(), material);
   mesh.position.set(desc.pos[0], desc.pos[1] - hy, desc.pos[2]);
+  if (desc.rot) mesh.rotation.set(...desc.rot);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;

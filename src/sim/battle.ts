@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { GROUP, groups } from '../config';
-import type { BattleDesc, CrossfireDesc, LauncherDesc, ShellZone, TankDesc } from '../levels/types';
+import type { BattleDesc, GunnerDesc, LauncherDesc, ShellZone, TankDesc } from '../levels/types';
 import type { Truck } from './truck';
 
 // A battle going on around the truck: shells that fall where a circle has warned they will,
@@ -38,6 +38,17 @@ export interface Round {
   dir: Vector3;
   /** Metres it has left to fly before it meets something, or the far side. */
   left: number;
+}
+
+export interface GunnerState {
+  desc: GunnerDesc;
+  /** What he is doing: a long burst, the odd round, or down behind his cover with a new belt. */
+  phase: 'burst' | 'odd' | 'reload';
+  /** Seconds of it left. */
+  left: number;
+  due: number;
+  /** Above zero for a moment after each round: the flash at the muzzle. */
+  flash: number;
 }
 
 export interface LauncherState {
@@ -93,6 +104,13 @@ const SHELL_REACH = 7;
 const SHELL_SCATTER = [10, 16];
 const ROUND_SPEED = 75;
 const GUN_TICK = 0.11;
+/** Rounds a second from one gunner, by what he is doing; the angle his fire is spread over; how far a round carries; and how near the truck must be for him to be firing at all. */
+const GUNNER_RATE = { burst: 8, odd: 1.3, reload: 0 };
+const GUNNER_FAN = 0.6;
+const GUNNER_REACH = 34;
+const GUNNER_HEARD = 75;
+/** A gunner's cover: how far in front of him its middle is, half its length, its height, half its thickness. */
+export const GUNNER_COVER = { out: 0.9, half: 1.6, height: 1, thick: 0.35 };
 // A launcher is quick to lock and its rocket is slow: it can be seen coming, from a long way off, and steered out of the way of.
 const LOCK_SECONDS = 1.4;
 const ROCKET_SPEED = 17;
@@ -116,6 +134,11 @@ const TANK_REST = 7;
 export const TANK_REACH = 42;
 const TANK_FORGET = 2;
 export const TANK_HALF = { width: 1.7, height: 0.95, length: 3.3 };
+/** A bank of earth: half its thickness where it is solid, and how far past each end it runs, to close the corners. */
+export const BANK_HALF = 1.1;
+export const BANK_OVER = 0.8;
+/** What is left of a tank or a lorry: half its width, height and length. */
+export const WRECK_HALF = { tank: [TANK_HALF.width, TANK_HALF.height, TANK_HALF.length], truck: [1.25, 0.9, 2.7] };
 /** Height of a launcher's eye, of a rocket in flight, and of a tank's gun. */
 const EYE = 1.4;
 const MUZZLE = 1.95;
@@ -147,13 +170,13 @@ export class Battle {
   private gunTick = 0;
   private respite = 0;
   private lull = 0;
-  private readonly fire: { desc: CrossfireDesc; due: number }[];
+  readonly gunners: GunnerState[];
   private readonly zones: { desc: ShellZone; wait: number }[];
   private seed = 23;
 
   constructor(private readonly world: RAPIER.World, desc: BattleDesc = {}) {
     this.zones = (desc.shelling ?? []).map((zone) => ({ desc: zone, wait: 1 }));
-    this.fire = (desc.crossfire ?? []).map((zone) => ({ desc: zone, due: 0 }));
+    this.gunners = (desc.gunners ?? []).map((gunner, i) => ({ desc: gunner, phase: i % 3 === 0 ? 'burst' : 'odd', left: 0.5 + ((i * 1.37) % 3), due: 0, flash: 0 }));
     this.launchers = (desc.launchers ?? []).map((launcher) => ({ desc: launcher, sees: false, lock: 0, aim: new Vector3(), yaw: 0, cooldown: 0 }));
     this.tanks = (desc.tanks ?? []).map((tank) => {
       // A tank doesn't move, and nothing moves it.
@@ -162,6 +185,43 @@ export class Battle {
       world.createCollider(RAPIER.ColliderDesc.cuboid(TANK_HALF.width, TANK_HALF.height, TANK_HALF.length).setFriction(0.6).setCollisionGroups(groups(GROUP.ground, GROUP.all)), body);
       return { desc: tank, yaw: tank.gun ?? tank.rotY, hostile: false, lock: 0, cooldown: 0, lost: 0, aim: new Vector3(), held: false, charge: 0, idle: 2 + (tank.pos[1] % 4) };
     });
+
+    // The lie of the land: banks, mounds and wrecks. None of it moves, and all of it stops a bullet.
+    const fixed = groups(GROUP.ground, GROUP.all);
+    const turned = (yaw: number) => {
+      q.setFromAxisAngle(v.set(0, 1, 0), yaw);
+      return { x: q.x, y: q.y, z: q.z, w: q.w };
+    };
+    for (const bank of desc.banks ?? []) {
+      const dx = bank.to[0] - bank.from[0];
+      const dz = bank.to[1] - bank.from[1];
+      const half = bank.height * 0.45;
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(BANK_HALF, half, Math.hypot(dx, dz) / 2 + BANK_OVER)
+          .setTranslation((bank.from[0] + bank.to[0]) / 2, half, (bank.from[1] + bank.to[1]) / 2)
+          .setRotation(turned(Math.atan2(dx, dz)))
+          .setFriction(0.6)
+          .setCollisionGroups(fixed),
+      );
+    }
+    for (const gunner of desc.gunners ?? []) {
+      // His cover, and himself behind it: neither is to be driven through.
+      const [x, z] = gunner.pos;
+      const fx = Math.sin(gunner.aim);
+      const fz = Math.cos(gunner.aim);
+      const { out, half, height, thick } = GUNNER_COVER;
+      world.createCollider(RAPIER.ColliderDesc.cuboid(half + 0.25, height / 2, thick + 0.1).setTranslation(x + fx * out, height / 2, z + fz * out).setRotation(turned(gunner.aim)).setFriction(0.6).setCollisionGroups(fixed));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(0.35, 0.6, 0.35).setTranslation(x, 0.6, z).setCollisionGroups(fixed));
+    }
+    for (const mound of desc.mounds ?? []) {
+      // The top of a ball that is mostly underground: a dome this wide and this high.
+      const radius = (mound.radius * mound.radius + mound.height * mound.height) / (2 * mound.height);
+      world.createCollider(RAPIER.ColliderDesc.ball(radius).setTranslation(mound.pos[0], mound.height - radius, mound.pos[1]).setFriction(0.9).setCollisionGroups(fixed));
+    }
+    for (const wreck of desc.wrecks ?? []) {
+      const [hx, hy, hz] = WRECK_HALF[wreck.kind];
+      world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(wreck.pos[0], hy, wreck.pos[1]).setRotation(turned(wreck.rotY)).setFriction(0.6).setCollisionGroups(fixed));
+    }
   }
 
   /** Call once per physics step, after the world has stepped. */
@@ -195,7 +255,7 @@ export class Battle {
     this.seed = 23;
     this.shells.length = this.projectiles.length = this.scars.length = this.rounds.length = 0;
     this.respite = this.lull = 0;
-    for (const zone of this.fire) zone.due = 0;
+    this.gunners.forEach((gunner, i) => Object.assign(gunner, { phase: i % 3 === 0 ? 'burst' : 'odd', left: 0.5 + ((i * 1.37) % 3), due: 0, flash: 0 }));
     this.bursts = [];
     this.sounds = [];
     this.threat = null;
@@ -238,29 +298,41 @@ export class Battle {
   }
 
   /**
-   * The two armies shooting at each other: rounds cross the road from both sides, at all
-   * angles, all along the stretch round the truck. None is aimed at it. One that passes
-   * through it goes through the load. Anything solid in the way stops a round.
+   * The two armies shooting at each other across the road: each gunner fires from behind his
+   * cover, the way he faces, in a fan. A long burst, then odd rounds, then nothing while he
+   * reloads: there are moments to go, and moments not to. None of it is aimed at the truck.
+   * A round that passes through it goes through the load. Anything solid stops one.
    */
   private crossfire(dt: number, at: { x: number; y: number; z: number }, strikes: (p: { x: number; y: number; z: number }, margin?: number) => boolean): void {
     this.gunTick -= dt;
-    for (const zone of this.fire) {
-      const [x0, z0, x1, z1] = zone.desc.area;
-      if (at.z < z0 - 30 || at.z > z1 + 30) continue;
-      if (this.gunTick <= 0) this.sounds.push({ kind: 'gun', x: this.random() < 0.5 ? x0 : x1, z: at.z + (this.random() - 0.5) * 30 });
-      zone.due += zone.desc.rate * dt;
-      while (zone.due >= 1) {
-        zone.due--;
-        const fromLow = this.random() < 0.5;
-        const slant = (this.random() - 0.5) * 0.7;
-        const dir = new Vector3((fromLow ? 1 : -1) * Math.cos(slant), 0, Math.sin(slant));
-        const pos = new Vector3(fromLow ? x0 : x1, 0.8 + this.random() * 1.1, Math.max(z0, Math.min(z1, at.z + (this.random() - 0.5) * 70)));
-        const reach = (x1 - x0) / Math.cos(slant);
+    for (const gunner of this.gunners) {
+      const [x, z] = gunner.desc.pos;
+      gunner.flash -= dt;
+      // Only where there is someone to see it.
+      if (Math.hypot(at.x - x, at.z - z) > GUNNER_HEARD) continue;
+      if ((gunner.left -= dt) <= 0) {
+        // After a burst, as often as not the belt is out. After reloading, straight back to it.
+        const next = gunner.phase === 'burst' ? (this.random() < 0.5 ? 'reload' : 'odd') : gunner.phase === 'reload' ? 'burst' : this.random() < 0.75 ? 'burst' : 'odd';
+        gunner.phase = next;
+        gunner.left = next === 'burst' ? 1.6 + this.random() * 1.4 : next === 'odd' ? 2.2 + this.random() * 2.2 : 2.2 + this.random() * 1.2;
+      }
+      gunner.due += GUNNER_RATE[gunner.phase] * dt;
+      while (gunner.due >= 1) {
+        gunner.due--;
+        const yaw = gunner.desc.aim + (this.random() - 0.5) * GUNNER_FAN;
+        const dir = new Vector3(Math.sin(yaw), (this.random() - 0.5) * 0.05, Math.cos(yaw)).normalize();
+        const out = GUNNER_COVER.out + GUNNER_COVER.thick + 0.15;
+        const pos = new Vector3(x + Math.sin(gunner.desc.aim) * out, GUNNER_COVER.height + 0.25, z + Math.cos(gunner.desc.aim) * out);
+        const reach = gunner.desc.reach ?? GUNNER_REACH;
         const hit = this.world.castRay(new RAPIER.Ray(pos, dir), reach, true, undefined, STATIC);
         this.rounds.push({ pos, dir, left: hit ? hit.timeOfImpact : reach });
+        gunner.flash = 0.05;
+        if (this.gunTick <= 0) {
+          this.sounds.push({ kind: 'gun', x, z });
+          this.gunTick = GUN_TICK;
+        }
       }
     }
-    if (this.gunTick <= 0) this.gunTick = GUN_TICK;
     const step = ROUND_SPEED * dt;
     for (let i = this.rounds.length - 1; i >= 0; i--) {
       const round = this.rounds[i];

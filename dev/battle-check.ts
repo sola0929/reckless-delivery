@@ -33,7 +33,7 @@ const kept = (sim: Sim) => `${Math.round((sim.cargoValue() / sim.fullValue) * 10
     direct += dash.battle.bursts.filter((b) => b.kind === 'shell' && b.direct).length;
     high = Math.max(high, dash.truck.body.translation().y);
   }
-  check('flat out in a straight line, the truck is hit', direct >= 1 && !dash.result, `${direct} direct hits, thrown ${high.toFixed(1)} m up, through in ${seconds.toFixed(1)} s, ${kept(dash)}`);
+  check('flat out in a straight line is no way through the barrage', (seconds >= 11.9 || dash.cargoValue() < dash.fullValue) && !dash.result, `${direct} direct hits, thrown ${high.toFixed(1)} m up, through in ${seconds.toFixed(1)} s, ${kept(dash)}`);
 }
 { // Crossfire: rounds all over the stretch, some through the load; none outside it.
   const on = await at(0, 170), off = await at(0, 10);

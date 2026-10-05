@@ -14,6 +14,15 @@ function ease(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * dt);
 }
 
+/** Where a chase camera sits and where it looks, when that is not where it usually does. */
+export interface ChaseView {
+  height: number;
+  distance: number;
+  lookAhead: number;
+  /** How high the ground is at a place: the camera is kept above it. */
+  ground?: (x: number, z: number) => number;
+}
+
 /** High chase camera: sits above and behind what it follows, looking ahead of it. */
 export class ChaseCamera {
   private yaw = 0;
@@ -31,7 +40,7 @@ export class ChaseCamera {
   /** How hard the camera is being shaken, metres; it dies away by itself. */
   private tremor = 0;
 
-  constructor(private readonly camera: THREE.PerspectiveCamera) {}
+  constructor(private readonly camera: THREE.PerspectiveCamera, private readonly view: ChaseView = CAMERA) {}
 
   /** Direction the camera faces across the ground: radians about Y, 0 = toward +Z. */
   get viewYaw(): number {
@@ -85,15 +94,17 @@ export class ChaseCamera {
     const dir = FORWARD.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     // Halved under braking, or the truck slides off the bottom of the screen.
     const lag = this.surge * CAMERA.surgeDistance * (this.surge < 0 ? 0.5 : 1) * Math.min(1, zoom);
-    const distance = (CAMERA.distance + this.speed * CAMERA.distancePerSpeed) * zoom + lag;
-    const height = (CAMERA.height + this.speed * CAMERA.heightPerSpeed) * zoom;
+    const distance = (this.view.distance + this.speed * CAMERA.distancePerSpeed) * zoom + lag;
+    const height = (this.view.height + this.speed * CAMERA.heightPerSpeed) * zoom;
     // Zoomed in, the camera sits almost over the tail, so aim at the truck itself rather
     // than the road ahead, or the back of the bed drops out of view.
     const closeness = THREE.MathUtils.clamp((1 - this.zoom) / (1 - CAMERA.minZoom), 0, 1);
-    const ahead = onFoot ? 0 : THREE.MathUtils.lerp(CAMERA.lookAhead + this.speed * CAMERA.lookAheadPerSpeed, CAMERA.closeLookAhead, closeness);
+    const ahead = onFoot ? 0 : THREE.MathUtils.lerp(this.view.lookAhead + this.speed * CAMERA.lookAheadPerSpeed, CAMERA.closeLookAhead, closeness);
 
     this.camera.position.copy(this.focus).addScaledVector(dir, -distance);
     this.camera.position.y = this.focus.y + height;
+    // On a hillside the ground behind may be higher than the truck: never down into it.
+    if (this.view.ground) this.camera.position.y = Math.max(this.camera.position.y, this.view.ground(this.camera.position.x, this.camera.position.z) + 3);
     this.camera.lookAt(TARGET.copy(this.focus).addScaledVector(dir, ahead));
     if (this.tremor > 0.01) {
       this.camera.position.x += (Math.random() - 0.5) * this.tremor;

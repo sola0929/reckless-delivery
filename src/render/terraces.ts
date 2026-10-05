@@ -85,7 +85,7 @@ function house(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[]
   const trim = pick(rand, TRIMS);
   const top = SHOP + (floors - 1) * FLOOR;
   // Bare cement wherever a wall was only ever meant to have a neighbour against it.
-  const faces = street.map((on) => (on ? body : CEMENT));
+  const faces = street.map((on) => (on ? body : tone(body, 0.82)));
   const frontage = street.map((on, side) => on && fronts.includes(side));
   const recess = frontage.map((on) => (on ? (arcade ? ARCADE : PORCH) : 0));
   s.shell(within(p, recess), 0, LINTEL, faces.map((color, side) => (recess[side] ? tone(body, 0.72) : color)));
@@ -315,7 +315,7 @@ function modern(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[
   const line = body === 0x3c4046 ? 0xd8d4c8 : 0x2a2e33;
   const wood = pick(rand, [0xb08a62, 0x9a7450]);
   const top = SHOP + (floors - 1) * FLOOR;
-  const faces = street.map((on) => (on ? body : CEMENT));
+  const faces = street.map((on) => (on ? body : tone(body, 0.82)));
   const frontage = street.map((on, side) => on && fronts.includes(side));
   s.shell(within(p, frontage.map((on) => (on ? PORCH : 0))), 0, LINTEL, faces.map((color, side) => (frontage[side] ? 0x26303a : color)));
   s.shell(p, LINTEL, top, faces, 0xa8a59c);
@@ -391,7 +391,7 @@ function flats(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[]
   const body = pick(rand, FLAT_WALLS);
   const trim = pick(rand, TRIMS);
   const top = SHOP + (floors - 1) * FLOOR;
-  const faces = street.map((on) => (on ? body : CEMENT));
+  const faces = street.map((on) => (on ? body : tone(body, 0.82)));
   const frontage = street.map((on, side) => on && fronts.includes(side));
   s.shell(within(p, frontage.map((on) => (on ? PORCH : 0))), 0, LINTEL, faces.map((color, side) => (frontage[side] ? (store.front === 'stone' ? STONE : 0x26303a) : color)));
   s.shell(p, LINTEL, top, faces, pick(rand, ROOF_FLOORS));

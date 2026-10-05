@@ -89,15 +89,84 @@ function garbage(s: Shapes): void {
   ends(s, 1.2, 3.3, 1.05);
 }
 
+/** A festival float: a lorry's cab, and on its back a little stage of coloured panels and lights. */
+function float(s: Shapes): void {
+  wheels(s, 1.12, 3.3, -3.2, 0.5);
+  s.box(0, 0.75, 0, 1.2, 0.2, 5.2, DARK);
+  s.box(0, 1.6, 4.0, 1.2, 0.85, 1.1, 0xf2efe6);
+  s.box(0, 1.9, 5.11, 1.05, 0.38, 0.02, GLASS);
+  // The stage: a floor, a back of panels in pink, blue and gold, and an arch of lights.
+  s.box(0, 1.1, -1.2, 1.25, 0.15, 3.9, 0xd94a8a);
+  s.box(0, 2.6, -4.9, 1.25, 1.4, 0.15, 0x2f6fb0);
+  for (const [x, c] of [[-1.24, 0xf2c12e], [1.24, 0xf2c12e]] as const) s.box(x, 2.0, -1.2, 0.03, 0.8, 3.7, c);
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 8) * Math.PI;
+    s.box(Math.cos(a) * 1.1, 2.6 + Math.sin(a) * 1.3, -4.7, 0.12, 0.12, 0.12, [0xff4a8a, 0x5ad2ff, 0xffe04a][k % 3]);
+  }
+  for (let z = -4.6; z <= 2.2; z += 0.6) for (const x of [-1.26, 1.26]) s.box(x, 2.85, z, 0.04, 0.06, 0.06, [0xff4a8a, 0x5ad2ff, 0xffe04a][Math.round(z * 5) % 3 < 0 ? 0 : Math.round(z * 5) % 3]);
+  s.box(0, 3.95, -4.9, 0.9, 0.3, 0.05, 0xf2c12e);
+  ends(s, 1.2, 5.2, 0.9);
+}
+
+/** A god's sedan chair on its two poles, carried by four men in yellow, and its roof of red and gold. */
+function palanquin(s: Shapes): void {
+  for (const x of [-0.55, 0.55]) s.box(x, 1.2, 0, 0.05, 0.05, 1.9, 0x6e2a22);
+  s.box(0, 1.55, 0, 0.45, 0.45, 0.5, 0xc8372d);
+  s.box(0, 1.6, 0.51, 0.3, 0.3, 0.02, 0xd9a62e);
+  s.box(0, 2.1, 0, 0.55, 0.08, 0.6, 0xd9a62e);
+  s.box(0, 2.3, 0, 0.3, 0.12, 0.35, 0xc8372d);
+  s.box(0, 2.48, 0, 0.08, 0.08, 0.08, 0xd9a62e);
+  // The bearers, a pole on each shoulder, front and back.
+  for (const x of [-0.55, 0.55]) for (const z of [-1.55, 1.55]) {
+    s.box(x, 0.4, z, 0.1, 0.4, 0.1, 0x2a2e34);
+    s.box(x, 1.0, z, 0.22, 0.32, 0.16, 0xe0b020);
+    s.box(x, 1.45, z, 0.13, 0.13, 0.13, 0xe6c3a0);
+  }
+}
+
+/** A removals van, parked with its back open: white, the firm's green band along it, the ramp down. */
+function van(s: Shapes): void {
+  const green = 0x2f9a5a;
+  wheels(s, 1.05, 2.5, -2.2, 0.48);
+  s.box(0, 0.72, 0, 1.08, 0.2, 3.7, DARK);
+  s.box(0, 1.55, 2.95, 1.12, 0.72, 0.75, 0xf2efe6);
+  s.box(0, 1.85, 3.71, 0.98, 0.32, 0.02, GLASS);
+  for (const x of [-1.13, 1.13]) s.box(x, 1.85, 3.0, 0.02, 0.28, 0.45, GLASS);
+  s.box(0, 2.0, -0.75, 1.15, 1.08, 2.95, 0xf2efe6);
+  for (const x of [-1.16, 1.16]) s.box(x, 1.55, -0.75, 0.02, 0.18, 2.9, green);
+  // The doors swung right back against the sides.
+  for (const x of [-1.2, 1.2]) s.box(x, 2.0, -3.4, 0.04, 1.0, 0.55, 0xe4e0d6);
+  ends(s, 1.15, 3.7, 0.95);
+}
+
 const BUSES = [0x3f8f5f, 0x2f6fb0, 0xd06a2a, 0xb33a3a];
 
 /** One vehicle of the traffic, drawn about the middle of its body, which is where the physics has it. */
+/** Where each kind's lamps are: half its width, half its length, and their height off the road. */
+const LAMPS: Record<VehicleKind, [number, number, number]> = { car: [0.9, 2.1, 0.62], taxi: [0.9, 2.1, 0.62], pickup: [0.9, 2.2, 0.66], bus: [1.25, 5.2, 0.9], garbage: [1.2, 3.3, 1.05], float: [1.2, 5.2, 0.9], palanquin: [0.3, 0.95, 1.2], van: [1.15, 3.7, 0.95] };
+const brakeMaterial = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
+
+/** A vehicle's brake lights, lit: bright red over its tail lamps, a little bigger than them. To be shown while it brakes. */
+export function brakeLights(kind: VehicleKind): THREE.Mesh {
+  const [width, length, y] = LAMPS[kind];
+  const shapes = new Shapes();
+  for (const x of [-width * 0.68, width * 0.68]) shapes.box(x, y, -length - 0.03, width * 0.26, 0.11, 0.03, 0xff2a1a);
+  const geometry = shapes.geometry();
+  geometry.translate(0, -(CLEARANCE + VEHICLES[kind].half.height), 0);
+  const mesh = new THREE.Mesh(geometry, brakeMaterial);
+  mesh.visible = false;
+  return mesh;
+}
+
 export function vehicleMesh(kind: VehicleKind, color: number, n: number): THREE.Mesh {
   const shapes = new Shapes();
   if (kind === 'taxi') car(shapes, 0xf2c12e, true);
   else if (kind === 'pickup') pickup(shapes, 0x2f62a8);
   else if (kind === 'bus') bus(shapes, BUSES[n % BUSES.length]);
   else if (kind === 'garbage') garbage(shapes);
+  else if (kind === 'float') float(shapes);
+  else if (kind === 'palanquin') palanquin(shapes);
+  else if (kind === 'van') van(shapes);
   else car(shapes, color, false);
   const geometry = shapes.geometry();
   // Drawn standing on the road; the body's middle is that much above it.

@@ -25,7 +25,7 @@ export interface ObjectPart {
 }
 
 /** What is thrown up when the object is first knocked. */
-export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers' | 'toys';
+export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers' | 'toys' | 'straw' | 'grain' | 'bees' | 'dust' | 'bamboo' | 'paper' | 'ash' | 'shards' | 'rice';
 
 export interface ObjectKind {
   mass: number;
@@ -37,6 +37,8 @@ export interface ObjectKind {
   juice?: number;
   /** Goes off a moment after it is knocked, and throws everything near it. */
   explosive?: boolean;
+  /** Set off by a wheel rolling over it, not only by being knocked; and when it goes, it sets off any like it close by, one after another. */
+  trip?: boolean;
   /** How long after: seconds. A mine does not wait. */
   fuse?: number;
   /** What it is when it goes off, for whoever tells the player; and how hard, beside a cylinder of gas. */
@@ -44,7 +46,18 @@ export interface ObjectKind {
   /** Left alone by other blasts: neither thrown by them nor set off. A mine stays where it was laid. */
   stable?: boolean;
   /** Goes on banging and flashing for a while where it stood: a string of firecrackers. */
-  crackle?: boolean;
+  /** Goes off like firecrackers when knocked: for so many seconds, or for the usual time. */
+  crackle?: boolean | number;
+  /** Stands firm against the truck unless the truck is going at least this fast, m/s: a crash barrier. */
+  sturdy?: number;
+  /** Walks about within this many metres of where it was put, stopping now and then to peck: a hen. */
+  wanders?: number;
+  /** Startled by the truck coming within this many metres, going at any speed: it is off, flapping, before it is hit. */
+  flee?: number;
+  /** Lies flat in the road: the traffic drives over it, and other things pass over it too; only the truck and what falls on it move it. */
+  underfoot?: boolean;
+  /** Part of something put up in pieces, a scaffold: when one piece is knocked, those next to it come down a moment later, and theirs, until all of it is down. */
+  collapse?: boolean;
   /**
    * How it looks once it has been hit hard: the same parts, one for one, moved, turned or
    * shrunk to nothing. Only the look changes; it is still one solid body.
@@ -100,6 +113,29 @@ function stall(awning: number): ObjectKind {
     ],
   };
 }
+
+/** A stall with its goods laid out on the counter: rows of little things in the trade's colours. */
+function stocked(awning: number, goods: number[]): ObjectKind {
+  const plain = stall(awning);
+  const wares: ObjectPart[] = [];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) wares.push(box([0.11, 0.08 + ((i + j) % 2) * 0.03, 0.11], [-0.82 + i * 0.55, 0.92, -0.45 + j * 0.45], goods[(i + j * 2) % goods.length], { ghost: true }));
+  // And a crate of them on the ground in front.
+  wares.push(box([0.24, 0.16, 0.2], [0.6, 0.16, 0.95], 0xa07a4a, { ghost: true }), box([0.2, 0.05, 0.16], [0.6, 0.35, 0.95], goods[0], { ghost: true }));
+  return { ...plain, parts: [...plain.parts, ...wares] };
+}
+
+/** A striped canvas awning on four steel poles, four metres by five: knocked, the whole of it goes over. */
+function awning(color: number): ObjectKind {
+  const parts: ObjectPart[] = [];
+  for (const x of [-2, 2]) for (const z of [-2.5, 2.5]) parts.push(cyl(0.05, 1.7, [x, 1.7, z], 0x8c9096));
+  for (let k = 0; k < 4; k++) parts.push(box([0.5, 0.04, 2.55], [-1.5 + k, 3.42, 0], k % 2 ? color : 0xf2efe6, { ghost: true }));
+  for (const z of [-2.55, 2.55]) parts.push(box([2.05, 0.18, 0.02], [0, 3.22, z], color, { ghost: true }));
+  for (const x of [-2.05, 2.05]) parts.push(box([0.02, 0.18, 2.55], [x, 3.22, 0], color, { ghost: true }));
+  return { mass: 45, parts };
+}
+
+/** A radio with a speaker either side, on a stool: playing loud. */
+const RADIO: ObjectKind = { mass: 9, parts: [box([0.2, 0.25, 0.2], [0, 0.25, 0], 0x6e5a40), box([0.32, 0.14, 0.12], [0, 0.64, 0], 0x2a2e33), cyl(0.07, 0.01, [-0.18, 0.64, 0.12], 0x8c8a84, { ghost: true, rot: [Math.PI / 2, 0, 0] }), cyl(0.07, 0.01, [0.18, 0.64, 0.12], 0x8c8a84, { ghost: true, rot: [Math.PI / 2, 0, 0] })] };
 
 /**
  * A scooter on its stand. They are parked in rows along every kerb, close enough together
@@ -269,6 +305,75 @@ function pole(ahead: boolean, behind: boolean): ObjectKind {
   };
 }
 
+/**
+ * One storey of one bay of a scaffold, as one piece: the frame at its near end (local -Z), the steel plank over it at the top
+ * of the storey, cross braces or green net on its face (local +X, which faces the street once it is turned), braces behind
+ * too where they are low down; at the top, the rail; in some, a ladder. Only the frame's legs and the plank are solid: the
+ * rest is too thin to matter to a truck, and fewer solid parts are what keep the whole lot coming down at once cheap.
+ */
+function scaffoldBay(face: 'brace' | 'net', top: boolean, ladder: boolean): ObjectKind {
+  const RED = 0xd0502a;
+  const DEEP = 0xb8441f;
+  const STEEL_GREY = 0x6a6f75;
+  const F = -0.9;
+  const ghost = { ghost: true };
+  const brace = (x: number): ObjectPart[] => [box([0.015, 0.015, 1.24], [x, 0.85, 0], RED, { ghost: true, rot: [-0.757, 0, 0] }), box([0.015, 0.015, 1.24], [x, 0.85, 0], DEEP, { ghost: true, rot: [0.757, 0, 0] })];
+  return {
+    mass: 110,
+    effect: 'dust',
+    collapse: true,
+    parts: [
+      // The frame: two legs, solid; its bars, pins, sleeves and base plates.
+      ...[0.6, -0.6].map((x) => box([0.035, 0.85, 0.035], [x, 0.85, F], RED)),
+      box([0.6, 0.03, 0.03], [0, 1.67, F], RED, ghost),
+      box([0.6, 0.022, 0.022], [0, 1.4, F], DEEP, ghost),
+      box([0.022, 0.16, 0.022], [0.42, 1.53, F], DEEP, { ghost: true, rot: [0, 0, 0.8] }),
+      box([0.022, 0.16, 0.022], [-0.42, 1.53, F], DEEP, { ghost: true, rot: [0, 0, -0.8] }),
+      ...[0.6, -0.6].flatMap((x): ObjectPart[] => [
+        cyl(0.045, 0.06, [x, 1.62, F], STEEL_GREY, ghost),
+        box([0.05, 0.03, 0.05], [x, 0.95, F], STEEL_GREY, ghost),
+        box([0.09, 0.012, 0.09], [x, 0.012, F], 0x4a4f55, ghost),
+      ]),
+      // The plank, solid; its hooks, holes and striped toe boards.
+      box([0.6, 0.025, 0.84], [0, 1.73, 0], 0x9aa0a6),
+      ...[-0.88, 0.88].map((z) => box([0.62, 0.03, 0.025], [0, 1.74, z], 0x3a3f45, ghost)),
+      ...[-0.6, -0.2, 0.2, 0.6].map((z) => box([0.5, 0.004, 0.08], [0, 1.756, z], 0x7a8086, ghost)),
+      ...[-0.6, 0.6].flatMap((x): ObjectPart[] => [-0.66, -0.22, 0.22, 0.66].map((z, k) => box([0.012, 0.07, 0.22], [x, 1.82, z], k % 2 ? 0x1c1d20 : 0xf2c12e, ghost))),
+      // The face, and behind.
+      ...(face === 'brace'
+        ? [...brace(0.66), ...brace(-0.66)]
+        : [box([0.012, 0.84, 0.89], [0.66, 0.85, 0], 0x2f8a4a, ghost), ...[0.3, 0.85, 1.4].map((y) => box([0.016, 0.012, 0.89], [0.66, y, 0], 0x23703a, ghost))]),
+      ...(top
+        ? [...[-0.88, 0.88].map((z) => box([0.03, 0.55, 0.03], [0.6, 2.25, z], RED, ghost)), box([0.03, 0.03, 0.9], [0.6, 2.78, 0], RED, ghost), box([0.025, 0.025, 0.9], [0.6, 2.25, 0], DEEP, ghost)]
+        : []),
+      ...(ladder
+        ? [
+            ...[-0.22, 0.22].map((x) => box([0.025, 0.95, 0.025], [x, 0.85, 0], 0xb0b6bc, { ghost: true, rot: [0.55, 0, 0] })),
+            ...Array.from({ length: 6 }, (_, k): ObjectPart => box([0.22, 0.015, 0.015], [0, 0.2 + k * 0.28, -0.32 + k * 0.17], 0x8c9096, ghost)),
+          ]
+        : []),
+    ],
+  };
+}
+
+/** A hen: body, head, comb, tail. */
+function chicken(color: number): ObjectKind {
+  return {
+    mass: 2.5,
+    effect: 'feathers',
+    flee: 6,
+    wanders: 2.5,
+    parts: [
+      box([0.13, 0.13, 0.19], [0, 0.26, 0], color),
+      box([0.07, 0.08, 0.08], [0, 0.44, 0.18], color, { ghost: true }),
+      box([0.02, 0.04, 0.05], [0, 0.55, 0.18], 0xd0302a, { ghost: true }),
+      box([0.02, 0.03, 0.03], [0, 0.42, 0.27], 0xf2b51e, { ghost: true }),
+      box([0.09, 0.1, 0.04], [0, 0.38, -0.2], color, { ghost: true, rot: [-0.5, 0, 0] }),
+      ...[-0.05, 0.05].map((x) => box([0.012, 0.07, 0.012], [x, 0.07, 0], 0xe0a030, { ghost: true })),
+    ],
+  };
+}
+
 const crate = (color: number): ObjectKind => ({ mass: 12, effect: 'splinters', parts: [box([0.22, 0.2, 0.22], [0, 0.2, 0], color)] });
 
 export const OBJECT_KINDS = {
@@ -312,6 +417,229 @@ export const OBJECT_KINDS = {
   crateGreen: crate(0x6a9a3a),
   crateYellow: crate(0xe0c341),
   stallRed: stall(0xc8443a),
+  stallFruit: stocked(0xc8443a, [0xe0b020, 0xe8892a, 0x6a9a3a, 0xc8372d]),
+  stallVeg: stocked(0x3a8f4f, [0x6a9a3a, 0x8fbf4a, 0xd9cba0, 0x4f7a3a]),
+  stallClothes: stocked(0x3a7fc8, [0xe8e2d0, 0x2f62a8, 0xc8443a, 0x2a2e33]),
+  stallSnack: stocked(0xe0b020, [0xb5482f, 0xd9a62e, 0xf2efe6, 0x7a4a34]),
+  radio: RADIO,
+  /** A tall blue-glazed pot with a slender plant. */
+  flowerPotTall: { mass: 18, effect: 'shards', parts: [cyl(0.2, 0.36, [0, 0.36, 0], 0x2f5f9a), cyl(0.22, 0.03, [0, 0.72, 0], 0x23497a), cyl(0.04, 0.35, [0, 1.05, 0], 0x5a7a3a, { ghost: true }), cone(0.28, 0.35, [0, 1.35, 0], 0x4f8a4a, { ghost: true })] },
+  /** A wide low basin of flowers, pink and yellow. */
+  flowerPotLow: { mass: 16, effect: 'shards', parts: [cyl(0.42, 0.12, [0, 0.12, 0], 0xc9a27e), cyl(0.38, 0.03, [0, 0.25, 0], 0x5a3a24, { ghost: true }), ...[0, 1.1, 2.2, 3.3, 4.4, 5.5].map((a, k): ObjectPart => box([0.07, 0.07, 0.07], [Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.22], k % 2 ? 0xe86a9a : 0xf2c12e, { ghost: true })), box([0.25, 0.06, 0.25], [0, 0.29, 0], 0x4f8a4a, { ghost: true })] },
+  /** A big brown water jar, a lotus leaf floating in it. */
+  flowerPotJar: { mass: 30, effect: 'shards', parts: [cyl(0.36, 0.3, [0, 0.3, 0], 0x6e4a2e), cyl(0.3, 0.04, [0, 0.62, 0], 0x5a3a24), cyl(0.27, 0.01, [0, 0.6, 0], 0x4f8fa8, { ghost: true }), cyl(0.12, 0.01, [0.08, 0.62, 0.05], 0x4f8a4a, { ghost: true })] },
+  /** A glazed clay pot with a leafy plant in it: it breaks. */
+  /**
+   * A builder's scaffold, the frame kind put up all over Taiwan, in pieces that stack: a door-shaped frame of steel tube 1.2 m
+   * across and 1.7 m high; a steel plank laid across two frames; a pair of cross braces between two frames along the face; a
+   * length of green safety net hung on the face. Each piece's base is at the bottom of its storey.
+   */
+  scaffoldFrame: {
+    mass: 60,
+    effect: 'dust',
+    collapse: true,
+    parts: [
+      box([0.035, 0.85, 0.035], [0.6, 0.85, 0], 0xd0502a),
+      box([0.035, 0.85, 0.035], [-0.6, 0.85, 0], 0xd0502a),
+      box([0.6, 0.03, 0.03], [0, 1.67, 0], 0xd0502a, { ghost: true }),
+      box([0.6, 0.022, 0.022], [0, 1.4, 0], 0xb8441f, { ghost: true }),
+      box([0.022, 0.16, 0.022], [0.42, 1.53, 0], 0xb8441f, { ghost: true, rot: [0, 0, 0.8] }),
+      box([0.022, 0.16, 0.022], [-0.42, 1.53, 0], 0xb8441f, { ghost: true, rot: [0, 0, -0.8] }),
+      // The joint pins at the top of each leg, the sleeves the braces clip to, a base plate under each foot.
+      ...[0.6, -0.6].flatMap((x): ObjectPart[] => [
+        cyl(0.045, 0.06, [x, 1.62, 0], 0x6a6f75, { ghost: true }),
+        box([0.05, 0.03, 0.05], [x, 0.95, 0], 0x6a6f75, { ghost: true }),
+        box([0.09, 0.012, 0.09], [x, 0.012, 0], 0x4a4f55, { ghost: true }),
+      ]),
+    ],
+  },
+  scaffoldBayBrace: scaffoldBay('brace', false, false),
+  scaffoldBayBraceLadder: scaffoldBay('brace', false, true),
+  scaffoldBayNet: scaffoldBay('net', false, false),
+  scaffoldBayNetLadder: scaffoldBay('net', false, true),
+  scaffoldBayTop: scaffoldBay('net', true, false),
+  scaffoldBayTopLadder: scaffoldBay('net', true, true),
+  /** A three-seat sofa, its length along Z: it bursts in stuffing. */
+  sofa: {
+    mass: 45,
+    effect: 'feathers',
+    parts: [
+      box([0.42, 0.18, 0.95], [0, 0.3, 0], 0x3f6b5a),
+      box([0.12, 0.28, 0.95], [-0.32, 0.7, 0], 0x355c4d),
+      ...[-0.9, 0.9].map((z) => box([0.42, 0.14, 0.08], [0, 0.58, z], 0x355c4d)),
+      ...[-0.6, 0, 0.6].map((z) => box([0.3, 0.06, 0.28], [0.06, 0.52, z], 0x4a7c69, { ghost: true })),
+      ...[-0.85, 0.85].flatMap((z) => [-0.3, 0.3].map((x) => box([0.04, 0.06, 0.04], [x, 0.06, z], 0x2a1a12, { ghost: true }))),
+    ],
+  },
+  /** A tall fridge, white: it goes over with a clang. */
+  fridge: {
+    mass: 70,
+    effect: 'sparks',
+    parts: [
+      box([0.36, 0.85, 0.34], [0, 0.85, 0], 0xe8ecef),
+      box([0.37, 0.006, 0.35], [0, 1.12, 0], 0x9aa0a6, { ghost: true }),
+      box([0.02, 0.18, 0.02], [0.3, 1.4, 0.36], 0x8c9096, { ghost: true }),
+      box([0.02, 0.22, 0.02], [0.3, 0.8, 0.36], 0x8c9096, { ghost: true }),
+    ],
+  },
+  /** A wardrobe of brown veneer, its length along Z: it splits. */
+  wardrobe: {
+    mass: 60,
+    effect: 'splinters',
+    parts: [
+      box([0.3, 0.95, 0.6], [0, 0.95, 0], 0x8a5a36),
+      box([0.31, 0.006, 0.6], [0, 0.95, 0], 0x5a3a24, { ghost: true }),
+      box([0.31, 0.95, 0.006], [0, 0.95, 0], 0x5a3a24, { ghost: true }),
+      ...[-0.06, 0.06].map((z) => box([0.02, 0.06, 0.015], [0.31, 1.0, z], 0xd9a62e, { ghost: true })),
+    ],
+  },
+  /** A mattress, laid flat. */
+  mattress: {
+    mass: 20,
+    effect: 'feathers',
+    parts: [box([0.7, 0.1, 0.95], [0, 0.1, 0], 0xf0ece2), box([0.71, 0.02, 0.96], [0, 0.1, 0], 0x6a8ec8, { ghost: true })],
+  },
+  /** An old television set, all box behind its screen. */
+  tvSet: {
+    mass: 25,
+    effect: 'sparks',
+    parts: [box([0.35, 0.28, 0.3], [0, 0.28, 0], 0x2a2e34), box([0.28, 0.21, 0.01], [0, 0.3, 0.3], 0x4a5a6a, { ghost: true })],
+  },
+  /** Four metres of steel crash barrier on two posts, as along every mountain road: it takes a scrape; a truck going fast goes through it. */
+  guardrail: {
+    mass: 160,
+    effect: 'sparks',
+    sturdy: 6,
+    parts: [
+      box([0.06, 0.17, 2.0], [0.1, 0.62, 0], 0xc9ced3),
+      box([0.065, 0.04, 2.0], [0.12, 0.62, 0], 0xa8adb2, { ghost: true }),
+      ...[-1.6, 1.6].map((z) => box([0.06, 0.4, 0.06], [-0.05, 0.4, z], 0x8c9096)),
+      ...[-1.0, 1.0].map((z) => box([0.07, 0.06, 0.12], [0.17, 0.62, z], 0xf2c12e, { ghost: true })),
+    ],
+  },
+  /** An iron manhole cover, flush with the road. Water under it throws it up. */
+  manholeCover: {
+    mass: 45,
+    underfoot: true,
+    effect: 'sparks',
+    parts: [cyl(0.4, 0.025, [0, 0.025, 0], 0x4a4f55), cyl(0.3, 0.003, [0, 0.051, 0], 0x5a6068, { ghost: true }), box([0.28, 0.003, 0.02], [0, 0.052, 0], 0x3a3f45, { ghost: true }), box([0.02, 0.003, 0.28], [0, 0.052, 0], 0x3a3f45, { ghost: true })],
+  },
+  /** A builder's banner hung on a scaffold's face: blue, with white bands. */
+  scaffoldBanner: {
+    mass: 10,
+    collapse: true,
+    parts: [box([0.015, 0.8, 2.6], [0, 0.85, 0], 0x2a5fa8), ...[0.35, 1.35].map((y) => box([0.02, 0.08, 2.6], [0, y, 0], 0xf0ece2, { ghost: true })), box([0.02, 0.22, 1.6], [0, 0.85, 0], 0xf2c12e, { ghost: true })],
+  },
+  scaffoldBrace: {
+    mass: 16,
+    collapse: true,
+    parts: [box([0.015, 0.015, 1.24], [0, 0.85, 0], 0xd0502a, { rot: [-0.757, 0, 0] }), box([0.015, 0.015, 1.24], [0, 0.85, 0], 0xb8441f, { ghost: true, rot: [0.757, 0, 0] })],
+  },
+  scaffoldNet: {
+    mass: 12,
+    collapse: true,
+    parts: [box([0.012, 0.84, 0.89], [0, 0.85, 0], 0x2f8a4a), ...[0.3, 0.85, 1.4].map((y) => box([0.016, 0.012, 0.89], [0, y, 0], 0x23703a, { ghost: true }))],
+  },
+  /** A terracotta pot with a round bush in flower, red and pink all over: azalea. */
+  flowerPotBloom: {
+    mass: 16,
+    effect: 'shards',
+    parts: [
+      cyl(0.26, 0.2, [0, 0.2, 0], 0xb5533c),
+      cyl(0.29, 0.04, [0, 0.4, 0], 0x9a4530),
+      cyl(0.34, 0.2, [0, 0.66, 0], 0x3f7a3f, { ghost: true }),
+      cyl(0.24, 0.08, [0, 0.9, 0], 0x4a8a46, { ghost: true }),
+      ...Array.from({ length: 14 }, (_, k): ObjectPart => {
+        const a = k * 2.4;
+        const r = k % 2 ? 0.34 : 0.2;
+        const y = k % 2 ? 0.55 + (k % 3) * 0.12 : 0.92;
+        return box([0.06, 0.045, 0.06], [Math.cos(a) * r, y, Math.sin(a) * r], k % 3 ? 0xe0326a : 0xff8fb8, { ghost: true });
+      }),
+    ],
+  },
+  /** A white glazed pot with stems of yellow chrysanthemums standing up out of it. */
+  flowerPotYellow: {
+    mass: 14,
+    effect: 'shards',
+    parts: [
+      cyl(0.22, 0.24, [0, 0.24, 0], 0xeef0ea),
+      cyl(0.23, 0.03, [0, 0.38, 0], 0x2f6fb0),
+      cyl(0.2, 0.02, [0, 0.49, 0], 0x5a3a24, { ghost: true }),
+      ...Array.from({ length: 7 }, (_, k): ObjectPart[] => {
+        const a = k * 0.9;
+        const r = k === 0 ? 0 : 0.14;
+        const h = 0.75 + (k % 3) * 0.1;
+        return [
+          box([0.015, (h - 0.5) / 2, 0.015], [Math.cos(a) * r, (h + 0.5) / 2, Math.sin(a) * r], 0x4f8a4a, { ghost: true }),
+          box([0.075, 0.04, 0.075], [Math.cos(a) * r, h, Math.sin(a) * r], k % 2 ? 0xf2c12e : 0xffa020, { ghost: true }),
+        ];
+      }).flat(),
+    ],
+  },
+  flowerPot: { mass: 14, effect: 'shards', parts: [cyl(0.24, 0.22, [0, 0.22, 0], 0xb5533c), cyl(0.27, 0.04, [0, 0.44, 0], 0x9a4530), cyl(0.22, 0.02, [0, 0.46, 0], 0x5a3a24, { ghost: true }), ...[0, 1.3, 2.6, 3.9, 5.2].map((a): ObjectPart => box([0.06, 0.2, 0.16], [Math.cos(a) * 0.12, 0.62, Math.sin(a) * 0.12], 0x3f8a3f, { ghost: true, rot: [Math.sin(a) * 0.5, a, Math.cos(a) * 0.5] }))] },
+  /** A caterer's stand: a steel top on four legs, a great wok over a ring of blue flame, a steamer. Heavy, but it goes over. */
+  wokStand: {
+    mass: 260,
+    effect: 'sparks',
+    parts: [
+      box([0.9, 0.06, 1.3], [0, 0.82, 0], 0x8c9096),
+      ...[-0.8, 0.8].flatMap((x): ObjectPart[] => [-1.2, 1.2].map((z) => box([0.05, 0.4, 0.05], [x, 0.4, z], 0x3a3f45))),
+      cyl(0.8, 0.12, [0, 1.0, 0.4], 0x2a2e33),
+      cone(0.45, 0.2, [0, 0.7, 0.4], 0x3a8fff, { ghost: true }),
+      cyl(0.5, 0.35, [0, 1.25, -0.7], 0xb08a5a),
+    ],
+  },
+  awningRed: awning(0xc8372d),
+  awningBlue: awning(0x2f6fb0),
+  /** A god's sedan chair on its carrying poles, for the bearers to take on their shoulders. */
+  palanquinChair: {
+    mass: 600,
+    parts: [
+      cyl(0.05, 2.3, [0.8, 1.4, 0], 0x6e2a22, { rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.05, 2.3, [-0.8, 1.4, 0], 0x6e2a22, { rot: [Math.PI / 2, 0, 0] }),
+      box([0.62, 0.08, 0.74], [0, 1.48, 0], 0x6e2a22),
+      box([0.55, 0.55, 0.65], [0, 2.1, 0], 0xc8372d),
+      box([0.4, 0.4, 0.02], [0, 2.1, 0.66], 0xd9a62e, { ghost: true }),
+      box([0.3, 0.3, 0.03], [0, 2.1, 0.67], 0x2a1a12, { ghost: true }),
+      ...[-1, 1].map((x) => box([0.02, 0.4, 0.5], [x * 0.56, 2.1, 0], 0xd9a62e, { ghost: true })),
+      box([0.75, 0.08, 0.85], [0, 2.72, 0], 0xd9a62e),
+      box([0.5, 0.18, 0.6], [0, 2.92, 0], 0xc8372d),
+      box([0.34, 0.06, 0.42], [0, 3.13, 0], 0xd9a62e),
+      cyl(0.09, 0.12, [0, 3.3, 0], 0xd9a62e),
+      ...[[-0.7, -0.8], [0.7, -0.8], [-0.7, 0.8], [0.7, 0.8]].map(([x, z]) => box([0.05, 0.25, 0.05], [x, 2.55, z], 0xe0322a, { ghost: true })),
+    ],
+  },
+  /** A string of firecrackers laid flat on the ground, a pack of red: it goes off as soon as anything rolls over it. */
+  firecrackerMat: {
+    mass: 3,
+    effect: 'sparks',
+    crackle: 2.6,
+    trip: true,
+    // A string of them laid out on the ground: two rows of little red rolls along a fuse, gold paper at the head.
+    parts: [
+      box([1.1, 0.015, 0.16], [0, 0.015, 0], 0x2a1a12),
+      ...Array.from({ length: 16 }, (_, k) => -1.0 + k * 0.133).flatMap((x): ObjectPart[] => [-0.06, 0.06].map((z) => cyl(0.032, 0.06, [x, 0.06, z], 0xd0302a, { ghost: true, rot: [Math.PI / 2, 0, 0] }))),
+      box([1.12, 0.008, 0.008], [0, 0.1, 0], 0x6e5a40, { ghost: true }),
+      box([0.1, 0.06, 0.16], [1.12, 0.06, 0], 0xe8c35a, { ghost: true }),
+    ],
+  },
+  stallIncense: stocked(0xb8352b, [0xd9a62e, 0xc8372d, 0xe8892a, 0x7a2a22]),
+  /** A carton of gold paper money, for burning: it bursts into a shower of gold. */
+  paperBox: { mass: 6, effect: 'paper', parts: [box([0.3, 0.18, 0.22], [0, 0.18, 0], 0xd9a62e), box([0.31, 0.02, 0.23], [0, 0.3, 0], 0xb5482f, { ghost: true })] },
+  /** The furnace paper money is burnt in: brick, with a roof and a chimney. Knocked down, it goes up in ash and smoke. */
+  paperFurnace: {
+    mass: 2500,
+    effect: 'ash',
+    parts: [
+      // A two-tiered tower of brick, its mouth wide open and glowing, a tiled roof, a tall chimney.
+      box([1.3, 0.9, 1.3], [0, 0.9, 0], 0xa8553c),
+      box([0.75, 0.55, 0.05], [0, 1.0, 1.32], 0xff8a2a, { ghost: true }),
+      box([0.6, 0.4, 0.06], [0, 1.0, 1.33], 0xffd25a, { ghost: true }),
+      box([1.0, 0.6, 1.0], [0, 2.4, 0], 0xb8352b),
+      box([1.5, 0.2, 1.5], [0, 3.15, 0], 0xd8742a),
+      box([0.45, 0.8, 0.45], [0, 4.1, 0], 0xa8553c),
+    ],
+  },
   stallBlue: stall(0x3a7fc8),
   stallYellow: stall(0xe0b020),
   stallGreen: stall(0x4a9a5a),
@@ -502,6 +830,221 @@ export const OBJECT_KINDS = {
     parts: [cyl(0.32, 0.46, [0, 0.46, 0], 0xb5362a), cyl(0.33, 0.04, [0, 0.62, 0], 0x2a2e33, { ghost: true }), cyl(0.33, 0.04, [0, 0.3, 0], 0x2a2e33, { ghost: true })],
   },
   sandbag: { mass: 30, parts: [box([0.45, 0.14, 0.24], [0, 0.14, 0], 0xb9a57a)] },
+  /** A ridge tent: canvas over a pole, pegged down. Its length runs along Z. */
+  armyTent: {
+    mass: 40,
+    parts: [
+      box([0.55, 0.4, 1.5], [0, 0.4, 0], 0x6f7a4e),
+      box([0.95, 0.95, 1.6], [0, 0, 0], 0x6f7a4e, { rot: [0, 0, Math.PI / 4], ghost: true }),
+      box([0.3, 0.5, 0.02], [0, 0.5, 1.61], 0x4f5838, { ghost: true }),
+    ],
+  },
+  /** A box of ammunition: olive, with a band. Nothing in it goes off. */
+  ammoCrate: { mass: 22, effect: 'splinters', parts: [box([0.45, 0.22, 0.28], [0, 0.22, 0], 0x5d6a3e), box([0.46, 0.04, 0.29], [0, 0.3, 0], 0x3f4a2a, { ghost: true })] },
+  jerrycan: { mass: 8, parts: [box([0.17, 0.24, 0.09], [0, 0.24, 0], 0x4f5b36), box([0.05, 0.03, 0.05], [0.08, 0.5, 0], 0x2a2e33, { ghost: true })] },
+  /** A field kitchen: a stove on wheels with its chimney, and the pots on it. */
+  fieldKitchen: {
+    mass: 120,
+    parts: [
+      box([0.6, 0.45, 0.9], [0, 0.45, 0], 0x4a5240),
+      cyl(0.08, 0.6, [0.3, 1.5, -0.5], 0x2a2e33, { ghost: true }),
+      cyl(0.24, 0.12, [-0.1, 1.02, 0.3], STEEL, { ghost: true }),
+      cyl(0.18, 0.1, [0.15, 1.0, -0.1], STEEL, { ghost: true }),
+    ],
+  },
+  /** A jeep, parked: heavy, but it gives. */
+  jeep: {
+    mass: 650,
+    effect: 'sparks',
+    parts: [
+      box([0.8, 0.42, 1.7], [0, 0.55, 0], 0x5d6a3e),
+      box([0.78, 0.2, 0.55], [0, 1.15, 1.1], 0x55613a, { ghost: true }),
+      box([0.74, 0.3, 0.03], [0, 1.45, 0.5], 0x9fb4bd, { ghost: true, rot: [-0.25, 0, 0] }),
+      box([0.3, 0.3, 0.08], [0.35, 1.25, -0.3], 0x3a3f36, { ghost: true }),
+      box([0.3, 0.3, 0.08], [-0.35, 1.25, -0.3], 0x3a3f36, { ghost: true }),
+      ...[[-1, 1.1], [1, 1.1], [-1, -1.1], [1, -1.1]].map(([side, along]) => cyl(0.38, 0.13, [side * 0.82, 0.38, along], 0x1c1d20, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      cyl(0.36, 0.1, [0, 1.05, -1.78], 0x1c1d20, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+    ],
+  },
+  /** A handcart: a box on two wheels, with shafts. */
+  cart: {
+    mass: 45,
+    effect: 'splinters',
+    parts: [
+      box([0.5, 0.25, 0.85], [0, 0.55, 0], WOOD),
+      box([0.46, 0.02, 0.8], [0, 0.82, 0], 0x7a5a38, { ghost: true }),
+      cyl(0.45, 0.04, [0.56, 0.45, 0], 0x5a4630, { ghost: true, rot: [0, 0, Math.PI / 2] }),
+      cyl(0.45, 0.04, [-0.56, 0.45, 0], 0x5a4630, { ghost: true, rot: [0, 0, Math.PI / 2] }),
+      box([0.03, 0.03, 0.6], [0.4, 0.6, 1.4], 0x7a5a38, { ghost: true }),
+      box([0.03, 0.03, 0.6], [-0.4, 0.6, 1.4], 0x7a5a38, { ghost: true }),
+    ],
+  },
+  haystack: { mass: 70, effect: 'straw', parts: [cyl(0.95, 0.55, [0, 0.55, 0], 0xd2b455), cone(0.95, 0.4, [0, 1.5, 0], 0xc4a548, { ghost: true })] },
+  scarecrow: {
+    mass: 12,
+    effect: 'splinters',
+    parts: [
+      foot(0.2, DARK),
+      cyl(0.04, 0.9, [0, 0.9, 0], WOOD),
+      box([0.6, 0.04, 0.04], [0, 1.4, 0], WOOD, { ghost: true }),
+      box([0.24, 0.3, 0.1], [0, 1.2, 0], 0x7a4a3a, { ghost: true }),
+      cyl(0.16, 0.16, [0, 1.82, 0], 0xcdb98a, { ghost: true }),
+      cone(0.3, 0.14, [0, 2.1, 0], 0x6b5a3a, { ghost: true }),
+    ],
+  },
+  // ---- things that stand in a field or a wood: each goes its own way when it is hit
+  /** A duck. They stand about in the road in dozens. */
+  duck: { mass: 2, effect: 'feathers', parts: [box([0.11, 0.1, 0.17], [0, 0.16, 0], 0xf2efe6), box([0.06, 0.07, 0.07], [0, 0.34, 0.14], 0xf2efe6, { ghost: true }), box([0.03, 0.02, 0.05], [0, 0.33, 0.24], 0xe8a020, { ghost: true })] },
+  /** A watermelon, left where it grew: it bursts. */
+  melon: { mass: 7, juice: 0xe2485a, parts: [cyl(0.22, 0.2, [0, 0.2, 0], 0x3f8a48), cyl(0.225, 0.03, [0, 0.2, 0], 0x2f6a38, { ghost: true })] },
+  /** Sacks of rice, stacked: they split. */
+  riceSack: { mass: 26, effect: 'grain', parts: [box([0.42, 0.14, 0.26], [0, 0.14, 0], 0xd9cba0), box([0.4, 0.13, 0.25], [0.04, 0.41, 0.02], 0xcfc094, { rot: [0, 0.3, 0] }), box([0.2, 0.02, 0.05], [0, 0.29, 0.27], 0xb5362a, { ghost: true })] },
+  /** A rack of greens put out to dry. */
+  dryingRack: {
+    mass: 12,
+    effect: 'leaves',
+    parts: [
+      box([0.9, 0.03, 0.3], [0, 0.03, 0], WOOD, { weight: 5 }),
+      cyl(0.03, 0.6, [-0.85, 0.63, 0], WOOD, { ghost: true }), cyl(0.03, 0.6, [0.85, 0.63, 0], WOOD, { ghost: true }),
+      box([0.9, 0.02, 0.02], [0, 1.22, 0], WOOD, { ghost: true }),
+      ...[-0.6, -0.2, 0.2, 0.6].map((x, i) => box([0.14, 0.26, 0.03], [x, 0.94, 0], i % 2 ? 0x6f9a4a : 0x8ab05a, { ghost: true })),
+    ],
+  },
+  /** The stand-pipe a field is watered from. Broken off, it goes on spouting. */
+  standpipe: { mass: 60, effect: 'water', geyser: true, parts: [cyl(0.09, 0.45, [0, 0.45, 0], 0x4a7fb5), cyl(0.14, 0.05, [0, 0.9, 0], 0x35608a), box([0.2, 0.05, 0.05], [0.2, 0.7, 0], 0x35608a, { ghost: true })] },
+  /** A box of bees. They come out. */
+  beehive: { mass: 14, effect: 'bees', parts: [box([0.28, 0.2, 0.24], [0, 0.32, 0], 0xe8d49a), box([0.3, 0.03, 0.26], [0, 0.55, 0], 0x8a6a44, { ghost: true }), box([0.06, 0.12, 0.06], [0.2, 0.06, 0.16], 0x6e5236, { ghost: true }), box([0.06, 0.12, 0.06], [-0.2, 0.06, -0.16], 0x6e5236, { ghost: true })] },
+  /** The little tractor every farm has: heavy, and it rings. */
+  tractor: {
+    mass: 520,
+    effect: 'sparks',
+    parts: [
+      box([0.55, 0.4, 1.2], [0, 0.6, 0], 0x3f8a5a),
+      box([0.45, 0.3, 0.45], [0, 1.25, -0.5], 0x35704a, { ghost: true }),
+      cyl(0.05, 0.4, [0.3, 1.5, 0.7], 0x2a2e33, { ghost: true }),
+      ...[[-1, 0.7], [1, 0.7], [-1, -0.7], [1, -0.7]].map(([side, along]) => cyl(along < 0 ? 0.55 : 0.36, 0.14, [side * 0.7, along < 0 ? 0.55 : 0.36, along], 0x1c1d20, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+    ],
+  },
+  /** Bamboo: one cane. They grow in hundreds, and go down like grass. */
+  bamboo: { mass: 4, effect: 'bamboo', parts: [cyl(0.045, 1.6, [0, 1.6, 0], 0x7fa850), cone(0.4, 0.5, [0, 3.5, 0], 0x6f9a4a, { ghost: true })] },
+  /** Firewood, split and stacked. */
+  woodpile: { mass: 34, effect: 'splinters', parts: [box([0.7, 0.3, 0.3], [0, 0.3, 0], 0x9a7448), box([0.66, 0.02, 0.28], [0, 0.61, 0], 0x7a5a38, { ghost: true }), ...[-0.5, -0.17, 0.17, 0.5].map((x) => cyl(0.1, 0.01, [x, 0.3, 0.305], 0xcfb07a, { ghost: true, rot: [Math.PI / 2, 0, 0] }))] },
+  /** A length of trunk, sawn and left lying: it rolls. */
+  logRound: { mass: 30, parts: [cyl(0.24, 0.9, [0, 0.24, 0], 0x7a5a38, { rot: [0, 0, Math.PI / 2] }), cyl(0.2, 0.905, [0, 0.24, 0], 0xcfb07a, { ghost: true, rot: [0, 0, Math.PI / 2] })] },
+  /** A hen, white or brown, scratching about by a door: she is off, flapping, when the truck comes. */
+  chickenWhite: chicken(0xf4f2ec),
+  chickenBrown: chicken(0xc98a4a),
+  chickenBlack: chicken(0x3a3330),
+  /** A round bamboo tray of rice laid out to dry, and one of strips of radish. */
+  trayGrain: { mass: 3, effect: 'rice', parts: [cyl(0.6, 0.03, [0, 0.04, 0], 0xb89a62), cyl(0.55, 0.02, [0, 0.08, 0], 0xf2c94c, { ghost: true })] },
+  trayVeg: { mass: 3, effect: 'straw', parts: [cyl(0.6, 0.03, [0, 0.04, 0], 0xb89a62), cyl(0.55, 0.02, [0, 0.08, 0], 0xe8dcc0, { ghost: true }), ...[-0.3, 0, 0.3].map((x) => box([0.06, 0.02, 0.4], [x, 0.11, 0], 0xd9c8a0, { ghost: true, rot: [0, x * 2, 0] }))] },
+  /** A wooden rake for turning rice, left lying. */
+  rake: { mass: 2, effect: 'splinters', parts: [box([0.02, 0.02, 0.9], [0, 0.03, 0], 0x9a7448), box([0.4, 0.03, 0.04], [0, 0.04, 0.9], 0x7a5a38)] },
+  /** A board of black and yellow chevrons on two posts at the outside of a bend, pointing the way round. */
+  chevron: {
+    mass: 20,
+    parts: [
+      ...[-0.5, 0.5].map((x) => box([0.04, 0.6, 0.04], [x, 0.6, 0], 0x8c9096)),
+      box([0.75, 0.3, 0.02], [0, 1.45, 0], 0xf2c12e),
+      ...[-0.45, 0, 0.45].flatMap((x): ObjectPart[] => [
+        box([0.05, 0.16, 0.022], [x - 0.07, 1.53, 0], 0x1c1d20, { ghost: true, rot: [0, 0, 0.75] }),
+        box([0.05, 0.16, 0.022], [x - 0.07, 1.37, 0], 0x1c1d20, { ghost: true, rot: [0, 0, -0.75] }),
+      ]),
+    ],
+  },
+  /** A boulder come down off the hillside: a truck does not shove it aside, it hits it. */
+  boulder: { mass: 650, effect: 'dust', parts: [box([0.75, 0.55, 0.65], [0, 0.55, 0], 0x7d7a72, { rot: [0.15, 0.4, 0.1] }), box([0.5, 0.35, 0.55], [0.35, 0.95, -0.1], 0x8b8880, { ghost: true, rot: [0.3, 0.9, 0.2] })] },
+  /** A lump of rock small enough to shift. */
+  rockSmall: { mass: 38, effect: 'dust', parts: [box([0.3, 0.22, 0.26], [0, 0.22, 0], 0x8b8880, { rot: [0.2, 0.5, 0.15] })] },
+  /** A post with boards on it, saying which way and how far. */
+  trailSign: { mass: 9, effect: 'splinters', parts: [foot(0.18, DARK), cyl(0.05, 0.9, [0, 0.9, 0], WOOD), box([0.4, 0.09, 0.02], [0.2, 1.6, 0], 0xe8d49a, { ghost: true }), box([0.35, 0.09, 0.02], [-0.18, 1.35, 0], 0xe8d49a, { ghost: true })] },
+  /** Racks of logs that mushrooms are grown on. */
+  mushroomRack: {
+    mass: 20,
+    effect: 'splinters',
+    parts: [
+      box([0.7, 0.03, 0.3], [0, 0.03, 0], WOOD, { weight: 4 }),
+      ...[-0.5, -0.17, 0.17, 0.5].flatMap((x) => [
+        cyl(0.07, 0.55, [x, 0.6, 0], 0x5a4630, { ghost: true, rot: [0.35, 0, 0] }),
+        cyl(0.08, 0.02, [x, 0.8, 0.1], 0xcdb98a, { ghost: true }),
+        cyl(0.07, 0.02, [x, 0.5, -0.02], 0xcdb98a, { ghost: true }),
+      ]),
+    ],
+  },
+  /** A table of offerings before a wayside shrine: fruit, mostly. */
+  offerings: { mass: 18, juice: 0xf08a24, parts: [box([0.5, 0.03, 0.3], [0, 0.6, 0], 0xb8433a), box([0.04, 0.3, 0.04], [0.42, 0.3, 0.22], 0x7a2a22), box([0.04, 0.3, 0.04], [-0.42, 0.3, -0.22], 0x7a2a22), box([0.04, 0.3, 0.04], [0.42, 0.3, -0.22], 0x7a2a22), box([0.04, 0.3, 0.04], [-0.42, 0.3, 0.22], 0x7a2a22), ...[-0.25, 0, 0.25].map((x) => cyl(0.09, 0.08, [x, 0.71, 0], 0xf08a24, { ghost: true }))] },
+  /** A betel palm: a trunk like a pole and a tuft at the top. They stand in rows along every country road. */
+  betelPalm: { mass: 240, effect: 'leaves', parts: [foot(0.24, 0x6e5236), cyl(0.11, 2.8, [0, 2.8, 0], 0x9a8a6a), cone(1.1, 0.5, [0, 6, 0], 0x4f8a4a, { ghost: true }), cone(0.7, 0.35, [0, 6.5, 0], 0x5d9a52, { ghost: true })] },
+  /** The round mirror on a post at a blind corner. */
+  mirror: { mass: 18, effect: 'sparks', parts: [foot(0.2, DARK), cyl(0.04, 1.2, [0, 1.2, 0], 0xe07a28), cyl(0.38, 0.03, [0, 2.6, 0.05], 0xe07a28, { ghost: true, rot: [Math.PI / 2, 0, 0] }), cyl(0.31, 0.035, [0, 2.6, 0.06], 0xcfe0e8, { ghost: true, rot: [Math.PI / 2, 0, 0] })] },
+  /** A big glazed jar of water, as stands by every old house's door. */
+  /** A coil of steel sheet, as it comes from the mill: three tonnes, and nothing stops it. */
+  steelCoil: { mass: 3000, parts: [cyl(0.75, 0.6, [0, 0.6, 0], 0x9aa3ab), cyl(0.3, 0.605, [0, 0.6, 0], 0x3a3f45, { ghost: true }), cyl(0.755, 0.04, [0, 0.95, 0], 0xb5362a, { ghost: true }), cyl(0.755, 0.04, [0, 0.25, 0], 0xb5362a, { ghost: true })] },
+  /** A length of iron handrail on two posts, two metres of it: down the middle of a flight of steps. */
+  handrail: { mass: 22, parts: [box([0.04, 0.04, 1.0], [0, 1.0, 0], 0x59606a), cyl(0.03, 0.5, [0, 0.5, 0.85], 0x59606a), cyl(0.03, 0.5, [0, 0.5, -0.85], 0x59606a)] },
+  /** A sign for a way meant for people on foot: a blue disc with a figure walking on it, on a post, and a white plate under it. */
+  signWalk: {
+    mass: 30,
+    parts: [
+      foot(0.22, STEEL),
+      cyl(0.05, 1.15, [0, 1.15, 0], STEEL),
+      cyl(0.36, 0.025, [0, 2.45, 0], 0x1f5fbf, { rot: [Math.PI / 2, 0, 0] }),
+      box([0.035, 0.12, 0.01], [0.0, 2.48, 0.03], 0xffffff, { ghost: true, rot: [0, 0, 0.15] }),
+      box([0.03, 0.1, 0.01], [0.06, 2.3, 0.03], 0xffffff, { ghost: true, rot: [0, 0, -0.45] }),
+      box([0.03, 0.1, 0.01], [-0.06, 2.3, 0.03], 0xffffff, { ghost: true, rot: [0, 0, 0.45] }),
+      box([0.04, 0.04, 0.01], [0.02, 2.66, 0.03], 0xffffff, { ghost: true }),
+      box([0.3, 0.1, 0.02], [0, 1.95, 0], 0xf4f4f0),
+    ],
+  },
+  vat: { mass: 55, effect: 'water', parts: [cyl(0.42, 0.4, [0, 0.4, 0], 0x7a4a34), cyl(0.36, 0.02, [0, 0.82, 0], 0x4f8fa8, { ghost: true })] },
+  /** Something growing in a pot. */
+  pot: { mass: 9, effect: 'leaves', parts: [cyl(0.2, 0.16, [0, 0.16, 0], 0xb5533c), cone(0.34, 0.3, [0, 0.62, 0], 0x4f8a4a, { ghost: true })] },
+  /** The little blue lorry every farm has. */
+  farmTruck: {
+    mass: 700,
+    effect: 'sparks',
+    parts: [
+      box([0.75, 0.3, 1.9], [0, 0.6, 0], 0x2f62a8),
+      box([0.72, 0.42, 0.6], [0, 1.3, 1.2], 0x3a72b8, { ghost: true }),
+      box([0.66, 0.2, 0.03], [0, 1.4, 1.81], 0x9fb4bd, { ghost: true }),
+      box([0.75, 0.2, 0.04], [0, 1.1, -1.86], 0x28528e, { ghost: true }), box([0.04, 0.2, 1.2], [0.71, 1.1, -0.7], 0x28528e, { ghost: true }), box([0.04, 0.2, 1.2], [-0.71, 1.1, -0.7], 0x28528e, { ghost: true }),
+      ...[[-1, 1.2], [1, 1.2], [-1, -1.2], [1, -1.2]].map(([side, along]) => cyl(0.33, 0.12, [side * 0.74, 0.33, along], 0x1c1d20, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+    ],
+  },
+  /** One leaf of a big timber gate: planks on a frame, with iron studs. Two of them shut a gateway; a lorry opens it. */
+  woodGate: {
+    mass: 95,
+    effect: 'splinters',
+    parts: [
+      box([1.45, 1.3, 0.07], [0, 1.35, 0], 0x7a5230),
+      box([1.45, 0.08, 0.09], [0, 0.6, 0], 0x5a3a22, { ghost: true }), box([1.45, 0.08, 0.09], [0, 2.1, 0], 0x5a3a22, { ghost: true }),
+      ...[-0.9, 0, 0.9].flatMap((x) => [cyl(0.05, 0.02, [x, 0.6, 0.09], 0x2a2e33, { ghost: true, rot: [Math.PI / 2, 0, 0] }), cyl(0.05, 0.02, [x, 2.1, 0.09], 0x2a2e33, { ghost: true, rot: [Math.PI / 2, 0, 0] })]),
+    ],
+  },
+  /** A young tree, no thicker than a wrist: it goes down under anything. */
+  sapling: { mass: 40, effect: 'leaves', parts: [foot(0.18, 0x5a3f28), cyl(0.06, 1, [0, 1, 0], 0x6b4a2e), cone(0.75, 0.9, [0, 2.5, 0], 0x6aa85a, { ghost: true })] },
+  /** What a fire leaves of a tree: a black trunk and a few stumps of branches. It goes over when it is hit. */
+  deadTree: {
+    mass: 320,
+    effect: 'splinters',
+    parts: [
+      foot(0.3, 0x2a2420),
+      cyl(0.17, 1.7, [0, 1.7, 0], 0x3a2f28),
+      box([0.05, 0.7, 0.05], [0.4, 3, 0], 0x33291f, { ghost: true, rot: [0, 0, -0.7] }),
+      box([0.05, 0.6, 0.05], [-0.33, 2.5, 0.1], 0x33291f, { ghost: true, rot: [0.3, 0, 0.8] }),
+      box([0.04, 0.45, 0.04], [0.05, 3.7, -0.15], 0x33291f, { ghost: true, rot: [0.4, 0, 0.1] }),
+    ],
+  },
+  /** Three lengths of steel girder, crossed: put down to stop tanks, and heavy enough to stop most things. */
+  hedgehog: {
+    mass: 260,
+    effect: 'sparks',
+    parts: [
+      box([0.07, 0.9, 0.07], [0, 0.62, 0], 0x4a4540, { rot: [0.85, 0, 0] }),
+      box([0.07, 0.9, 0.07], [0, 0.62, 0], 0x55504a, { rot: [-0.42, 0, 0.74] }),
+      box([0.07, 0.9, 0.07], [0, 0.62, 0], 0x4a4540, { rot: [-0.42, 0, -0.74] }),
+    ],
+  },
   /** A length of concrete pipe, lying on its side: it rolls. */
   pipe: { mass: 90, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
   /** Bricks on a pallet. */
@@ -560,7 +1103,13 @@ export type ObjectKindId = keyof typeof OBJECT_KINDS;
 /** One object placed in a level. */
 export interface ObjectDesc {
   kind: ObjectKindId;
+  /** Set for one that is to roll: what is round of it is made with its edges rounded off, so that it rolls over the joins in the ground and does not catch on them. */
+  rolls?: boolean;
   /** Where its base sits: [x, y, z], y being the height of the ground there. */
   pos: Vec3;
   rotY?: number;
+  /** Leant forward (down toward where it faces, +Z once turned) by this much, radians: something laid along a slope. */
+  tilt?: number;
+  /** For a piece of something that collapses: the way it falls, [x, z]. */
+  lean?: [number, number];
 }

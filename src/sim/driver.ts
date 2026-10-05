@@ -45,6 +45,8 @@ export type DriverMode = 'driving' | 'onFoot' | 'down';
 
 /** What is solid to the driver: everything, loose cargo included. */
 const WORLD = groups(GROUP.all, GROUP.ground | GROUP.truck | GROUP.prop | GROUP.cargo);
+/** What can be stood on beside the truck. */
+const GROUND = groups(GROUP.all, GROUP.ground | GROUP.prop);
 const G = -PHYSICS.gravity;
 const ANGLE = Math.PI / 4;
 /** The tallest thing they can walk up onto without jumping: kerbs, and the gradient of a ramp. */
@@ -107,7 +109,8 @@ export class Driver {
   private wasCharging = false;
   private seed = 5;
 
-  constructor(private readonly world: RAPIER.World) {
+  /** @param uneven whether the ground rises and falls: then where to step out to is looked for, not reckoned */
+  constructor(private readonly world: RAPIER.World, private readonly uneven = false) {
     const halfHeight = DRIVER.height / 2 - DRIVER.radius;
     this.shape = new RAPIER.Capsule(halfHeight, DRIVER.radius);
     this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
@@ -234,6 +237,14 @@ export class Driver {
     const r = truck.body.rotation();
     const [x, y, z] = DRIVER.door;
     target.set(x * side, 0, z).applyQuaternion(q.set(r.x, r.y, r.z, r.w));
+    if (this.uneven) {
+      // Beside a truck that is on a slope the ground is not at the height of its wheels: straight down from above the door to whatever is there.
+      this.ray.origin.x = t.x + target.x;
+      this.ray.origin.y = t.y + target.y + 1.6;
+      this.ray.origin.z = t.z + target.z;
+      const hit = this.world.castRay(this.ray, 6, true, undefined, GROUND, undefined, truck.body);
+      if (hit) return target.set(this.ray.origin.x, this.ray.origin.y - hit.timeOfImpact + y, this.ray.origin.z);
+    }
     return target.set(t.x + target.x, Math.max(0, t.y - TRUCK.wheel.radius - TRUCK.wheel.restLength) + y, t.z + target.z);
   }
 

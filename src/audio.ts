@@ -42,6 +42,9 @@ const FILES = {
   potClink: ['pot-clink-light.wav', 'pot-clink-heavy.wav'],
   splat: ['melon-splat-0.wav'],
   splash: ['splash-0.wav'],
+  cracker: ['cracker-0.mp3', 'cracker-1.mp3'],
+  crackers: ['crackers-0.mp3', 'crackers-1.mp3'],
+  flap: ['flap-0.mp3'],
   skid: 'skid-loop.wav',
   train: 'train-loop.wav',
   bell: 'bell-loop.wav',
@@ -86,7 +89,7 @@ interface Clip {
 }
 
 /** The things by the roadside: their recordings are evened out, so one take isn't twice as loud as the next. */
-const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat']);
+const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'flap']);
 /** The loudness they are brought to, at their loudest moment. */
 const EVEN_TO = 0.3;
 
@@ -98,7 +101,7 @@ export class GameAudio {
   private engine: AudioBufferSourceNode | null = null;
   private engineGain!: GainNode;
   private engineFilter!: BiquadFilterNode;
-  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [] };
+  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [], cracker: [], crackers: [], flap: [] };
   /** The sounds that run on and on, each with its own volume: tyres, trains, the crossing bell. */
   loops: Record<'skid' | 'train' | 'bell', { source: AudioBufferSourceNode; gain: GainNode } | null> = { skid: null, train: null, bell: null };
 
@@ -165,7 +168,7 @@ export class GameAudio {
       return ctx.decodeAudioData(await response.arrayBuffer());
     };
     try {
-      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash'] as const;
+      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash', 'cracker', 'crackers', 'flap'] as const;
       const [idle, ...sets] = await Promise.all([
         fetchBuffer(FILES.engine),
         ...groups.map((group) => Promise.all(FILES[group].map(fetchBuffer))),
@@ -383,6 +386,13 @@ export class GameAudio {
     playHorn(ctx, this.master, voice, 0.22 + long * (0.35 + Math.random() * 0.35), 0.05 + strength * 0.1, 0.95 + ((car * 37) % 11) * 0.01);
   }
 
+  /** The truck's own horn: the same make as a car's, lower, louder and leant on. */
+  truckHorn(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.paused || ctx.state !== 'running') return;
+    playHorn(ctx, this.master, HORN_VOICES.a, 0.5, 0.2, 0.84);
+  }
+
   /** A short note, made on the spot: the warning that something is locking on. Higher and louder the nearer it is to firing. */
   beep(urgency: number): void {
     const ctx = this.ctx;
@@ -398,6 +408,30 @@ export class GameAudio {
     note.connect(gain).connect(this.master);
     note.start(t);
     note.stop(t + 0.09);
+  }
+
+  /** One firecracker going off: a recording of one, at a slightly different pitch each time. */
+  pop(strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.loaded || this.paused || ctx.state !== 'running') return;
+    this.play(pick(this.clips.cracker), clamp(0.35 + strength * 0.5, 0, 0.85), 0.85 + Math.random() * 0.35);
+  }
+
+  /** Hens put up by the truck: their wings going and their squawking, in one recording. A flock going up together is heard once. */
+  private henAt = -1;
+  hen(strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.loaded || this.paused || ctx.state !== 'running' || strength <= 0) return;
+    if (ctx.currentTime - this.henAt < 0.6) return;
+    this.henAt = ctx.currentTime;
+    this.play(pick(this.clips.flap), clamp(0.7 + strength * 0.6, 0, 1.3), 0.92 + Math.random() * 0.16, { seconds: 2.2 });
+  }
+
+  /** A string of firecrackers burning down: a recording of one, for as long as it burns. */
+  string(strength: number, seconds: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.loaded || this.paused || ctx.state !== 'running') return;
+    this.play(pick(this.clips.crackers), clamp(0.3 + strength * 0.55, 0, 0.85), 0.95 + Math.random() * 0.1, { seconds });
   }
 
   /** A burst of noise swept down or up: a rocket leaving, a shell coming in. */

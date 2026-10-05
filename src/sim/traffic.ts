@@ -23,6 +23,8 @@ export const CAR_CABIN = {
 /** Bumper-to-bumper distance at which a car has come to a stop. */
 const STOP_GAP = 2.5;
 const BRAKING = 6;
+/** How hard a bus brakes for its stop, m/s². */
+const BUS_BRAKING = 7.5;
 const ACCELERATION = 3;
 /** How far ahead a car looks for something to stop for. */
 const LOOKAHEAD = 40;
@@ -43,6 +45,16 @@ export interface Lane {
   facing: { x: number; y: number; z: number; w: number };
   length: number;
   cruise: number;
+  stops: { at: number; seconds: number; crowd?: number }[];
+  waitFor?: number;
+  /** The lane its cars carry on along at its end, if any, and where along it they join it. */
+  next: Lane | null;
+  nextAt: number;
+  /** The other lane every other car takes at the end, and whether the next one to get there takes it. */
+  also: Lane | null;
+  split: boolean;
+  /** Where a car knocked out of the traffic goes back in. */
+  respawn: Lane | null;
 }
 
 export interface TrafficCar {
@@ -64,6 +76,14 @@ export interface TrafficCar {
   cruise: number;
   /** Seconds until it may sound its horn again. */
   hush: number;
+  /** The lane it started on, to go back to when everything is put back. */
+  home: Lane;
+  /** Whether its brake lights are on: slowing, or standing. */
+  braking: boolean;
+  /** For a bus: seconds left standing at a stop; which stop is next; and whether it is still waiting for the truck before it first sets off. */
+  dwell: number;
+  next: number;
+  held: boolean;
 }
 
 /** A driver leans on the horn when the truck is coming at them, or sitting across their lane, within this far ahead. */
@@ -85,6 +105,8 @@ function kindOf(n: number, moving: boolean): VehicleKind {
 const CAR_ROUND = 0.16;
 const CAR_COLORS = [0xd9d9d9, 0x2f3b4a, 0xb33a3a, 0x3a6fb3, 0xe0c341, 0x4a8f5a, 0x8a8f96, 0x1c1c1f];
 const q = new Quaternion();
+const nose = new Quaternion();
+const ACROSS = new Vector3(1, 0, 0);
 const v = new Vector3();
 const UP = new Vector3(0, 1, 0);
 
@@ -102,25 +124,32 @@ export class Traffic {
   /** Cars that ran into the truck, or were run into by it, during the latest step. */
   fresh: TrafficCar[] = [];
   /** Cars that a wreck was shoved into during the latest step: where, and how fast the two met. */
-  pileups: { x: number; z: number; speed: number }[] = [];
+  pileups: { x: number; z: number; speed: number; heavy?: boolean }[] = [];
   /** Where a horn was sounded during the latest step, and how hard it was leant on, 0 to 1. */
   horns: { x: number; z: number; long: number; car: number }[] = [];
+  /** Buses that pulled in at a stop during the latest step: which stop, and where their door is. */
+  arrivals: { car: TrafficCar; stop: { at: number; seconds: number; crowd?: number }; door: { x: number; z: number } }[] = [];
   private lanes = 0;
+  /** Lanes whose cars go two ways at the end, to set back to the first way when everything is put back. */
+  private readonly splits: Lane[] = [];
 
-  constructor(world: RAPIER.World, lanes: TrafficLane[]) {
+  constructor(world: RAPIER.World, lanes: TrafficLane[], private readonly ground?: (x: number, z: number) => number) {
     let n = 0;
+    const made: Lane[] = [];
     for (const desc of lanes) {
       const from = new Vector3(desc.from[0], CAR_Y, desc.from[1]);
       const dir = new Vector3(desc.to[0] - desc.from[0], 0, desc.to[1] - desc.from[1]);
       const length = dir.length();
       dir.normalize();
       q.setFromAxisAngle(UP, Math.atan2(dir.x, dir.z));
-      const lane: Lane = { from, dir, length, cruise: desc.speed, facing: { x: q.x, y: q.y, z: q.z, w: q.w } };
+      const lane: Lane = { from, dir, length, cruise: desc.speed, facing: { x: q.x, y: q.y, z: q.z, w: q.w }, stops: desc.stops ?? [], waitFor: desc.waitFor, next: null, nextAt: desc.nextAt ?? 0, also: null, split: false, respawn: null };
+      made.push(lane);
 
       // Evenly spaced along the lane, with each lane shifted so they don't arrive in a row.
       const shift = (this.lanes++ * 0.37) % 1;
       for (let i = 0; i < desc.cars; i++) {
-        const s = ((i + shift) / desc.cars) * length;
+        // A bus begins at its first stop.
+        const s = i === 0 && desc.stops?.length ? desc.stops[0].at : desc.scatter ? ((i + 0.15 + Math.random() * 0.7) / desc.cars) * length : ((i + shift) / desc.cars) * length;
         const body = world.createRigidBody(
           RAPIER.RigidBodyDesc.kinematicPositionBased().setRotation(lane.facing),
         );
@@ -146,12 +175,21 @@ export class Traffic {
           );
         }
         const cruise = desc.speed > 0 && spec.crawl ? spec.crawl : desc.speed;
-        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise, hush: 0 };
+        const bus = i === 0 && lane.stops.length > 0;
+        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise, hush: 0, home: lane, braking: false, dwell: 0, next: bus ? this.stopAfter(lane, s) : 0, held: i === 0 && lane.waitFor !== undefined };
         this.place(car, true);
         this.cars.push(car);
         n++;
       }
     }
+    lanes.forEach((desc, k) => {
+      if (desc.next !== undefined) made[k].next = made[desc.next] ?? null;
+      if (desc.also !== undefined) {
+        made[k].also = made[desc.also] ?? null;
+        this.splits.push(made[k]);
+      }
+      if (desc.respawn !== undefined) made[k].respawn = made[desc.respawn] ?? null;
+    });
   }
 
   /**
@@ -169,6 +207,7 @@ export class Traffic {
     this.fresh = [];
     this.pileups = [];
     this.horns = [];
+    this.arrivals = [];
     // Cars already knocked loose, wherever the crash has left them.
     const wrecks = this.cars.filter((car) => car.knocked > 0).map((car) => car.body.translation());
 
@@ -178,18 +217,44 @@ export class Traffic {
         car.knocked -= dt;
         if (car.knocked <= 0) {
           v.copy(lane.from).addScaledVector(lane.dir, car.s);
-          if (Math.hypot(t.x - v.x, t.z - v.z) > RETURN_CLEARANCE) this.restore(car);
+          if (Math.hypot(t.x - v.x, t.z - v.z) > (lane.stops.length ? car.spec.half.length + 6 : RETURN_CLEARANCE)) this.restore(car);
           else car.knocked = 0.5;
         }
         continue;
       }
-      let gap = LOOKAHEAD;
       const { half } = car.spec;
+      // A bus waiting for the truck to come up behind it before it pulls away: so that it is there to be got past, however soon the truck arrives.
+      if (car.held) {
+        v.copy(lane.from).addScaledVector(lane.dir, car.s);
+        if (Math.hypot(t.x - v.x, t.z - v.z) < lane.waitFor!) car.held = false;
+        else {
+          car.speed = 0;
+          car.braking = true;
+          this.place(car, false);
+          continue;
+        }
+      }
+      // At a stop: standing, brake lights on, while people get off and on.
+      if (car.dwell > 0) {
+        car.speed = 0;
+        car.braking = true;
+        if ((car.dwell -= dt) <= 0) car.next = (car.next + 1) % lane.stops.length;
+        this.place(car, false);
+        continue;
+      }
+      let gap = LOOKAHEAD;
 
-      // The car ahead in the same lane, wrapping around the loop.
+      // The car ahead in the same lane, wrapping around the loop; or, on a lane that leads on into another, only those ahead on
+      // it (one that has just come in at its start is behind, not ahead) and those at the start of the next.
       for (const other of this.cars) {
-        if (other === car || other.lane !== lane) continue;
-        const ahead = (other.s - car.s + lane.length) % lane.length;
+        if (other === car || other.knocked > 0) continue;
+        let ahead: number;
+        if (other.lane === lane) ahead = lane.next ? other.s - car.s : (other.s - car.s + lane.length) % lane.length;
+        else if (lane.next && other.lane === lane.next) ahead = lane.length - car.s + other.s - lane.nextAt;
+        else if (lane.also && other.lane === lane.also) ahead = lane.length - car.s + other.s;
+        else continue;
+        // Two at the same spot (both just come in at a lane's start): the one that came first goes first.
+        if (ahead < 0 || (Math.abs(ahead) < 0.01 && this.cars.indexOf(other) > this.cars.indexOf(car))) continue;
         gap = Math.min(gap, ahead - other.spec.half.length - half.length);
       }
 
@@ -219,7 +284,9 @@ export class Traffic {
       const sameWay = truckForward.dot(lane.dir) > SAME_WAY;
       // In their lane and not going their way: across it, or coming straight at them.
       car.hush -= dt;
-      if (car.hush <= 0 && lane.cruise > 0 && !sameWay && across < reachAcross + half.width && along > reachAlong && along < HORN_REACH) {
+      // Only on the road the lane is on: not at the truck somewhere out past the end of it, through a wall.
+      const onIt = along < lane.length - car.s + reachAlong + 6;
+      if (car.hush <= 0 && lane.cruise > 0 && !sameWay && across < reachAcross + half.width && along > reachAlong && along < HORN_REACH && onIt) {
         // Bearing down on it they keep at it. Once they have had to stop, it is only now and
         // then: a queue of standing cars all leaning on their horns is a racket.
         const rest = car.speed > 2 ? HORN_REST : HORN_REST_STOPPED;
@@ -262,13 +329,43 @@ export class Traffic {
 
       // The fastest speed from which it can still stop in the room it has.
       const room = Math.max(0, gap - STOP_GAP);
-      const target = Math.min(car.cruise, Math.sqrt(2 * BRAKING * room));
-      if (target < car.speed) car.speed = Math.max(target, car.speed - BRAKING * 1.5 * dt);
+      let target = Math.min(car.cruise, Math.sqrt(2 * BRAKING * room));
+      let hard = BRAKING * 1.5;
+      // A bus pulls in late and hard: kept up to speed until the last moment, and then stood on its brakes.
+      const stop = car.kind === 'bus' ? lane.stops[car.next] : undefined;
+      if (stop) {
+        const until = (stop.at - car.s + lane.length) % lane.length;
+        if (until < 0.4 && car.speed < 1.2) {
+          car.speed = 0;
+          car.dwell = stop.seconds;
+          car.braking = true;
+          v.copy(lane.from).addScaledVector(lane.dir, car.s);
+          // The door is on the kerb side, toward the front.
+          this.arrivals.push({ car, stop, door: { x: v.x - lane.dir.z * (half.width + 0.4) + lane.dir.x * half.length * 0.55, z: v.z + lane.dir.x * (half.width + 0.4) + lane.dir.z * half.length * 0.55 } });
+          this.place(car, false);
+          continue;
+        }
+        target = Math.min(target, Math.sqrt(2 * BUS_BRAKING * Math.max(0, until - 0.2)));
+        hard = BUS_BRAKING * 1.3;
+      }
+      car.braking = target < car.speed - 0.05;
+      if (target < car.speed) car.speed = Math.max(target, car.speed - hard * dt);
       else car.speed = Math.min(target, car.speed + ACCELERATION * dt);
 
       car.s += car.speed * dt;
       if (car.s >= lane.length) {
         car.s -= lane.length;
+        // On into the next lane, if this one leads into one; it starts where this one ends.
+        if (lane.next) {
+          // Every other car the other way, where there is one.
+          const other = lane.also && (lane.split = !lane.split);
+          const into = other ? lane.also! : lane.next;
+          if (!other) car.s += lane.nextAt;
+          car.lane = into;
+          car.next = into.stops.findIndex((stop) => stop.at >= car.s);
+          if (car.next < 0) car.next = 0;
+          car.cruise = Math.min(car.spec.crawl ?? Infinity, into.cruise) || car.cruise;
+        }
         this.place(car, true);
       } else this.place(car, false);
     }
@@ -276,15 +373,42 @@ export class Traffic {
 
   reset(): void {
     this.fresh = [];
+    for (const lane of this.splits) lane.split = false;
     for (const car of this.cars) {
+      car.lane = car.home;
       car.s = car.startS;
-      this.restore(car);
+      this.restore(car, true);
       car.speed = car.cruise;
+      car.dwell = 0;
+      car.braking = false;
+      car.held = car === this.cars.find((c) => c.lane === car.lane) && car.lane.waitFor !== undefined;
+      car.next = car.lane.stops.length ? this.stopAfter(car.lane, car.s) : 0;
     }
   }
 
+  /** A car run into by something heavy: knocked loose and thrown the way that was going, harder the faster. */
+  ram(body: RAPIER.RigidBody, velocity: { x: number; z: number }): void {
+    const car = this.cars.find((c) => c.body === body);
+    if (!car || car.knocked > 0) return;
+    const p = body.translation();
+    const speed = Math.hypot(velocity.x, velocity.z);
+    car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    car.body.setLinvel({ x: car.lane.dir.x * car.speed * 0.5 + velocity.x * 0.9, y: Math.min(4, speed * 0.25), z: car.lane.dir.z * car.speed * 0.5 + velocity.z * 0.9 }, true);
+    car.body.setAngvel({ x: (velocity.z / Math.max(1, speed)) * 1.5, y: 1.2, z: (-velocity.x / Math.max(1, speed)) * 1.5 }, true);
+    car.knocked = KNOCKED_SECONDS;
+    car.impact = speed;
+    car.speed = 0;
+    this.pileups.push({ x: p.x, z: p.z, speed: Math.max(speed, 6), heavy: true });
+  }
+
+  /** The first stop at or beyond a place along a lane, by its place in the lane's list. */
+  private stopAfter(lane: Lane, s: number): number {
+    const n = lane.stops.findIndex((stop) => stop.at >= s - 0.5);
+    return n < 0 ? 0 : n;
+  }
+
   /** Put a knocked car back on its lane, facing the right way, to pull away from a standstill. */
-  private restore(car: TrafficCar): void {
+  private restore(car: TrafficCar, back = false): void {
     const zero = { x: 0, y: 0, z: 0 };
     car.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     car.body.setLinvel(zero, true);
@@ -292,14 +416,38 @@ export class Traffic {
     car.body.setRotation(car.lane.facing, true);
     car.knocked = 0;
     car.speed = 0;
+    // Knocked out of the traffic, it comes back in from out of sight; put back at the start of a run, it is where it began.
+    if (car.lane.respawn && !back) {
+      car.lane = car.lane.respawn;
+      car.s = 0;
+      car.next = 0;
+      car.body.setRotation(car.lane.facing, true);
+    }
     this.place(car, true);
   }
 
   /** Move a car to its place on its lane: a smooth kinematic move, or an instant jump. */
   private place(car: TrafficCar, jump: boolean): void {
     v.copy(car.lane.from).addScaledVector(car.lane.dir, car.s);
-    v.y = CLEARANCE + car.spec.half.height;
-    if (jump) car.body.setTranslation(v, true);
-    else car.body.setNextKinematicTranslation(v);
+    if (!this.ground) {
+      v.y = CLEARANCE + car.spec.half.height;
+      if (jump) car.body.setTranslation(v, true);
+      else car.body.setNextKinematicTranslation(v);
+      return;
+    }
+    // On ground that rises and falls: as high as the road is under its two ends, and nose up or down as the road goes.
+    const reach = car.spec.half.length;
+    const ahead = this.ground(v.x + car.lane.dir.x * reach, v.z + car.lane.dir.z * reach);
+    const behind = this.ground(v.x - car.lane.dir.x * reach, v.z - car.lane.dir.z * reach);
+    v.y = (ahead + behind) / 2 + CLEARANCE + car.spec.half.height;
+    const f = car.lane.facing;
+    q.set(f.x, f.y, f.z, f.w).multiply(nose.setFromAxisAngle(ACROSS, -Math.atan2(ahead - behind, 2 * reach)));
+    if (jump) {
+      car.body.setTranslation(v, true);
+      car.body.setRotation(q, true);
+    } else {
+      car.body.setNextKinematicTranslation(v);
+      car.body.setNextKinematicRotation(q);
+    }
   }
 }

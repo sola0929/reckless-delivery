@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { BattleDesc } from '../levels/types';
-import { TANK_HALF, type Battle, SHELL_RING } from '../sim/battle';
+import type { BankDesc, BattleDesc } from '../levels/types';
+import { BANK_HALF, BANK_OVER, GUNNER_COVER, TANK_HALF, type Battle, SHELL_RING } from '../sim/battle';
 import { Shapes } from './shapes';
 
 // What a battle looks like: the circle where a shell is about to land and the mark it
@@ -19,6 +19,79 @@ function solid(shapes: Shapes): THREE.Mesh {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+/** A tank, in two pieces: its hull on its tracks, and its turret with the gun, to be set on top and turned. */
+function tankShapes(colour: number, dark: number): { hull: Shapes; top: Shapes } {
+  const hull = new Shapes();
+  const { width, height, length } = TANK_HALF;
+  for (const side of [-1, 1]) {
+    hull.box(side * (width - 0.3), 0.45, 0, 0.32, 0.45, length, dark);
+    for (let i = -3; i <= 3; i++) hull.wheel(side * (width - 0.3), 0.4, i * 0.9, 0.36, 0.34, 0x1c1d20, 0x4a4f48, 8);
+  }
+  hull.box(0, 1.05, 0, width - 0.35, 0.45, length - 0.25, colour);
+  hull.box(0, 1.2, length - 0.5, width - 0.5, 0.25, 0.4, colour);
+  hull.box(0, height * 2 - 0.3, -length + 0.7, width - 0.6, 0.12, 0.5, dark);
+  const top = new Shapes();
+  top.box(0, 0.35, -0.2, 1, 0.35, 1.35, colour);
+  top.cylinder(0, 0.7, -0.4, 0.4, 0.12, dark, dark, 8);
+  top.box(0, 0.4, 2.6, 0.12, 0.12, 1.9, dark);
+  top.box(0, 0.4, 4.4, 0.17, 0.17, 0.2, dark);
+  return { hull, top };
+}
+
+type P = [number, number, number];
+/** Earth, in the few shades a bank is made of; the top of one, where something grows; and what has been burnt. */
+const EARTH = [0x7d6c50, 0x736246, 0x877657];
+const BANK_TOP = 0x8a8458;
+const BURNT = 0x3b3a36;
+const SOOT = 0x26272a;
+/** A mound from the side, a metre wide and a metre high, as distance out and height: to be stretched to fit. */
+const DOME = [[1, 0], [0.85, 0.28], [0.65, 0.58], [0.45, 0.8], [0.22, 0.95], [0, 1]];
+/** The earth thrown up round a shell hole a metre from middle to side, the same way: it starts at the hole's edge and covers its corners. */
+const RIM = [[1, -0.08], [1.12, 0.14], [1.38, 0.2], [1.7, 0.08], [2, 0]];
+
+/** A face, put the right way round: seen from the side that `toward` is on. */
+function face(shapes: Shapes, a: P, b: P, c: P, d: P, color: number, toward: P): void {
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+  const facing = (uy * vz - uz * vy) * toward[0] + (uz * vx - ux * vz) * toward[1] + (ux * vy - uy * vx) * toward[2];
+  if (facing >= 0) shapes.quad(a, b, c, d, color);
+  else shapes.quad(a, d, c, b, color);
+}
+
+/** A bank of earth: a ridge with sloping sides, no two lengths of it quite the same height or quite in line. */
+function ridge(shapes: Shapes, bank: BankDesc, n: number): void {
+  const [ax, az] = bank.from;
+  const length = Math.hypot(bank.to[0] - ax, bank.to[1] - az);
+  const dx = (bank.to[0] - ax) / length;
+  const dz = (bank.to[1] - az) / length;
+  const sx = dz;
+  const sz = -dx;
+  const steps = Math.max(1, Math.round((length + BANK_OVER * 2) / 2.6));
+  const noise = (k: number, salt: number) => {
+    const t = Math.sin(n * 37.1 + k * 12.9898 + salt * 78.233) * 43758.5453;
+    return t - Math.floor(t);
+  };
+  let before: P[] | null = null;
+  for (let k = 0; k <= steps; k++) {
+    const along = -BANK_OVER + ((length + BANK_OVER * 2) * k) / steps;
+    const end = k === 0 || k === steps;
+    const sway = end ? 0 : (noise(k, 1) - 0.5) * 0.5;
+    const cx = ax + dx * along + sx * sway;
+    const cz = az + dz * along + sz * sway;
+    const high = bank.height * (end ? 0.9 : 0.85 + noise(k, 2) * 0.3);
+    const foot = BANK_HALF + 0.55 + (end ? 0 : noise(k, 3) * 0.35);
+    const top = 0.45;
+    const row: P[] = [[cx - sx * foot, 0, cz - sz * foot], [cx - sx * top, high, cz - sz * top], [cx + sx * top, high, cz + sz * top], [cx + sx * foot, 0, cz + sz * foot]];
+    if (before) {
+      face(shapes, before[0], row[0], row[1], before[1], EARTH[(n + k) % 3], [-sx, 1, -sz]);
+      face(shapes, before[1], row[1], row[2], before[2], BANK_TOP, [0, 1, 0]);
+      face(shapes, before[2], row[2], row[3], before[3], EARTH[(n + k + 1) % 3], [sx, 1, sz]);
+    }
+    if (end) face(shapes, row[0], row[1], row[2], row[3], EARTH[n % 3], k === 0 ? [-dx, 0, -dz] : [dx, 0, dz]);
+    before = row;
+  }
 }
 
 /** A thin bright bar from one point to another: a sight line, a tracer. */
@@ -63,6 +136,7 @@ export class BattleView {
   private readonly launchers: { group: THREE.Group; sight: Beam }[] = [];
   private readonly turrets: { turret: THREE.Group; lamp: THREE.MeshBasicMaterial; sight: Beam }[] = [];
   private readonly shots: THREE.Mesh[] = [];
+  private readonly gunners: { figure: THREE.Group; flash: THREE.Mesh }[] = [];
   private readonly smoke: THREE.InstancedMesh | null = null;
   private readonly clear = { near: 0, far: 0, color: new THREE.Color() };
   private readonly haze = new THREE.Color(0x8d8f8a);
@@ -91,6 +165,34 @@ export class BattleView {
     this.tracers.frustumCulled = false;
     scene.add(this.tracers);
 
+    for (const state of battle.gunners) {
+      const { out, half, height, thick } = GUNNER_COVER;
+      // His cover: a length of cast concrete with a buttress at each end. Plainly not something to knock over.
+      const wall = new Shapes();
+      wall.box(0, height / 2, out, half, height / 2, thick, 0x9a9a92, 0x7f7f78);
+      for (const end of [-1, 1]) wall.box(end * half, height * 0.55, out, 0.25, height * 0.55, thick + 0.12, 0x8a8a83, 0x74746e);
+      wall.box(0, 0.12, out + thick + 0.1, half, 0.12, 0.12, 0x7f7f78);
+      // Himself, kneeling behind it, the gun laid across the top.
+      const man = new Shapes();
+      man.box(0, 0.3, -0.1, 0.22, 0.3, 0.3, 0x3a3f36);
+      man.box(0, 0.85, 0, 0.24, 0.28, 0.18, ARMY[state.desc.side]);
+      man.cylinder(0, 1.13, 0, 0.17, 0.26, 0xe8c9a8, ARMY[state.desc.side], 8);
+      man.box(0.08, height + 0.2, 0.75, 0.05, 0.06, 0.65, DARK);
+      man.box(0.08, height + 0.08, 1.0, 0.03, 0.08, 0.03, DARK);
+      const figure = new THREE.Group();
+      figure.add(solid(man));
+      const flash = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 6).rotateX(Math.PI / 2), glow(0xffe07a));
+      flash.position.set(0.08, height + 0.2, 1.6);
+      flash.visible = false;
+      figure.add(flash);
+      const post = new THREE.Group();
+      post.add(solid(wall), figure);
+      post.position.set(state.desc.pos[0], 0, state.desc.pos[1]);
+      post.rotation.y = state.desc.aim;
+      scene.add(post);
+      this.gunners.push({ figure, flash });
+    }
+
     for (const state of battle.launchers) {
       const shapes = new Shapes();
       // Kneeling, in his army's colour, the tube on his shoulder.
@@ -106,22 +208,9 @@ export class BattleView {
     }
 
     for (const state of battle.tanks) {
-      const colour = ARMY[state.desc.side];
-      const hull = new Shapes();
-      const { width, height, length } = TANK_HALF;
-      for (const side of [-1, 1]) {
-        hull.box(side * (width - 0.3), 0.45, 0, 0.32, 0.45, length, DARK);
-        for (let i = -3; i <= 3; i++) hull.wheel(side * (width - 0.3), 0.4, i * 0.9, 0.36, 0.34, 0x1c1d20, 0x4a4f48, 8);
-      }
-      hull.box(0, 1.05, 0, width - 0.35, 0.45, length - 0.25, colour);
-      hull.box(0, 1.2, length - 0.5, width - 0.5, 0.25, 0.4, colour);
-      hull.box(0, height * 2 - 0.3, -length + 0.7, width - 0.6, 0.12, 0.5, DARK);
+      const { hull, top } = tankShapes(ARMY[state.desc.side], DARK);
+      const { height } = TANK_HALF;
       const base = solid(hull);
-      const top = new Shapes();
-      top.box(0, 0.35, -0.2, 1, 0.35, 1.35, colour);
-      top.cylinder(0, 0.7, -0.4, 0.4, 0.12, DARK, DARK, 8);
-      top.box(0, 0.4, 2.6, 0.12, 0.12, 1.9, DARK);
-      top.box(0, 0.4, 4.4, 0.17, 0.17, 0.2, DARK);
       const turret = new THREE.Group();
       turret.add(solid(top));
       const lamp = glow(0x304030);
@@ -145,7 +234,65 @@ export class BattleView {
     }
 
     this.patches(desc);
+    this.terrain(desc);
     this.smoke = this.bank(desc);
+  }
+
+  /** The lie of the land: banks of earth, mounds, the earth thrown up round shell holes, and wrecks. */
+  private terrain(desc: BattleDesc): void {
+    const banks = desc.banks ?? [];
+    if (banks.length) {
+      const shapes = new Shapes();
+      banks.forEach((bank, n) => ridge(shapes, bank, n));
+      this.scene.add(solid(shapes));
+    }
+    const heaped = (profile: number[][], color: number, count: number) => {
+      const mesh = new THREE.InstancedMesh(
+        new THREE.LatheGeometry(profile.map(([out, up]) => new THREE.Vector2(out, up)), 14),
+        new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true, side: THREE.DoubleSide }),
+        count,
+      );
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    const mounds = desc.mounds ?? [];
+    if (mounds.length) {
+      const mesh = heaped(DOME, EARTH[0], mounds.length);
+      mounds.forEach((mound, i) => mesh.setMatrixAt(i, m.compose(a.set(mound.pos[0], 0, mound.pos[1]), upright, s.set(mound.radius, mound.height, mound.radius))));
+    }
+    const craters = desc.craters ?? [];
+    if (craters.length) {
+      const mesh = heaped(RIM, EARTH[1], craters.length);
+      craters.forEach((crater, i) => mesh.setMatrixAt(i, m.compose(a.set(crater.pos[0], 0, crater.pos[1]), upright, s.set(crater.radius, crater.radius * 0.8, crater.radius))));
+    }
+    (desc.wrecks ?? []).forEach((wreck, i) => {
+      const group = new THREE.Group();
+      if (wreck.kind === 'tank') {
+        // Burnt out: the turret blown askew, the gun down.
+        const { hull, top } = tankShapes(BURNT, SOOT);
+        const turret = solid(top);
+        turret.position.set(0.3, TANK_HALF.height * 2 - 0.5, -0.3);
+        turret.rotation.set(0.11, 0.8 + i * 1.7, 0.13);
+        group.add(solid(hull), turret);
+      } else {
+        // A lorry down on one side, its cab burnt and a wheel gone.
+        const lorry = new Shapes();
+        lorry.box(0, 0.62, 0, 1.1, 0.2, 2.6, SOOT);
+        lorry.box(0, 1.35, 1.75, 1.1, 0.55, 0.75, BURNT);
+        lorry.box(0, 1.96, 1.75, 0.95, 0.06, 0.6, SOOT);
+        for (const side of [-1, 1]) lorry.box(side * 1.05, 1.05, -0.8, 0.06, 0.25, 1.7, 0x4d4338);
+        lorry.box(0, 1.05, -2.5, 1.05, 0.25, 0.06, 0x4d4338);
+        for (const [side, along] of [[-1, 1.7], [1, 1.7], [-1, -1.6]]) lorry.wheel(side * 1.05, 0.42, along, 0.42, 0.2, 0x1c1d20, BURNT, 8);
+        const body = solid(lorry);
+        body.rotation.z = -0.07;
+        group.add(body);
+      }
+      group.position.set(wreck.pos[0], 0, wreck.pos[1]);
+      group.rotation.y = wreck.rotY;
+      this.scene.add(group);
+    });
   }
 
   /** Mud as dark wet ground, wire as coils standing in rows across it. */
@@ -241,6 +388,13 @@ export class BattleView {
       this.scars.count = battle.scars.length;
       this.scars.instanceMatrix.needsUpdate = true;
     }
+
+    // Each gunner: down behind his cover while he reloads, and a flash at the muzzle for each round.
+    battle.gunners.forEach((gunner, i) => {
+      const { figure, flash } = this.gunners[i];
+      figure.position.y += ((gunner.phase === 'reload' ? -0.55 : 0) - figure.position.y) * Math.min(1, dt * 9);
+      flash.visible = gunner.flash > 0;
+    });
 
     // Every round in the air, as a streak along the way it is going.
     const shown = Math.min(battle.rounds.length, 260);

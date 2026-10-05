@@ -27,7 +27,7 @@ import type { BuildingLook, CrowdDesc, DecalDesc, GateDesc, LevelDef, PitDesc, P
 //
 // There is one way through and no other. Every road that would get round a stretch of it
 // stops short, and the straight road up the middle has been dug up.
-const MAP = [
+const CITY_MAP = [
   'oooooooooooooooooooooooooooooooooooo',
   'oooooooooooooooooooooooooooooooooooo',
   'ooooooooooooFooooooooooooooooooooooo',
@@ -77,13 +77,15 @@ const MAP = [
   'wwwwwwwwwwwwwddddddddddwwwwwwwwwwwww',
   'wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww',
 ];
+/** The map being built from: level 1's, unless another level is borrowing the builders below for its own (see `buildTown`). */
+let MAP: string[] = CITY_MAP;
 
 /**
  * The line to drive, as map squares [column, row from the south]; fractions are places
  * within a square. It keeps to the right of the road and threads every obstacle, so the
  * obstacles below are laid out to match it: move one and the other must follow.
  */
-const ROUTE: Vec2[] = [
+const CITY_ROUTE: Vec2[] = [
   // Out of the depot.
   [17, 3], [17.22, 5], [17.22, 11.3],
   // Right onto the boulevard, along its inner lane, and left across it.
@@ -109,11 +111,14 @@ const ROUTE: Vec2[] = [
   // oily corner, and between the containers into the delivery bay.
   [28.85, 41], [28.2, 41.05], [27, 41], [25.8, 41.22], [13.5, 41.22], [12.5, 41.5], [12.08, 42.1], [12, 42.7], [12, 45],
 ];
+let ROUTE: Vec2[] = CITY_ROUTE;
 
 const CELL = 16;
 const HALF = CELL / 2;
-const COLS = MAP[0].length;
-const ROWS = MAP.length;
+let COLS = MAP[0].length;
+let ROWS = MAP.length;
+/** The row the map's first row is, counted from level 1's first: another map can carry on north of level 1's. */
+let ROW0 = 0;
 const LANE = 3.5;
 const KERB = 0.15;
 
@@ -121,16 +126,60 @@ const KERB = 0.15;
 // start, +X is to the left, so columns run the other way from X.
 const at = (c: number, r: number): string => (c < 0 || c >= COLS || r < 0 || r >= ROWS ? ' ' : MAP[ROWS - 1 - r][c]);
 const xOf = (c: number): number => (COLS / 2 - 0.5 - c) * CELL;
-const zOf = (r: number): number => r * CELL;
+const zOf = (r: number): number => (r + ROW0) * CELL;
 
-const DRIVABLE = new Set(['.', 'b', 'm', 'c', 'd', 'O', 'S', 'F', 'R', 'H']);
+const DRIVABLE = new Set(['.', ',', 'a', 'A', 'b', 'm', 'c', 'd', 'O', 'S', 'F', 'R', 'H']);
 const BLOCKS = new Set(['#', 'o', 'w', 'p', 'q']);
 const drivable = (c: number, r: number) => DRIVABLE.has(at(c, r));
+/**
+ * How wide a way is on its square, metres, where it is not the whole square: ',' a street of two lanes, 'T' a flight of
+ * steps, 'a' a lane and 'A' a corner of one (wider, for a truck to get round). The blocks either side reach out over the rest of the square, pavement, houses and all, so that the way between
+ * them is that wide. Level 1 has none of these: its roads are a square wide.
+ */
+const WIDTHS: Record<string, number> = { ',': 9, T: 8, a: 5.5, A: 5.5 };
+/** How far the blocks beside a square reach out over it. */
+/** How far each block actually reaches out over a narrow way beside it, by square and side ("c,r,dc,dr"): set as the blocks are built, for what stands at their kerbs. */
+const REACHED = new Map<string, number>();
+const reached = (c: number, r: number, dc: number, dr: number) => REACHED.get(`${c},${r},${dc},${dr}`) ?? spare(c + dc, r + dr);
+const spare = (c: number, r: number): number => {
+  const wide = WIDTHS[at(c, r)];
+  return wide === undefined ? 0 : (CELL - wide) / 2;
+};
 
-const MIN_X = xOf(COLS - 1) - HALF;
-const MAX_X = xOf(0) + HALF;
-const MIN_Z = -HALF;
-const MAX_Z = zOf(ROWS - 1) + HALF;
+let MIN_X = xOf(COLS - 1) - HALF;
+let MAX_X = xOf(0) + HALF;
+let MIN_Z = -HALF;
+let MAX_Z = zOf(ROWS - 1) + HALF;
+
+/**
+ * Level 1's way of building, used on another map: its blocks of buildings, parks and squares, its roads and their markings,
+ * and what stands along the kerbs, as they would be on level 1 for the same squares. `row0` is the row of level 1's map
+ * the new map's first row (its last line) would be. Nothing else of level 1 comes with them.
+ */
+export function buildTown(map: string[], route: Vec2[], row0: number): { props: PropDesc[]; objects: ObjectDesc[]; decals: DecalDesc[]; crowds: CrowdDesc[]; fountains: Vec3[] } {
+  const was = { MAP, ROUTE, COLS, ROWS, ROW0, MIN_X, MAX_X, MIN_Z, MAX_Z };
+  MAP = map;
+  ROUTE = route;
+  COLS = map[0].length;
+  ROWS = map.length;
+  ROW0 = row0;
+  MIN_X = xOf(COLS - 1) - HALF;
+  MAX_X = xOf(0) + HALF;
+  MIN_Z = zOf(0) - HALF;
+  MAX_Z = zOf(ROWS - 1) + HALF;
+  try {
+    const b = new Builder();
+    REACHED.clear();
+    buildBlocks(b);
+    buildRoads(b);
+    buildStreetFurniture(b);
+    buildScooters(b);
+    buildMarkings(b);
+    return { props: b.props, objects: b.objects, decals: b.decals, crowds: b.crowds, fountains: b.fountains };
+  } finally {
+    ({ MAP, ROUTE, COLS, ROWS, ROW0, MIN_X, MAX_X, MIN_Z, MAX_Z } = was);
+  }
+}
 
 const PAVEMENT = 0x9aa0a8;
 /** What the pavements of each kind of district are laid in: red brick in the old town, grey elsewhere. */
@@ -235,7 +284,12 @@ function blockRects(): { c0: number; r0: number; c1: number; r1: number; kind: s
     for (let c = 0; c < COLS; c++) {
       const kind = at(c, r);
       if (!BLOCKS.has(kind) || used.has(`${c},${r}`)) continue;
-      const free = (cc: number, rr: number) => at(cc, rr) === kind && !used.has(`${cc},${rr}`);
+      // Squares go together only if the ways round them are alike: a block beside a narrow way reaches out over it, and a
+      // rectangle can only reach out as far along a side as the least of the ways along it lets it.
+      const sides = (cc: number, rr: number) => `${spare(cc + 1, rr)},${spare(cc - 1, rr)},${spare(cc, rr + 1)},${spare(cc, rr - 1)}`;
+      const open = kind === 'p' || kind === 'q';
+      const like = sides(c, r);
+      const free = (cc: number, rr: number) => at(cc, rr) === kind && !used.has(`${cc},${rr}`) && (open || sides(cc, rr) === like);
       let c1 = c;
       while (c1 - c < 3 && free(c1 + 1, r)) c1++;
       let r1 = r;
@@ -254,10 +308,26 @@ function blockRects(): { c0: number; r0: number; c1: number; r1: number; kind: s
 function buildBlocks(b: Builder): void {
   for (const { c0, r0, c1, r1, kind } of blockRects()) {
     // Columns run against X, so the rectangle's low column is its high-X side.
-    const x0 = xOf(c1) - HALF;
-    const x1 = xOf(c0) + HALF;
-    const z0 = zOf(r0) - HALF;
-    const z1 = zOf(r1) + HALF;
+    // Reaching out over a narrow way beside it, as far as the narrowest of the squares along that side lets it.
+    const reach = (cells: [number, number][]) => Math.min(...cells.map(([cc, rr]) => spare(cc, rr)));
+    const rowsOf: number[] = [];
+    for (let rr = r0; rr <= r1; rr++) rowsOf.push(rr);
+    const colsOf: number[] = [];
+    for (let cc = c0; cc <= c1; cc++) colsOf.push(cc);
+    const reachLowX = reach(rowsOf.map((rr): [number, number] => [c1 + 1, rr]));
+    const reachHighX = reach(rowsOf.map((rr): [number, number] => [c0 - 1, rr]));
+    const reachLowZ = reach(colsOf.map((cc): [number, number] => [cc, r0 - 1]));
+    const reachHighZ = reach(colsOf.map((cc): [number, number] => [cc, r1 + 1]));
+    for (let cc = c0; cc <= c1; cc++) for (let rr = r0; rr <= r1; rr++) {
+      if (cc === c1) REACHED.set(`${cc},${rr},1,0`, reachLowX);
+      if (cc === c0) REACHED.set(`${cc},${rr},-1,0`, reachHighX);
+      if (rr === r0) REACHED.set(`${cc},${rr},0,-1`, reachLowZ);
+      if (rr === r1) REACHED.set(`${cc},${rr},0,1`, reachHighZ);
+    }
+    const x0 = xOf(c1) - HALF - reachLowX;
+    const x1 = xOf(c0) + HALF + reachHighX;
+    const z0 = zOf(r0) - HALF - reachLowZ;
+    const z1 = zOf(r1) + HALF + reachHighZ;
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     const w = x1 - x0;
@@ -309,7 +379,10 @@ function buildBlocks(b: Builder): void {
         const rEnd = Math.min(r + 1, r1);
         const columns = cEnd === c ? [c] : [c, cEnd];
         const rows = rEnd === r ? [r] : [r, rEnd];
-        const back = (open: boolean) => (open ? b.span(3.5, 5) : 0);
+        const back = (open: boolean, narrow = false) => {
+          const set = open ? b.span(3.5, 5) : 0;
+          return narrow && set ? 1.8 + (set - 3.5) * 0.4 : set;
+        };
         // Columns run against X: the next column up is the low-X side.
         const open: BuildingLook['open'] = [
           !rows.every((rr) => built(cEnd + 1, rr)),
@@ -317,10 +390,10 @@ function buildBlocks(b: Builder): void {
           !columns.every((cc) => built(cc, r - 1)),
           !columns.every((cc) => built(cc, rEnd + 1)),
         ];
-        const lowX = xOf(cEnd) - HALF + back(open[0]);
-        const highX = xOf(c) + HALF - back(open[1]);
-        const lowZ = zOf(r) - HALF + back(open[2]);
-        const highZ = zOf(rEnd) + HALF - back(open[3]);
+        const lowX = xOf(cEnd) - HALF - (cEnd === c1 ? reachLowX : 0) + back(open[0], cEnd === c1 && reachLowX > 0);
+        const highX = xOf(c) + HALF + (c === c0 ? reachHighX : 0) - back(open[1], c === c0 && reachHighX > 0);
+        const lowZ = zOf(r) - HALF - (r === r0 ? reachLowZ : 0) + back(open[2], r === r0 && reachLowZ > 0);
+        const highZ = zOf(rEnd) + HALF + (rEnd === r1 ? reachHighZ : 0) - back(open[3], rEnd === r1 && reachHighZ > 0);
         const height =
           kind === 'w' ? b.span(6, 10)
           : kind === 'o' ? b.span(6, 15)
@@ -359,8 +432,8 @@ function buildStreetFurniture(b: Builder): void {
         const dz = dr;
         for (const along of [-4, 4]) {
           if (b.rand() < 0.22) continue;
-          const x = xOf(c) + dx * (HALF - inset) + dz * along;
-          const z = zOf(r) + dz * (HALF - inset) + dx * along;
+          const x = xOf(c) + dx * (HALF - inset + reached(c, r, dc, dr)) + dz * along;
+          const z = zOf(r) + dz * (HALF - inset + reached(c, r, dc, dr)) + dx * along;
           if (!b.free(x, z)) continue;
           b.object(b.pick(choices), x, z, KERB, Math.atan2(dx, dz));
         }
@@ -399,8 +472,8 @@ function buildScooters(b: Builder): void {
         const slant = (rand() < 0.5 ? -1 : 1) * (0.15 + rand() * 0.2);
         for (let i = 0; i < count; i++) {
           const along = middle + (i - (count - 1) / 2) * gap;
-          const x = xOf(c) + dx * (HALF - inset) + dz * along;
-          const z = zOf(r) + dz * (HALF - inset) + dx * along;
+          const x = xOf(c) + dx * (HALF - inset + reached(c, r, dc, dr)) + dz * along;
+          const z = zOf(r) + dz * (HALF - inset + reached(c, r, dc, dr)) + dx * along;
           // A gap here and there, where someone has ridden off.
           if (rand() < 0.1 || !nearRoute(x, z, 60) || !b.free(x, z) || !clear(x, z)) continue;
           b.object(SCOOTERS[Math.floor(rand() * SCOOTERS.length)], x, z, KERB, Math.atan2(-dx, -dz) + slant);
@@ -900,6 +973,11 @@ function buildRoads(b: Builder): void {
           b.decals.push({ pos: place(0, 0), size: [0.25, CELL], rotY, color: YELLOW });
           for (const offset of [-LANE, LANE]) for (const along of [-4, 4]) b.decals.push({ pos: place(offset, along), size: [0.15, dash], rotY, color: WHITE });
         }
+      }
+
+      if (kind === ',' && ns !== ew) {
+        // A street of two lanes: a line down its middle, on the straight.
+        b.decals.push({ pos: [x, z], size: [0.2, CELL], rotY: ns ? 0 : Math.PI / 2, color: YELLOW });
       }
 
       if (kind === 'b') {
@@ -1717,7 +1795,7 @@ function buildTraffic(): TrafficLane[] {
  * Front to back it goes tall, then heavy, then fragile, then round: the tall things have
  * the cab to lean on under braking, and the melons have the whole bed to roll down.
  */
-function cityLoad(): CargoPlacement[] {
+export function cityLoad(): CargoPlacement[] {
   const cargo: CargoPlacement[] = [];
   const floor = TRUCK.frame.pos[1] + TRUCK.frame.half[1];
   const gap = 0.01;

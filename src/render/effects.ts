@@ -74,6 +74,9 @@ export class Smoke {
 }
 
 interface Bit {
+  /** Where it comes to rest, and whether it flutters rather than falls. */
+  floor: number;
+  flutter: boolean;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   scale: THREE.Vector3;
@@ -95,8 +98,22 @@ const BURST_STYLES = {
   // A live wire shorting: thin, bright, blue-white, and gone at once.
   arc: { colors: [0xffffff, 0xcfe8ff, 0x8fc8ff, 0xfff2a0], size: [0.03, 0.06], stretch: 7, life: [0.12, 0.3] },
   fire: { colors: [0xffb030, 0xff7a1a, 0xffe07a, 0xe8401a], size: [0.1, 0.24], stretch: 1.4, life: [0.3, 0.75] },
+  // What flies out of things that stand in a field or a wood.
+  straw: { colors: [0xd9c068, 0xc4a548, 0xe6d48a], size: [0.03, 0.06], stretch: 5, life: [1.0, 1.8] },
+  grain: { colors: [0xe8d49a, 0xd9bf78, 0xf2e6bf], size: [0.025, 0.045], stretch: 1, life: [0.7, 1.3] },
+  // Rice laid out to dry: golden, and plenty of it.
+  rice: { colors: [0xf2c94c, 0xe8b43a, 0xf7dc7a], size: [0.05, 0.09], stretch: 1.3, life: [0.9, 1.6] },
+  bees: { colors: [0xf2c12e, 0x2a2420, 0xe0a81a], size: [0.03, 0.05], stretch: 1.2, life: [1.6, 2.8] },
+  dust: { colors: [0x8b8880, 0x77756f, 0xa8a59c], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
+  bamboo: { colors: [0x6f9a4a, 0x8ab05a, 0x557a3a, 0xa9c070], size: [0.035, 0.07], stretch: 6, life: [0.9, 1.7] },
   // Whatever colour it is given: fruit, paint.
   juice: { colors: [0xffffff], size: [0.06, 0.13], stretch: 1, life: [0.7, 1.4] },
+  // A firecracker's flash: big, white, and gone almost at once.
+  flash: { colors: [0xffffff, 0xfff6c8, 0xffe07a], size: [0.18, 0.32], stretch: 1, life: [0.04, 0.09] },
+  // A clay pot in pieces, and the earth out of it.
+  shards: { colors: [0xb5533c, 0x9a4530, 0x6b4a32, 0x4f8a4a], size: [0.05, 0.11], stretch: 1.4, life: [0.9, 1.5] },
+  // Gold paper money, square and flat, that flutters down slowly.
+  paper: { colors: [0xe8b83a, 0xd9a62e, 0xf2cf5a, 0xc8372d], size: [0.1, 0.16], stretch: 0.12, life: [2.8, 4.2] },
 } as const;
 
 export type BurstStyle = keyof typeof BURST_STYLES;
@@ -120,7 +137,7 @@ export class Bursts {
     for (let i = 0; i < MAX_BITS; i++) {
       this.bits.push({
         pos: new THREE.Vector3(), vel: new THREE.Vector3(), scale: new THREE.Vector3(),
-        rot: new THREE.Quaternion(), age: 1, life: 1,
+        rot: new THREE.Quaternion(), age: 1, life: 1, floor: 0, flutter: false,
       });
       this.mesh.setMatrixAt(i, HIDDEN);
       this.mesh.setColorAt(i, COLOR.set(0xffffff));
@@ -148,6 +165,8 @@ export class Bursts {
       b.scale.set(size, size, size * s.stretch);
       b.rot.setFromEuler(new THREE.Euler(Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3));
       b.age = 0;
+      b.floor = at.y + GROUND;
+      b.flutter = style === 'paper';
       b.life = between(s.life);
       COLOR.set(tint ?? s.colors[Math.floor(Math.random() * s.colors.length)]);
       // A given colour is varied a little from one bit to the next.
@@ -166,9 +185,16 @@ export class Bursts {
         return;
       }
       b.vel.y += GRAVITY * dt;
+      if (b.flutter) {
+        // Paper: held up by the air, drifting and swinging as it comes down.
+        b.vel.y = Math.max(b.vel.y, -0.7);
+        b.vel.x = b.vel.x * 0.97 + Math.sin(b.age * 5 + i) * 0.08;
+        b.vel.z = b.vel.z * 0.97 + Math.cos(b.age * 4 + i) * 0.08;
+        b.rot.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(dt * 4, dt * 3, 0)));
+      }
       b.pos.addScaledVector(b.vel, dt);
-      if (b.pos.y < GROUND) {
-        b.pos.y = GROUND;
+      if (b.pos.y < b.floor) {
+        b.pos.y = b.floor;
         b.vel.set(0, 0, 0);
       }
       // Shrink away over the last quarter of its life.

@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { GROUP, PHYSICS, TRUCK, groups } from '../config';
+import type { ObjectKindId } from '../levels/objects';
 import type { RiderLane } from '../levels/types';
 import type { Traffic } from './traffic';
 import type { Truck } from './truck';
@@ -21,6 +22,13 @@ const SWERVE = 3.4;
 /** Their speed round a U-turn, and the least room they turn in. */
 const TURNING = 4.5;
 const TURN_ROOM = 2.2;
+type Half = { width: number; height: number; length: number };
+/** What movers carry, and the two of them at either end: half the size of the lot. */
+const LOADS: Partial<Record<ObjectKindId, Half>> & { sofa: Half } = {
+  sofa: { width: 0.55, height: 0.9, length: 1.55 },
+  fridge: { width: 0.45, height: 1.1, length: 0.95 },
+  wardrobe: { width: 0.6, height: 1.2, length: 1.05 },
+};
 /** A rider walks back to their scooter at this speed, m/s, and is at it within this distance. */
 const WALK = 3.2;
 const REACH = 0.9;
@@ -49,6 +57,8 @@ interface Road {
   /** The band they keep to: metres to the left of the line, at its right edge and its left. */
   lo: number;
   hi: number;
+  /** How far they will go out of it to get by, where the level lets them: see RiderLane.reach. */
+  reach: [number, number] | null;
   turnInto: Road | null;
 }
 
@@ -63,6 +73,12 @@ export interface Rider {
   drift: number;
   /** The speed they would ride at with nothing in the way. */
   cruise: number;
+  /** A scooter, or a god's sedan chair and its four bearers, or two movers and what they carry. */
+  kind: 'scooter' | 'palanquin' | 'movers';
+  /** What movers are carrying. */
+  load?: ObjectKindId;
+  /** Half its size each way. */
+  half: { width: number; height: number; length: number };
   /** Where across the road they mean to be, and how long until they think again. */
   wish: number;
   mind: number;
@@ -99,6 +115,8 @@ interface Obstacle {
   speed: number;
   rider: Rider | null;
   truck: boolean;
+  /** One of the traffic: it gives way to anyone carrying something across in front of it. */
+  car?: boolean;
 }
 
 const q = new Quaternion();
@@ -165,13 +183,14 @@ export class Riders {
   private shoves: { x: number; z: number; left: number }[] = [];
   private seed = 11;
 
-  constructor(world: RAPIER.World, lanes: RiderLane[]) {
+  /** @param ground how high the ground is at a place, where it is not all at nought */
+  constructor(world: RAPIER.World, lanes: RiderLane[], private readonly ground: (x: number, z: number) => number = () => 0) {
     this.roads = lanes.map((lane) => {
       const from = new Vector3(lane.from[0], 0, lane.from[1]);
       const dir = new Vector3(lane.to[0] - lane.from[0], 0, lane.to[1] - lane.from[1]);
       const length = dir.length();
       dir.normalize();
-      return { from, dir, left: new Vector3(dir.z, 0, -dir.x), length, lo: Math.min(...lane.band), hi: Math.max(...lane.band), turnInto: null };
+      return { from, dir, left: new Vector3(dir.z, 0, -dir.x), length, lo: Math.min(...lane.band), hi: Math.max(...lane.band), reach: lane.reach ? [Math.min(...lane.reach), Math.max(...lane.reach)] : null, turnInto: null };
     });
     lanes.forEach((lane, i) => {
       if (lane.turnInto !== undefined) this.roads[i].turnInto = this.roads[lane.turnInto];
@@ -181,11 +200,16 @@ export class Riders {
       const road = this.roads[i];
       for (let n = 0; n < lane.riders; n++) {
         const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+        const chair = lane.kind === 'palanquin';
+        const movers = lane.kind === 'movers';
+        // A sedan chair and its bearers fill a box the length of its poles, and as high as their shoulders; movers, what they
+        // carry and themselves at either end.
+        const half = chair ? { width: 0.9, height: 0.9, length: 2.3 } : movers ? { ...(LOADS[lane.load ?? 'sofa'] ?? LOADS.sofa) } : SCOOTER_HALF;
         world.createCollider(
           // Rounded at the edges, so that sliding along the road it doesn't catch on the joins between its slabs.
-          RAPIER.ColliderDesc.roundCuboid(SCOOTER_HALF.width - 0.12, SCOOTER_HALF.height - 0.12, SCOOTER_HALF.length - 0.12, 0.12)
-            .setTranslation(0, SCOOTER_HALF.height + 0.05, 0)
-            .setMass(SCOOTER_MASS)
+          RAPIER.ColliderDesc.roundCuboid(half.width - 0.12, half.height - 0.12, half.length - 0.12, 0.12)
+            .setTranslation(0, half.height + 0.05, 0)
+            .setMass(chair ? 600 : movers ? 260 : SCOOTER_MASS)
             .setFriction(0.5)
             .setCollisionGroups(SOLID),
           body,
@@ -195,7 +219,7 @@ export class Riders {
         const s = (((Math.floor(n / 4) + 0.3) / bunches) * road.length + (n % 4) * 4.5 + this.random() * 1.5) % road.length;
         const d = road.lo + this.random() * (road.hi - road.lo);
         const rider: Rider = {
-          body, road, s, d, speed: 0, drift: 0, cruise: 13 + this.random() * 4.5, wish: d, mind: this.random() * 3, cuts: false, turn: -1, impact: 0,
+          body, road, s, d, speed: 0, drift: 0, cruise: chair ? 1.6 : movers ? 1.2 + this.random() * 0.3 : 13 + this.random() * 4.5, kind: lane.kind ?? 'scooter', load: lane.load, half, wish: d, mind: this.random() * 3, cuts: false, turn: -1, impact: 0,
           knocked: 0, walking: false, facing: 0, seated: true, person: new Vector3(), personVelocity: new Vector3(), down: 0, yaw: Math.atan2(road.dir.x, road.dir.z), index: this.list.length,
           start: { road, s, d },
         };
@@ -271,11 +295,19 @@ export class Riders {
       closing.set(at.vx - tv.x, 0, at.vz - tv.z).applyQuaternion(toTruck);
       // The scooter's own reach each way depends on which way it points, seen from the truck.
       heading.set(Math.sin(rider.yaw), 0, Math.cos(rider.yaw)).applyQuaternion(toTruck);
-      const reachAcross = Math.abs(heading.x) * SCOOTER_HALF.length + Math.abs(heading.z) * SCOOTER_HALF.width;
-      const reachAlong = Math.abs(heading.z) * SCOOTER_HALF.length + Math.abs(heading.x) * SCOOTER_HALF.width;
+      const reachAcross = Math.abs(heading.x) * rider.half.length + Math.abs(heading.z) * rider.half.width;
+      const reachAlong = Math.abs(heading.z) * rider.half.length + Math.abs(heading.x) * rider.half.width;
       const across = Math.abs(v.x) - Math.abs(closing.x) * dt * 2;
       const along = Math.abs(v.z) - Math.abs(closing.z) * dt * 2;
-      if (across < TRUCK_HALF_WIDTH + reachAcross + 0.15 && along < TRUCK_HALF_LENGTH + reachAlong + 0.1) this.knock(rider, at, tv, v.x < 0 ? -1 : 1, truckSide, truck);
+      const early = rider.kind !== 'scooter' ? 0.5 : 0;
+      if (across < TRUCK_HALF_WIDTH + reachAcross + 0.15 + early && along < TRUCK_HALF_LENGTH + reachAlong + 0.1 + early) {
+        if (rider.kind !== 'scooter' && Math.hypot(tv.x, tv.z) < 1.5) {
+          // Walked up against a truck that is standing: they stop, and wait for it to go.
+          rider.s -= rider.speed * dt;
+          rider.speed = 0;
+          this.place(rider, false);
+        } else this.knock(rider, at, tv, v.x < 0 ? -1 : 1, truckSide, truck);
+      }
     }
   }
 
@@ -286,7 +318,15 @@ export class Riders {
 
   /** Where every scooter is, ridden or lying in the road: all of them are in the way of a car. */
   inTheWay(): { x: number; z: number }[] {
-    return this.list.map((rider) => (rider.knocked > 0 ? rider.body.translation() : this.where(rider)));
+    return this.list.flatMap((rider) => {
+      if (rider.knocked > 0) return [rider.body.translation()];
+      const p = this.where(rider);
+      if (rider.kind === 'scooter') return [p];
+      // Something long carried across the road: its ends as well as its middle, so that nobody drives into either.
+      const reach = rider.half.length;
+      const dir = rider.road.dir;
+      return [p, { x: p.x + dir.x * reach, z: p.z + dir.z * reach }, { x: p.x - dir.x * reach, z: p.z - dir.z * reach }];
+    });
   }
 
   /** A scooter, if one is being ridden through this spot: which way, and how fast. */
@@ -344,13 +384,13 @@ export class Riders {
     traffic: Traffic, walkers: readonly { x: number; z: number }[],
   ): Obstacle[] {
     const list: Obstacle[] = [];
-    const add = (x: number, z: number, halfLength: number, halfWidth: number, speed: number, rider: Rider | null = null, truck = false) => {
+    const add = (x: number, z: number, halfLength: number, halfWidth: number, speed: number, rider: Rider | null = null, truck = false, car = false) => {
       const dx = x - road.from.x;
       const dz = z - road.from.z;
       const s = dx * road.dir.x + dz * road.dir.z;
       const d = dx * road.left.x + dz * road.left.z;
       if (s < -8 || s > road.length + 8 || d < road.lo - 4 || d > road.hi + 4) return;
-      list.push({ s, d, halfLength, halfWidth, speed, rider, truck });
+      list.push({ s, d, halfLength, halfWidth, speed, rider, truck, car });
     };
 
     // The truck's reach along and across the road depends on which way it is pointing.
@@ -366,7 +406,7 @@ export class Riders {
       else {
         const sameWay = car.lane.dir.dot(road.dir);
         const along = Math.abs(sameWay) > 0.7;
-        add(p.x, p.z, along ? half.length : half.width, along ? half.width : half.length, car.speed * sameWay);
+        add(p.x, p.z, along ? half.length : half.width, along ? half.width : half.length, car.speed * sameWay, null, false, true);
       }
     }
     for (const rider of this.list) {
@@ -395,6 +435,8 @@ export class Riders {
     const beside: number[] = [];
     for (const o of obstacles) {
       if (o.rider === rider) continue;
+      // Movers carry on across: the traffic waits for them, and if they waited for it too nobody would move.
+      if (o.car && rider.kind === 'movers') continue;
       const ahead = o.s - rider.s;
       const gap = Math.abs(ahead) - o.halfLength - SCOOTER_HALF.length;
       const closing = rider.speed - o.speed;
@@ -414,7 +456,8 @@ export class Riders {
       if (ahead > 0 && Math.abs(o.d - rider.d) < clear - 0.1) limit = Math.min(limit, Math.max(0, o.speed) + Math.sqrt(2 * CLOSING * Math.max(0, gap - 1.4)));
     }
     // Slowing for the turn at the end, and over to the kerb to have room to make it.
-    let hi = road.hi;
+    const lo = road.reach?.[0] ?? road.lo;
+    let hi = road.reach?.[1] ?? road.hi;
     if (road.turnInto) {
       limit = Math.min(limit, Math.sqrt(TURNING * TURNING + 2 * BRAKING * Math.max(0, road.length - rider.s)));
       if (road.length - rider.s < 30) hi = Math.min(hi, -TURN_ROOM);
@@ -423,9 +466,10 @@ export class Riders {
     if (limit < rider.speed) rider.speed = Math.max(limit, rider.speed - BRAKING * 1.8 * dt);
     else rider.speed = Math.min(limit, rider.speed + ACCELERATION * dt);
 
-    const target = steer(taken, road.lo, hi, wish, rider.d, beside);
-    // No sideways without forwards: a scooter standing still can't shuffle across the road.
-    const most = Math.min(SWERVE, rider.speed * 0.4);
+    const target = steer(taken, lo, Math.max(lo, hi), clamp(wish, road.lo, road.hi), rider.d, beside);
+    // No sideways without forwards: a scooter standing still can't shuffle across the road. Unless it may filter: then, stuck
+    // behind something, the rider walks it across with their feet, looking for the gap.
+    const most = Math.min(SWERVE, road.reach ? Math.max(0.7, rider.speed * 0.4) : rider.speed * 0.4);
     const want = clamp((target - rider.d) * 3, -most, most);
     rider.drift += clamp(want - rider.drift, -14 * dt, 14 * dt);
     rider.s += rider.speed * dt;
@@ -435,10 +479,10 @@ export class Riders {
   /** Round the end of one road and back down the other: half a circle about the end of the line. */
   private goRound(rider: Rider, dt: number): void {
     const { road } = rider;
-    rider.speed = TURNING;
+    rider.speed = Math.min(TURNING, rider.cruise);
     rider.drift = 0;
     rider.s = road.length;
-    rider.turn += (TURNING / Math.max(1.2, Math.abs(rider.d))) * dt;
+    rider.turn += (rider.speed / Math.max(1.2, Math.abs(rider.d))) * dt;
     if (rider.turn < Math.PI || !road.turnInto) return;
     // The same spot, seen from the road going the other way.
     rider.road = road.turnInto;
@@ -478,7 +522,7 @@ export class Riders {
     if (Math.hypot(at.vx, at.vz) > 0.5) rider.yaw = Math.atan2(at.vx, at.vz);
     const tilt = rider.turn >= 0 ? -0.3 * Math.sign(rider.d || -1) : (rider.drift / SWERVE) * 0.3;
     q.setFromAxisAngle(UP, rider.yaw).multiply(lean.setFromAxisAngle(FORWARD, tilt));
-    v.set(at.x, 0, at.z);
+    v.set(at.x, this.ground(at.x, at.z), at.z);
     if (jump) {
       rider.body.setTranslation(v, true);
       rider.body.setRotation(q, true);
@@ -513,7 +557,7 @@ export class Riders {
     rider.turn = -1;
     rider.seated = false;
     rider.down = DOWN_SECONDS;
-    rider.person.set(at.x, 0.9, at.z);
+    rider.person.set(at.x, this.ground(at.x, at.z) + 0.9, at.z);
     // Carried along by the truck, and off to whichever side of it they were on.
     rider.personVelocity.set(at.vx * 0.4 + tv.x * 0.8 + truckSide.x * side * 3, 4.5, at.vz * 0.4 + tv.z * 0.8 + truckSide.z * side * 3);
     this.hits++;
@@ -528,13 +572,13 @@ export class Riders {
   private recover(rider: Rider, dt: number, truck: { x: number; z: number }): void {
     rider.walking = false;
     const p = rider.person;
-    if (p.y > 0 || rider.personVelocity.y > 0 || rider.down > 0) {
+    if (p.y > this.ground(p.x, p.z) || rider.personVelocity.y > 0 || rider.down > 0) {
       this.tumble(rider, dt);
       return;
     }
     const at = rider.body.translation();
     // Gone into the river or down a hole: there is no fetching it. They start again from where they set out.
-    if (at.y < -1) {
+    if (at.y < this.ground(at.x, at.z) - 1) {
       Object.assign(rider, rider.start);
       this.restore(rider);
       return;
@@ -547,6 +591,7 @@ export class Riders {
       rider.facing = Math.atan2(dx, dz);
       p.x += (dx / away) * WALK * dt;
       p.z += (dz / away) * WALK * dt;
+      p.y = this.ground(p.x, p.z);
       return;
     }
     // At the scooter: but not while the truck is still on top of it.
@@ -566,11 +611,12 @@ export class Riders {
   private tumble(rider: Rider, dt: number): void {
     const p = rider.person;
     const pv = rider.personVelocity;
-    if (p.y > 0 || pv.y > 0) {
+    if (p.y > this.ground(p.x, p.z) || pv.y > 0) {
       pv.y -= G * dt;
       p.addScaledVector(pv, dt);
-      if (p.y <= 0 && pv.y < 0) {
-        p.y = 0;
+      const floor = this.ground(p.x, p.z);
+      if (p.y <= floor && pv.y < 0) {
+        p.y = floor;
         pv.y = 0;
       }
       return;

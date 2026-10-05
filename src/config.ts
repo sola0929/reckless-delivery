@@ -75,6 +75,9 @@ export const TRUCK = {
   handbrakeDecel: 7,
   // With the pedal up the truck slows by itself: a little from the tyres, and more the faster it is going.
   rollingDecel: 1.3,
+  /** On a hill steeper than this (rise over length) a truck left without its handbrake rolls, where the level has it so; and then this is all that holds it back. */
+  rollsAbove: 0.06,
+  rollingDecelHill: 0.8,
   coastDrag: 0.11,
   // Extra height, in metres, at which drive and brake forces act: exaggerates squat and dive.
   pitchLeverage: 0.5,

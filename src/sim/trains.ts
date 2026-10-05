@@ -110,7 +110,7 @@ export class Trains {
     const reachZ = Math.abs(forward.z) * TRUCK_HALF_LENGTH + Math.abs(side.z) * TRUCK_HALF_WIDTH;
     for (const train of this.trains) {
       const desc = this.tracks[train.track].desc;
-      if (Math.abs(p.z - desc.z) < TRAIN_HALF.width + reachZ && Math.abs(p.x - train.x) < TRAIN_HALF.length + reachX && p.y < TRAIN_HALF.height * 2 + 1) return desc;
+      if (Math.abs(p.z - desc.z) < TRAIN_HALF.width + reachZ && Math.abs(p.x - train.x) < TRAIN_HALF.length + reachX && p.y < (desc.y ?? 0) + TRAIN_HALF.height * 2 + 1) return desc;
     }
     return null;
   }
@@ -133,7 +133,7 @@ export class Trains {
         const x = track.start + direction * along;
         const wrapped = Math.abs(x - train.x) > track.spacing / 2;
         train.x = x;
-        const at = { x, y: TRAIN_Y, z };
+        const at = { x, y: TRAIN_Y + (track.desc.y ?? 0), z };
         if (jump || wrapped) train.body.setTranslation(at, true);
         else train.body.setNextKinematicTranslation(at);
       });
