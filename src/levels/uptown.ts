@@ -5,7 +5,7 @@ import type { ObjectDesc, ObjectKindId } from './objects';
 import type { Look, Relief } from './relief';
 import { standardLoad } from './sandbox';
 import { heightAt } from './terrain';
-import type { CrowdDesc, DecalDesc, LevelDef, MachineDesc, PropDesc, RiderLane, SignDesc, TrafficLane, Vec2 } from './types';
+import type { CrowdDesc, DecalDesc, LevelDef, MachineDesc, PropDesc, RiderLane, RollerDesc, SignDesc, TrafficLane, Vec2 } from './types';
 import type { Vec3 } from '../config';
 
 // Level 2: on north from the delivery bay where level 1 ends, out of the city on its hillside (hillcity.ts) and up.
@@ -135,12 +135,19 @@ const HILL_LOOK: Look = { tag: 'grass', color: 0x5f7f45, wall: 0x7a6e5e };
 const SHOULDER_LOOK: Look = { tag: 'dirt', color: 0x8a7a62, wall: 0x6e6252 };
 const DOWN_ROAD: Look = { tag: 'road', color: 0x4f555c, wall: 0x6e6a62 };
 /** Heaps of gravel and sand about the yard: [x, z, radius, height]. */
-const HEAPS: [number, number, number, number][] = [
+/**
+ * Where the load goes, now: the yard at the quarry's gate, at the foot of the hill, walled off from the quarry itself, which
+ * is for another day. [x0, z0, x1, z1]. It reaches north under the last leg and the second hairpin, so that a truck gone
+ * through a barrier there comes down in it, not in the quarry with no way out.
+ */
+const GATE_YARD: Rect = [QUARRY_EDGE - 28, LEG_SOUTH - 30, QUARRY_EDGE, LEG_NORTH + 22];
+const ALL_HEAPS: [number, number, number, number][] = [
   [QUARRY_EDGE - 22, LEG_SOUTH + 6, 8, 3], [QUARRY_EDGE - 40, LEG_SOUTH - 22, 7, 2.5], [QUARRY_EDGE - 54, LEG_SOUTH + 22, 9, 3.5],
   [QUARRY_EDGE - 70, LEG_SOUTH - 8, 6, 2], [QUARRY_EDGE - 86, LEG_SOUTH + 16, 8, 3], [QUARRY_EDGE - 32, LEG_SOUTH + 44, 7, 2.5],
   [QUARRY_EDGE - 62, LEG_SOUTH + 62, 9, 4], [QUARRY_EDGE - 92, LEG_SOUTH - 26, 7, 2.5], [QUARRY_EDGE - 104, LEG_SOUTH + 76, 8, 3],
   [QUARRY_EDGE - 18, LEG_SOUTH - 44, 8, 3], [QUARRY_EDGE - 86, LEG_SOUTH - 52, 12, 6],
 ];
+const HEAPS = ALL_HEAPS.filter(([x, z, r]) => !(x + r > GATE_YARD[0] - 2 && z + r > GATE_YARD[1] - 2 && z - r < GATE_YARD[3] + 2));
 
 /** The height of the ground anywhere in the new part. */
 function land(x: number, z: number): number {
@@ -297,7 +304,8 @@ export function uptown(): LevelDef {
   const flat: LevelDef = {
     ...cityPart,
     props: [...cityPart.props, ...town.props, ...edges],
-    objects: [...(cityPart.objects ?? []), ...town.objects],
+    // No street trees up the coil avenue: the coils would only fell them.
+    objects: [...(cityPart.objects ?? []), ...town.objects.filter((o) => !(o.kind.startsWith('tree') && Math.abs(o.pos[0] - xOf(31)) < 14 && o.pos[2] > zOf(51) + 8))],
     decals: [...cityPart.decals, ...town.decals],
     crowds: [...(cityPart.crowds ?? []), ...town.crowds],
     // The squares' fountains, lifted with the rest; level 1's own are kept where they were.
@@ -687,14 +695,14 @@ export function uptown(): LevelDef {
     const street = traffic.length;
     firstDown.push(street);
     traffic.push({ from: [EAST, z], to: [xOf(31) + dx, z], cars: 1, scatter: true, speed: 8, next: street + 1 });
-    traffic.push({ from: [xOf(31) + dx, z], to: [xOf(31) + dx, zOf(51) + 2.25], cars: 4, scatter: true, speed: 10, next: ROAD_WEST });
+    traffic.push({ from: [xOf(31) + dx, z], to: [xOf(31) + dx, zOf(51) + 2.25], cars: 3, scatter: true, speed: 10, next: ROAD_WEST });
   });
   const firstUp: number[] = [];
   [-1.75, -5.25].forEach((dx, k) => {
     const z = SIDE - 1.75 - k * 3.5;
     const avenueLane = traffic.length;
     firstUp.push(avenueLane);
-    traffic.push({ from: [xOf(31) + dx, zOf(51) - 2.25], to: [xOf(31) + dx, z], cars: 3, scatter: true, speed: 8, next: avenueLane + 1 });
+    traffic.push({ from: [xOf(31) + dx, zOf(51) - 2.25], to: [xOf(31) + dx, z], cars: 2, scatter: true, speed: 8, next: avenueLane + 1 });
     traffic.push({ from: [xOf(31) + dx, z], to: [EAST, z], cars: 1, speed: 8, next: ROAD_EAST });
   });
   // The outer lane coming down turns across the inner one into the road, by a short stretch of its own.
@@ -884,13 +892,14 @@ export function uptown(): LevelDef {
   // the water board's lorry on the pavement, men in vests, barriers.
   const manholes: { cover: number; every: number; phase: number }[] = [];
   {
-    const HOLES: Vec2[] = [[xOf(24) - 10, ROAD - 2.25], [xOf(25) - 6, ROAD + 2.25], [xOf(26) + 4, ROAD - 2.25], [xOf(26) - 6, ROAD + 2.25], [xOf(27) + 2, ROAD - 2.25], [xOf(28) + 6, ROAD + 2.25]];
+    // On the crown of the road and either side of it, in turn, closer than a truck is wide: whatever line is taken, one is under it.
+    const HOLES: Vec2[] = Array.from({ length: 11 }, (_, k): Vec2 => [xOf(24) - 9 - k * 5.4, ROAD + [0, -2.4, 2.4][k % 3] * (k % 2 ? 1 : -1)]);
     const disc = (x: number, z: number, r: number, color: number, y: number) => props.push({ shape: 'cylinder', size: [r, 0.005, 0], pos: [x, ground(x, z) + y, z], color, ghost: true });
     HOLES.forEach(([x, z], k) => {
       // The dark ring of the hole, and a puddle round it in overlapping rounds.
       disc(x, z, 0.47, 0x1c1d20, 0.012);
       for (const [dx, dz, r] of [[0.9, 0.5, 1.3], [-0.6, -0.7, 1.0], [1.8, -0.4, 0.9]] as const) disc(x + dx * (k % 2 ? -1 : 1), z + dz, r, 0x56626c, 0.008);
-      manholes.push({ cover: (lifted.objects?.length ?? 0) + objects.length, every: 7, phase: k * 1.15 });
+      manholes.push({ cover: (lifted.objects?.length ?? 0) + objects.length, every: 7, phase: (k * 2.7) % 7 });
       object('manholeCover', x, z);
     });
     object('farmTruck', xOf(26) - 2, NORTH_KERB + 1.8, Math.PI / 2);
@@ -1080,6 +1089,46 @@ export function uptown(): LevelDef {
       object('scooterWhite', EAST_EDGE - 8.5, LEG_NORTH + 3, 0.5);
     }
 
+    // The yard at the quarry's gate, where the load goes: a wall of concrete round it, and on its quarry side a gate of steel bars
+    // with the quarry seen through it, its machines at work; a guard's hut, the weighbridge, pallets of goods to be taken, a
+    // forklift, cones.
+    {
+      const [gx0, gz0, gx1, gz1] = GATE_YARD;
+      const y = QUARRY_H;
+      const wall = (x: number, z: number, hx: number, hz: number) => {
+        props.push({ shape: 'box', size: [hx, 1.3, hz], pos: [x, y + 1.3, z], color: 0x9a948a });
+        props.push({ shape: 'box', size: [hx + 0.05, 0.08, hz + 0.05], pos: [x, y + 2.65, z], color: 0x6e6a62, ghost: true });
+      };
+      wall((gx0 + gx1) / 2, gz0, (gx1 - gx0) / 2, 0.2);
+      wall((gx0 + gx1) / 2, gz1, (gx1 - gx0) / 2, 0.2);
+      const gate = (gz0 + gz1) / 2;
+      wall(gx0, (gz0 + gate - 6) / 2, 0.2, (gate - 6 - gz0) / 2);
+      wall(gx0, (gate + 6 + gz1) / 2, 0.2, (gz1 - gate - 6) / 2);
+      // The gate: two leaves of upright bars, shut; and its posts.
+      props.push({ shape: 'box', size: [0.12, 0.06, 6], pos: [gx0, y + 2.3, gate], color: 0x3a3f45 });
+      props.push({ shape: 'box', size: [0.12, 0.06, 6], pos: [gx0, y + 0.3, gate], color: 0x3a3f45 });
+      for (let dz = -5.7; dz <= 5.7; dz += 0.4) props.push({ shape: 'box', size: [0.04, 1.0, 0.04], pos: [gx0, y + 1.3, gate + dz], color: 0x3a3f45 });
+      for (const dz of [-6.2, 6.2]) props.push({ shape: 'box', size: [0.35, 1.6, 0.35], pos: [gx0, y + 1.6, gate + dz], color: 0x7a756c });
+      props.push({ shape: 'box', size: [0.03, 0.35, 1.6], pos: [gx0 + 0.15, y + 1.7, gate], color: 0xd0302a, ghost: true });
+      // The guard's hut by the way in, and its barrier arm, raised.
+      const [hx, hz] = [gx1 - 4, gz0 + 4];
+      props.push({ shape: 'box', size: [1.3, 1.25, 1.3], pos: [hx, y + 1.25, hz], color: 0xe8e2d0 });
+      props.push({ shape: 'box', size: [1.32, 0.35, 0.02], pos: [hx, y + 1.6, hz + 1.31], color: 0x1b2a3a, ghost: true });
+      props.push({ shape: 'box', size: [1.5, 0.1, 1.5], pos: [hx, y + 2.6, hz], color: 0x2f62a8, ghost: true });
+      // The weighbridge: a steel plate let into the ground, and its yellow edges.
+      decals.push({ pos: [gx1 - 13, gz0 + 14], size: [3.6, 10], color: 0x5a6068, base: y, y: 0.03 });
+      for (const dx of [-1.8, 1.8]) decals.push({ pos: [gx1 - 13 + dx, gz0 + 14], size: [0.2, 10], color: 0xf2c12e, base: y, y: 0.05 });
+      // Pallets of goods along the wall, waiting; a forklift; the place to stop marked out.
+      for (let k = 0; k < 4; k++) {
+        object('pallet', gx0 + 2, gate - 14 - k * 2.4);
+        object(k % 2 ? 'riceSack' : 'box', gx0 + 2, gate - 14 - k * 2.4);
+      }
+      object('farmTruck', gx0 + 3, gate + 16, Math.PI / 2);
+      for (const dz of [-8, 8]) object('cone', gx0 + 10, gate + dz);
+      decals.push({ pos: [gx0 + 10, gate - 4], size: [9, 12], color: 0xf2c12e, base: y, y: 0.03 });
+      decals.push({ pos: [gx0 + 10, gate - 4], size: [8.4, 11.4], color: 0x8a8378, base: y, y: 0.05 });
+    }
+
     // The quarry: a fence round it, the office in two containers at its far end, where the load goes; the machines.
     const [qx0, qz0, qx1, qz1] = QUARRY;
     const level = QUARRY_H;
@@ -1096,7 +1145,7 @@ export function uptown(): LevelDef {
     for (const [dx, dz] of [[4, -6], [5, -4.5], [4.2, 5], [6, 6]] as const) object('box', office[0] + dx, office[1] + dz);
     object('barrel', office[0] + 3, office[1] - 8);
     object('barrel', office[0] + 3.8, office[1] - 8.6);
-    const yard: [number, number, number, number] = [qx0 + 14, qz0 + 10, qx1 - 10, qz1 - 10];
+    const yard: [number, number, number, number] = [qx0 + 14, qz0 + 10, GATE_YARD[0] - 12, qz1 - 10];
     machines.push(
       { kind: 'excavator', pos: [QUARRY_EDGE - 54, LEG_SOUTH + 6], yaw: 1, area: [QUARRY_EDGE - 70, LEG_SOUTH - 6, QUARRY_EDGE - 40, LEG_SOUTH + 20] },
       { kind: 'excavator', pos: [QUARRY_EDGE - 96, LEG_SOUTH + 40], yaw: -2, area: [QUARRY_EDGE - 112, LEG_SOUTH + 28, QUARRY_EDGE - 82, LEG_SOUTH + 54] },
@@ -1153,8 +1202,8 @@ export function uptown(): LevelDef {
     // Off the landing, east, and down the hill.
     [EAST_EDGE, zOf(65)], [LEGS[0], zOf(65) - 10], [LEGS[0], LEG_SOUTH], [(LEGS[0] + LEGS[1]) / 2, LEG_SOUTH - 12], [LEGS[1], LEG_SOUTH],
     [LEGS[1], LEG_NORTH], [(LEGS[1] + LEGS[2]) / 2, LEG_NORTH + 12], [LEGS[2], LEG_NORTH], [LEGS[2], LEG_SOUTH], [LEGS[2] - 10, LEG_SOUTH - 12],
-    // Across the quarry to its office.
-    [QUARRY[0] + 18, (QUARRY[1] + QUARRY[3]) / 2 + 10],
+    // Into the yard at the quarry's gate, to the bay marked out before it.
+    [GATE_YARD[0] + 10, (GATE_YARD[1] + GATE_YARD[3]) / 2 - 4],
   ];
 
   return {
@@ -1186,7 +1235,7 @@ export function uptown(): LevelDef {
       { name: '搬家', pos: [xOf(27) + 6, zOf(51) - 2.25], yaw: -Math.PI / 2 },
       { name: '鋼捲大坡', pos: [xOf(31) - 3.5, zOf(52) + 4], yaw: 0 },
       { name: '下山髮夾彎', pos: [EAST_EDGE + 10, zOf(65)], yaw: -Math.PI / 2 },
-      { name: '砂石場', pos: [QUARRY_EDGE - 10, LEG_SOUTH - 12], yaw: -Math.PI / 2 },
+      { name: '山腳卸貨場', pos: [QUARRY_EDGE - 6, LEG_SOUTH - 12], yaw: -Math.PI / 2 },
     ],
     manholes,
     smokes,
@@ -1195,8 +1244,13 @@ export function uptown(): LevelDef {
     cargo: standardLoad(),
     traffic: [...lifted.traffic, ...traffic, floatLane, vanLane, ...standing],
     signs: [...(lifted.signs ?? []), ...signs],
-    rollers: [{ from: [xOf(31) - 6.5, AV_HEAD - 11], to: [xOf(31) + 6.5, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 1.8, speed: 4, run: AV_HEAD - zOf(51) + 4 }],
-    finish: { pos: [QUARRY[0] + 18, (QUARRY[1] + QUARRY[3]) / 2 + 10], half: [7, 8] },
+    // Across the road, and down the pavements too: the pavement is no way round them.
+    rollers: [
+      { from: [xOf(31) - 7.5, AV_HEAD - 11], to: [xOf(31) + 7.5, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 2.3, speed: 4, run: AV_HEAD - zOf(51) + 4 },
+      // And down each pavement, in the middle of it, clear of the house walls.
+      ...[-1, 1].map((side): RollerDesc => ({ from: [xOf(31) + side * 9.4, AV_HEAD - 11], to: [xOf(31) + side * 10.4, AV_HEAD - 11], down: [0, -1], kinds: ['steelCoil'], every: 6, speed: 4, run: AV_HEAD - zOf(51) + 4 })),
+    ],
+    finish: { pos: [GATE_YARD[0] + 10, (GATE_YARD[1] + GATE_YARD[3]) / 2 - 4], half: [4.5, 6] },
     damageScale: undefined,
     stars: [0, 0.6],
     par: 300,

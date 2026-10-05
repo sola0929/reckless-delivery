@@ -472,7 +472,8 @@ export class Sim {
     this.jets = this.jets.filter((jet) => (jet.left -= PHYSICS.dt) > 0);
     for (const jet of this.jets) {
       const local = new Vector3(jet.x - t.x, jet.y - t.y, jet.z - t.z).applyQuaternion(turn);
-      if (Math.abs(local.x) > TRUCK.frame.half[0] + 0.3 || Math.abs(local.z) > TRUCK.frame.half[2] + 0.6 || local.y < -3 || local.y > 1) continue;
+      // The column spreads as it comes up: a little way out past the truck's sides it still catches it.
+      if (Math.abs(local.x) > TRUCK.frame.half[0] + 0.6 || Math.abs(local.z) > TRUCK.frame.half[2] + 0.6 || local.y < -3 || local.y > 1) continue;
       // The first rush of it a hard kick; then a steady heave, dying away.
       const share = jet.left > JET_SECONDS - JET_KICK ? JET_KICK_PUSH : JET_PUSH * (jet.left / JET_SECONDS);
       const push = share * weight * PHYSICS.dt;

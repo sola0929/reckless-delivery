@@ -53,8 +53,9 @@ export class Rollers {
     return descs.flatMap((desc) => Array.from({ length: Rollers.count(desc) }, (_, n): ObjectDesc => ({ kind: desc.kinds[n % desc.kinds.length], rolls: !desc.sharp, pos: [desc.from[0], WAITING_Y - n * 2, desc.from[1]] })));
   }
 
-  private static count(_: RollerDesc): number {
-    return MOST;
+  /** Enough that none is taken back for the next while it can still be on its way down: half a minute and more of them. */
+  private static count(desc: RollerDesc): number {
+    return Math.max(MOST, Math.ceil(36 / desc.every));
   }
 
   /** @param first where in the object system's list the first of the waiting things is */

@@ -617,14 +617,19 @@ export class ObjectSystem {
         this.world.contactPair(own, other, (manifold) => {
           if (manifold.numContacts() === 0 || Math.abs(manifold.normal().y) >= 0.7) return;
           const body = other.parent();
+          // A kerb, or the edge of a slab of paving: something fixed whose top is well below its middle is rolled over, not met.
+          if (body?.isFixed() && other.shape.type === RAPIER.ShapeType.Cuboid) {
+            const top = other.translation().y + (other.shape as RAPIER.Cuboid).halfExtents.y;
+            if (top < object.body.translation().y - 0.25) return;
+          }
           const loose = this.byCollider.get(other.handle);
           const truck = ((other.collisionGroups() >>> 16) & GROUP.truck) !== 0;
           if (heavy && body?.isKinematic()) {
             if (!this.rammed.some((r) => r.body === body)) this.rammed.push({ body, by: object });
           } else if (heavy && !truck && !loose && body?.isDynamic() && body.mass() < object.body.mass()) {
             // A car it has already thrown aside, still against it: on it goes.
-          } else if (heavy && loose && loose.kind.mass < object.kind.mass / 4) {
-            // Thrown aside, and on it goes.
+          } else if (heavy && loose && (loose.kind.mass < object.kind.mass / 4 || loose.kind.effect === 'leaves')) {
+            // Thrown aside, and on it goes; a street tree snapped off as well, for all it would stop a truck.
           } else met = true;
         });
       });
