@@ -280,6 +280,7 @@ function materialOfObject(object: KnockEvent['object']): Material {
 const CARGO_SOUND: Record<string, Material> = {
   crate: 'wood', smallCrate: 'wood', wardrobe: 'wood', jar: 'ceramic', skeleton: 'bone',
   fridge: 'barrel', safe: 'heavy', watermelon: 'melon',
+  washer: 'barrel', sack: 'soft', soda: 'ceramic',
 };
 /** An item of cargo jolted by less than this, m/s, makes no sound; and one that has just made one waits this long. */
 const CARGO_QUIET = 2;

@@ -1,31 +1,28 @@
-// Screenshots of the truck and its load: at the start, close up, and after some rough driving.
+// A level's load on the truck as it starts, seen from above and behind. node dev/load-shot.mjs [level]
 import { chromium } from 'playwright-core';
+const [level = 'uptown'] = process.argv.slice(2);
 const browser = await chromium.launch({ channel: 'msedge' });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
-await page.goto('http://localhost:5183/?level=city');
-await page.waitForFunction(() => window.game?.sim, null, { timeout: 20000 });
-await page.waitForTimeout(1500);
-await page.mouse.move(640, 360);
-await page.mouse.wheel(0, -900);
-await page.waitForTimeout(4500);
-await page.screenshot({ path: 'dev/out/load-1-start.png' });
-// A low view from the front quarter, to look at the truck itself.
-await page.evaluate(() => { window.game.freeze = true; const { camera, sim } = window.game; const t = sim.truck.body.translation(); camera.position.set(t.x + 5.5, 3.2, t.z + 8.5); camera.lookAt(t.x, 1, t.z + 0.5); });
-await page.screenshot({ path: 'dev/out/load-2-front.png' });
-await page.evaluate(() => { const { camera, sim } = window.game; const t = sim.truck.body.translation(); camera.position.set(t.x - 5.5, 3.6, t.z - 8); camera.lookAt(t.x, 1, t.z - 0.5); });
-await page.screenshot({ path: 'dev/out/load-3-rear.png' });
-// Wreck everything, to see what each item looks like damaged and destroyed.
-await page.evaluate(() => { const { sim } = window.game; window.game.freeze = false; for (const c of sim.cargo) c.knock = 9; });
-await page.waitForTimeout(1200);
-await page.screenshot({ path: 'dev/out/load-4-damaged.png' });
-for (let i = 0; i < 7; i++) {
-  await page.evaluate(() => { const { sim } = window.game; for (const c of sim.cargo) c.knock = 60; });
-  await page.waitForTimeout(1300);
-}
-await page.waitForTimeout(1500);
-await page.screenshot({ path: 'dev/out/load-5-wrecked.png' });
-console.log(errors.length ? errors.join('\n') : 'no console errors');
+await page.goto('http://localhost:5183/');
+await page.evaluate(() => localStorage.setItem('cargo-best:city', JSON.stringify({ stars: 1, seconds: 200, fraction: 0.5 })));
+await page.goto(`http://localhost:5183/?level=${level}`);
+await page.waitForFunction(() => window.game?.sim, null, { timeout: 30000 });
+await page.waitForTimeout(2500);
+await page.evaluate(() => {
+  for (const id of ['banner', 'help', 'hud']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+  const { camera, sim } = window.game;
+  window.game.freeze = true;
+  const t = sim.truck.body.translation();
+  const r = sim.truck.body.rotation();
+  // Behind the truck, a little to one side, and above.
+  const fx = 2 * (r.x * r.z + r.w * r.y), fz = 1 - 2 * (r.x * r.x + r.y * r.y);
+  camera.position.set(t.x - fx * 6 + fz * 2.5, t.y + 5, t.z - fz * 6 - fx * 2.5);
+  camera.lookAt(t.x, t.y + 0.8, t.z);
+  camera.updateProjectionMatrix();
+});
+await page.waitForTimeout(600);
+await page.screenshot({ path: `dev/out/load-${level}.png` });
+console.log(errors.length ? errors.join('\n') : 'no page errors');
 await browser.close();

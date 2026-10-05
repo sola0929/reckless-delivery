@@ -1,9 +1,10 @@
 import { buildTown, city } from './city';
 import { CITY_LOOKS, cityHeights } from './hillcity';
 import { lift } from './lift';
+import type { CargoPlacement } from '../sim/cargo';
+import { TRUCK } from '../config';
 import type { ObjectDesc, ObjectKindId } from './objects';
 import type { Look, Relief } from './relief';
-import { standardLoad } from './sandbox';
 import { heightAt } from './terrain';
 import type { CrowdDesc, DecalDesc, LevelDef, MachineDesc, PropDesc, RiderLane, RollerDesc, SignDesc, TrafficLane, Vec2 } from './types';
 import type { Vec3 } from '../config';
@@ -261,6 +262,28 @@ function layHillRoad(relief: Relief, rect: (r: Rect) => [number, number][]) {
       relief.area([ring(k, 0.5), ring(k, 1), ring(k + 1, 1), ring(k + 1, 0.5)], height, HEAP_LOOK);
     }
   }
+}
+
+/**
+ * Level 2's load, easier to keep than level 1's: the road is the hard part. A washing machine standing against the cab with
+ * two sacks of rice beside it; a row of crates; a row of soda crates, the only thing that minds a shaking, held between
+ * crates fore and aft; another row of crates with two small ones on top; and sacks of rice, two deep, against the tailgate.
+ */
+function hillLoad(): CargoPlacement[] {
+  const cargo: CargoPlacement[] = [];
+  const floor = TRUCK.frame.pos[1] + TRUCK.frame.half[1];
+  const gap = 0.01;
+  const on = (half: number) => floor + half + gap;
+  const columns = [-0.74, 0, 0.74];
+  cargo.push({ type: 'washer', pos: [-0.62, on(0.66), 1.42], rotY: Math.PI });
+  // Sacks turned along the truck, two high, beside it.
+  for (let k = 0; k < 2; k++) cargo.push({ type: 'sack', pos: [0.55, on(0.14) + k * 0.29, 1.5], rotY: Math.PI / 2 });
+  for (const x of columns) cargo.push({ type: 'crate', pos: [x, on(0.35), 0.58] });
+  for (const x of [-0.66, -0.22, 0.22, 0.66]) cargo.push({ type: 'soda', pos: [x, on(0.19), -0.22] });
+  for (const x of columns) cargo.push({ type: 'crate', pos: [x, on(0.35), -1.06] });
+  for (const x of [-0.4, 0.4]) cargo.push({ type: 'smallCrate', pos: [x, floor + 0.7 + 0.25 + gap * 3, -1.06] });
+  for (let k = 0; k < 2; k++) for (const x of [-0.4, 0.4]) cargo.push({ type: 'sack', pos: [x, on(0.14) + k * 0.29, -2.4] });
+  return cargo;
 }
 
 function laySetPieces(relief: Relief) {
@@ -1241,7 +1264,7 @@ export function uptown(): LevelDef {
     smokes,
     route: way,
     decals: [...lifted.decals, ...decals],
-    cargo: standardLoad(),
+    cargo: hillLoad(),
     traffic: [...lifted.traffic, ...traffic, floatLane, vanLane, ...standing],
     signs: [...(lifted.signs ?? []), ...signs],
     // Across the road, and down the pavements too: the pavement is no way round them.

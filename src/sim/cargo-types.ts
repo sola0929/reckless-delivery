@@ -24,12 +24,12 @@ export interface PartDesc {
   color: number;
   mass: number;
   /** Surface pattern drawn under the damage cracks. On a dome, 'flesh' is what shows on the cut face. */
-  texture?: 'crate' | 'melon' | 'flesh';
+  texture?: 'crate' | 'melon' | 'flesh' | 'rice';
   /** Stage at which this part drops off the item. Anything still attached comes apart at stage 3. */
   detachAt?: 1 | 2;
 }
 
-export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp';
+export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice';
 
 export interface CargoType {
   id: string;
@@ -387,6 +387,132 @@ function watermelon(): CargoType {
   };
 }
 
+const WASHER = 0xf2f3f1;
+const WASHER_DARK = 0xd5d9dc;
+
+/**
+ * A top-loading washing machine: tall and square, enamel on steel, so it takes a knock better than a crate; but it stands
+ * higher than the sides of the bed, and the lid goes at the first real knock, and then the drum is there to be seen.
+ */
+function washer(): CargoType {
+  const [w, h, d] = [0.44, 0.66, 0.44];
+  const lid = 0.022;
+  return {
+    id: 'washer',
+    name: '洗衣機',
+    value: 450,
+    threshold: 7,
+    maxHit: 28,
+    give: 20,
+    salvage: 0.3,
+    friction: 0.5,
+    hull: { shape: 'box', size: [w, h, d] },
+    parts: [
+      { shape: 'box', size: [w, h - lid, d], pos: [0, -lid, 0], color: WASHER, mass: 56 },
+      // The lid on top, its window and handle; the control panel along the back with its dial and buttons.
+      { shape: 'box', size: [w - 0.023, lid, d - 0.116], pos: [0, h - lid, 0.093], color: WASHER_DARK, mass: 2.5, detachAt: 1 },
+      { shape: 'box', size: [0.22, 0.005, 0.151], pos: [0, h + 0.002, 0.104], color: 0x5a7a8c, mass: 0.116, detachAt: 1 },
+      { shape: 'box', size: [0.104, 0.014, 0.017], pos: [0, h + 0.007, d - 0.052], color: 0x8c9096, mass: 0.116, detachAt: 1 },
+      { shape: 'box', size: [w, 0.093, 0.081], pos: [0, h + 0.07, -d + 0.081], color: WASHER, mass: 1.8, detachAt: 2 },
+      { shape: 'cylinder', size: [0.046, 0.014, 0], pos: [0.244, h + 0.081, -d + 0.176], rot: [Math.PI / 2, 0, 0], color: 0x3a3f46, mass: 0.116, detachAt: 2 },
+      ...[-0.244, -0.139, -0.035].map((x): PartDesc => ({ shape: 'box', size: [0.032, 0.014, 0.007], pos: [x, h + 0.081, -d + 0.165], color: 0x4f8fd0, mass: 0.058, detachAt: 2 })),
+      // The drum under the lid, seen once it has gone; and the brand's stripe down the front.
+      { shape: 'cylinder', size: [0.348, 0.005, 0], pos: [0, h - lid - 0.001, 0.07], color: 0x8c9096, mass: 0.232 },
+      { shape: 'cylinder', size: [0.267, 0.005, 0], pos: [0, h - lid + 0.001, 0.07], color: 0x3a3f46, mass: 0.116 },
+      { shape: 'box', size: [w - 0.046, 0.035, 0.005], pos: [0, h - 0.232, d + 0.002], color: 0x4f8fd0, mass: 0.058 },
+    ],
+    debris: [
+      { shape: 'box', size: [w, h, 0.035], pos: [0, 0, -d + 0.035], color: WASHER, mass: 12 },
+      { shape: 'box', size: [0.035, h, d - 0.035], pos: [w - 0.035, 0, 0], color: WASHER, mass: 9 },
+      { shape: 'box', size: [0.035, h, d - 0.035], pos: [-w + 0.035, 0, 0], color: WASHER, mass: 9 },
+      { shape: 'cylinder', size: [0.336, 0.406, 0], pos: [0, -0.139, 0], color: 0x8c9096, mass: 14 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+const SACKING = 0xe8e0c8;
+const SACKING_DARK = 0xd2c7a8;
+const RICE = 0xf2e6bf;
+
+/**
+ * A sack of rice: heavy and soft. It takes almost anything, and hardly slides, so it is what the rest is packed against. Cheap.
+ * Torn open at last, it spills its rice.
+ */
+function sack(): CargoType {
+  const [w, h, d] = [0.38, 0.14, 0.26];
+  return {
+    id: 'sack',
+    name: '米袋',
+    value: 60,
+    threshold: 10,
+    maxHit: 12,
+    give: 30,
+    salvage: 0.6,
+    friction: 0.95,
+    hull: { shape: 'box', size: [w, h, d] },
+    parts: [
+      // A pillow of sacking: flat on top and below, rounded along its sides where it bulges, and the corners pinched into
+      // ears where it was sewn up.
+      { shape: 'box', size: [w - 0.05, h, d - h], pos: [0, 0, 0], color: SACKING, mass: 22 },
+      ...[-1, 1].map((side): PartDesc => ({ shape: 'cylinder', size: [h, w - 0.05, 0], pos: [0, 0, side * (d - h)], rot: [0, 0, Math.PI / 2], color: SACKING, mass: 2 })),
+      ...[-1, 1].map((side): PartDesc => ({ shape: 'box', size: [0.05, h * 0.8, d - h], pos: [side * (w - 0.03), -0.01, 0], color: SACKING_DARK, mass: 0.5 })),
+      ...[-1, 1].flatMap((sx) => [-1, 1].map((sz): PartDesc => ({ shape: 'box', size: [0.05, 0.03, 0.05], pos: [sx * (w - 0.01), -0.02, sz * (d - 0.06)], rot: [0, sx * sz * 0.6, 0], color: SACKING_DARK, mass: 0.1 }))),
+      // The printing on it: 米 in red on a white square, big enough to read from the cab; a blue band either side.
+      { shape: 'box', size: [0.16, 0.004, 0.16], pos: [0, h + 0.002, 0], color: 0xffffff, mass: 0.05, texture: 'rice' },
+      ...[-1, 1].map((side): PartDesc => ({ shape: 'box', size: [0.025, 0.004, d - h], pos: [side * 0.25, h + 0.002, 0], color: 0x2f62a8, mass: 0.02 })),
+    ],
+    debris: [
+      { shape: 'box', size: [w * 0.55, 0.05, d], pos: [-w * 0.45, -h + 0.05, 0], color: SACKING, mass: 3 },
+      { shape: 'box', size: [w * 0.55, 0.05, d], pos: [w * 0.45, -h + 0.05, 0.02], rot: [0, 0.3, 0], color: SACKING_DARK, mass: 3 },
+      { shape: 'dome', size: [0.22, 0, 0], pos: [0, -h + 0.02, 0], color: RICE, mass: 18 },
+    ],
+    burst: 'rice',
+  };
+}
+
+const CRATE_RED = 0xc8372d;
+const GLASS = [0x3f8f5a, 0x8a5a2a, 0x3f8f5a, 0xd9e6e8];
+
+/**
+ * A plastic crate of soda in glass bottles: the one thing on this load that minds being shaken. The bottles break, and
+ * what was in them goes everywhere; the crate itself holds together until the last.
+ */
+function soda(): CargoType {
+  const [w, h, d] = [0.22, 0.16, 0.17];
+  const bottles: PartDesc[] = [];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+    const [x, z] = [-0.15 + i * 0.1, -0.1 + j * 0.1];
+    bottles.push({ shape: 'cylinder', size: [0.032, 0.05, 0], pos: [x, h + 0.02, z], color: GLASS[(i + j) % GLASS.length], mass: 0.3, detachAt: (i + j) % 2 ? 1 : 2 });
+    bottles.push({ shape: 'cylinder', size: [0.016, 0.012, 0], pos: [x, h + 0.08, z], color: 0xd9b24a, mass: 0.02, detachAt: (i + j) % 2 ? 1 : 2 });
+  }
+  return {
+    id: 'soda',
+    name: '汽水箱',
+    value: 150,
+    threshold: 5,
+    maxHit: 40,
+    give: 14,
+    salvage: 0.15,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w, h + 0.03, d] },
+    parts: [
+      { shape: 'box', size: [w, h, d], pos: [0, -0.03, 0], color: CRATE_RED, mass: 12 },
+      // Its handholds, and the white lettering band.
+      ...[-1, 1].map((side): PartDesc => ({ shape: 'box', size: [0.07, 0.025, 0.004], pos: [0, h - 0.07, side * (d + 0.002)], color: 0x2a1a12, mass: 0.05 })),
+      ...[-1, 1].map((side): PartDesc => ({ shape: 'box', size: [w - 0.03, 0.02, 0.004], pos: [0, -0.04, side * (d + 0.002)], color: 0xf4f2ec, mass: 0.05 })),
+      ...bottles,
+    ],
+    debris: [
+      { shape: 'box', size: [w, 0.08, d], pos: [0, -h + 0.05, 0], color: CRATE_RED, mass: 6 },
+      { shape: 'box', size: [w, 0.06, 0.02], pos: [0, -0.02, d - 0.02], rot: [0.4, 0, 0], color: CRATE_RED, mass: 1.5 },
+      ...[0, 1, 2].map((i): PartDesc => ({ shape: 'cylinder', size: [0.032, 0.05, 0], pos: [-0.1 + i * 0.1, -h + 0.18, 0], rot: [0, 0, Math.PI / 2], color: GLASS[i], mass: 0.3 })),
+    ],
+    burst: 'water',
+    leaks: true,
+  };
+}
+
 export const CARGO_TYPES = {
   crate: crate('crate', '木箱', 0.35, 25, 100, WOOD),
   smallCrate: crate('smallCrate', '小木箱', 0.25, 10, 50, 0xd9b36c),
@@ -396,6 +522,9 @@ export const CARGO_TYPES = {
   wardrobe: wardrobe(),
   safe: safe(),
   watermelon: watermelon(),
+  washer: washer(),
+  sack: sack(),
+  soda: soda(),
 } satisfies Record<string, CargoType>;
 
 export type CargoTypeId = keyof typeof CARGO_TYPES;

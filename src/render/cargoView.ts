@@ -67,6 +67,20 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
     }
   }
 
+  if (base === 'rice') {
+    // 米, printed in red on the white of a rice sack.
+    g.fillStyle = '#c8372d';
+    g.font = `bold ${Math.round(size * 0.82)}px sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // Thickened with an outline in the same red: the plain bold face is too thin to read at a distance.
+    g.strokeStyle = '#c8372d';
+    g.lineWidth = size * 0.07;
+    g.lineJoin = 'round';
+    g.strokeText('米', size / 2, size / 2 + size * 0.04);
+    g.fillText('米', size / 2, size / 2 + size * 0.04);
+  }
+
   if (base === 'crate') {
     g.strokeStyle = 'rgba(0, 0, 0, 0.35)';
     g.lineWidth = 3;
