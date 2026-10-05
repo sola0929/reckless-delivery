@@ -54,7 +54,8 @@ export function hillcity(): LevelDef {
   return {
     ...lift(city(), heights, CITY_LOOKS),
     id: 'hillcity',
-    name: '坡上的城市',
-    brief: '第一關的城市，原樣搬到山坡上：同樣的街道，多了上下坡',
+    // Level 1 now: the same city as ever, on its hillside. Named as level 1 always was.
+    name: '第 1 關　城市配送',
+    brief: '穿過市區，把貨物送到綠色卸貨區',
   };
 }

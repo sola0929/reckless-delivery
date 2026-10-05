@@ -386,7 +386,8 @@ body.in-menu #hud {
   fill: #fff;
 }
 
-.level-thumb.city { background: linear-gradient(160deg, #4f8fc8, #f0b56a); }
+.level-thumb.city,
+.level-thumb.hillcity { background: linear-gradient(160deg, #4f8fc8, #f0b56a); }
 .level-thumb.hilltown { background: linear-gradient(160deg, #4f8a6a, #d9c27a); }
 .level-thumb.battlefield { background: linear-gradient(160deg, #7a4a3a, #e0a05a); }
 .level-thumb.forest { background: linear-gradient(160deg, #2f6b4a, #9ac46a); }

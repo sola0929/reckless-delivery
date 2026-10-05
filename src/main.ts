@@ -7,6 +7,13 @@ import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST } from './levels';
 // The page is the main menu until a level is named in its address, and the game after that.
 // Going back to the menu is going back to the bare address.
 const chosen = new URLSearchParams(location.search).get('level');
+// Level 1 was the flat city until it went onto its hillside: whoever passed it then keeps that, and level 2 stays open.
+try {
+  const old = localStorage.getItem('cargo-best:city');
+  if (old && !localStorage.getItem('cargo-best:hillcity')) localStorage.setItem('cargo-best:hillcity', old);
+} catch {
+  // No storage: nothing to carry over.
+}
 const states = levelStates(LEVEL_LIST);
 /** Whether a level may be played: free play always, a delivery once it is open. */
 const playable = (id: string) => FREE_PLAY.some((level) => level.id === id) || ['open', 'done'].includes(states[LEVEL_LIST.findIndex((level) => level.id === id)]);
