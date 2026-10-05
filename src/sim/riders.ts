@@ -182,6 +182,8 @@ export class Riders {
   /** What the truck still has coming to it from scooters it has hit: so much a step, for so many steps. */
   private shoves: { x: number; z: number; left: number }[] = [];
   private seed = 11;
+  /** See LevelDef.quietBeyond. */
+  quietBeyond = 0;
 
   /** @param ground how high the ground is at a place, where it is not all at nought */
   constructor(world: RAPIER.World, lanes: RiderLane[], private readonly ground: (x: number, z: number) => number = () => 0) {
@@ -247,12 +249,22 @@ export class Riders {
       shove.left--;
     }
     this.shoves = this.shoves.filter((shove) => shove.left > 0);
-    const seen = this.roads.map((road) => this.obstacles(road, t, tv, truckForward, truckSide, traffic, walkers));
+    // What is on each road, worked out only for the roads someone is riding on near enough to matter.
+    const found = new Map<Road, Obstacle[]>();
+    const seenOn = (road: Road) => found.get(road) ?? found.set(road, this.obstacles(road, t, tv, truckForward, truckSide, traffic, walkers)).get(road)!;
 
     for (const rider of this.list) {
       if (rider.knocked > 0) {
         this.recover(rider, dt, t);
         continue;
+      }
+      // Out of sight on a big level: where they are, they stay, until the truck comes nearer.
+      if (this.quietBeyond) {
+        const at = this.where(rider);
+        if (Math.hypot(at.x - t.x, at.z - t.z) > this.quietBeyond) {
+          if (!rider.body.isSleeping()) rider.body.sleep();
+          continue;
+        }
       }
 
       // A car knocked loose and sliding into them takes them with it: left as they are they
@@ -269,14 +281,14 @@ export class Riders {
       const { road } = rider;
       if (rider.turn >= 0) this.goRound(rider, dt);
       else {
-        this.ride(rider, dt, seen[this.roads.indexOf(road)]);
+        this.ride(rider, dt, seenOn(road));
         if (rider.s >= road.length) {
           if (road.turnInto) rider.turn = 0;
           else {
             // Back to the start, and in wherever there is room there.
             rider.s -= road.length;
             const taken: [number, number][] = [];
-            for (const o of seen[this.roads.indexOf(road)]) {
+            for (const o of seenOn(road)) {
               if (o.rider !== rider && Math.abs(o.s - rider.s) < o.halfLength + 6) taken.push([o.d - o.halfWidth - 0.8, o.d + o.halfWidth + 0.8]);
             }
             rider.d = steer(taken, road.lo, road.hi, rider.d, rider.d);

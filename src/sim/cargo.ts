@@ -44,6 +44,8 @@ const GRACE_SECONDS = 0.75;
 const FALLEN_SECONDS = 2.5;
 /** After a thrown item lands in the bed, how long it and everything it landed on are spared. */
 const LANDING_GRACE = 0.8;
+/** Loose pieces further than this from the truck, metres, are left where they lie. */
+const LEFT_BEHIND = 40;
 /** How often a wreck's pieces are counted. */
 const SCRAP_INTERVAL = 0.5;
 /** One collision plays out over a few steps. It is judged once, on its strongest moment in this window. */
@@ -233,6 +235,7 @@ export class CargoSystem {
     const dt = PHYSICS.dt;
     this.age += dt;
     this.bedCalm -= dt;
+    this.leaveBehind(truck);
     for (const item of this.items) {
       const body = item.body;
       if (!body) {
@@ -497,6 +500,19 @@ export class CargoSystem {
     this.events.push({ kind: 'destroyed', item });
   }
 
+  /**
+   * Pieces fallen off and left far behind lie where they are, out of the physics: cans spilled on a steep hill roll on and
+   * never settle, and a few dozen of them kept the rest of the level slow. Come back for them and they are loose again.
+   */
+  private leaveBehind(truck: Truck): void {
+    const t = truck.body.translation();
+    for (const { body } of this.debris) {
+      const p = body.translation();
+      const away = Math.hypot(p.x - t.x, p.z - t.z);
+      if (body.isEnabled() ? away > LEFT_BEHIND : away < LEFT_BEHIND - 10) body.setEnabled(!body.isEnabled());
+    }
+  }
+
   /** Create a loose body for a piece, at the place it occupies on the item, flung outward a little. */
   private spawnDebris(item: CargoItem, part: PartDesc): Debris {
     const body = item.body!;
@@ -517,7 +533,8 @@ export class CargoSystem {
         .setAngvel({ x: this.random() * 6 - 3, y: this.random() * 6 - 3, z: this.random() * 6 - 3 }),
     );
     this.world.createCollider(
-      shapeCollider(part.shape, part.size).setMass(part.mass).setFriction(0.7).setRestitution(0.2).setCollisionGroups(CARGO_GROUPS),
+      // A bottle, loose: the physics takes it as a capsule, far cheaper to work out against everything than a cylinder.
+      (part.cap !== undefined ? RAPIER.ColliderDesc.capsule(Math.max(0.005, part.size[1] - part.size[0]), part.size[0]) : shapeCollider(part.shape, part.size)).setMass(part.mass).setFriction(0.7).setRestitution(0.2).setCollisionGroups(CARGO_GROUPS),
       piece,
     );
     const debris = { desc: part, body: piece, owner: item };

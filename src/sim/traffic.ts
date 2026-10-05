@@ -132,6 +132,8 @@ export class Traffic {
   private lanes = 0;
   /** Lanes whose cars go two ways at the end, to set back to the first way when everything is put back. */
   private readonly splits: Lane[] = [];
+  /** See LevelDef.quietBeyond. */
+  quietBeyond = 0;
 
   constructor(world: RAPIER.World, lanes: TrafficLane[], private readonly ground?: (x: number, z: number) => number) {
     let n = 0;
@@ -213,6 +215,15 @@ export class Traffic {
 
     for (const car of this.cars) {
       const { lane } = car;
+      // Out of sight on a big level: where it is, it stays, until the truck comes nearer.
+      if (this.quietBeyond && car.knocked <= 0) {
+        const at = car.body.translation();
+        if (Math.hypot(at.x - t.x, at.z - t.z) > this.quietBeyond) {
+          // Asleep, so that the physics need not look at it at all.
+          if (!car.body.isSleeping()) car.body.sleep();
+          continue;
+        }
+      }
       if (car.knocked > 0) {
         car.knocked -= dt;
         if (car.knocked <= 0) {

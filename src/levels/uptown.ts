@@ -330,7 +330,15 @@ export function uptown(): LevelDef {
     ...cityPart,
     props: [...cityPart.props, ...town.props, ...edges],
     // No street trees up the coil avenue: the coils would only fell them.
-    objects: [...(cityPart.objects ?? []), ...town.objects.filter((o) => !(o.kind.startsWith('tree') && Math.abs(o.pos[0] - xOf(31)) < 14 && o.pos[2] > zOf(51) + 8))],
+    objects: [
+      ...(cityPart.objects ?? []),
+      ...town.objects.filter(
+        (o) =>
+          !(o.kind.startsWith('tree') && Math.abs(o.pos[0] - xOf(31)) < 14 && o.pos[2] > zOf(51) + 8) &&
+          // Where the tables are put out behind the snack cart in the market lane.
+          !(o.kind.startsWith('scooter') && Math.abs(o.pos[0] - (xOf(19) - 3.9)) < 1.5 && Math.abs(o.pos[2] - zOf(56)) < 3.5),
+      ),
+    ],
     decals: [...cityPart.decals, ...town.decals],
     crowds: [...(cityPart.crowds ?? []), ...town.crowds],
     // The squares' fountains, lifted with the rest; level 1's own are kept where they were.
@@ -629,20 +637,51 @@ export function uptown(): LevelDef {
 
   // The lane is a market, as level 1's market lane is: stalls out from the pavements into the lane, one side and then the
   // other, with crates of goods beside them, and a little room between for a truck to wind through.
-  const STALLS: ObjectKindId[] = ['fruitMelon', 'stallSnack', 'fruitOrange', 'snackCartRed', 'fruitTomato', 'stallVeg', 'fruitMango', 'snackCartYellow', 'fruitGrape', 'stallClothes'];
+  // Each stall different, in the order the truck comes to them: and a flower seller's buckets, two tables, in place of crates.
+  const STALLS: ObjectKindId[] = ['fruitTomato', 'stallVeg', 'snackCartRed', 'flowerStall', 'fruitMango', 'stallSnack', 'fruitMelon', 'snackCartYellow', 'fruitOrange', 'stallClothes'];
   const CRATES: ObjectKindId[] = ['crateOrange', 'crateRed', 'crateGreen', 'crateYellow'];
   const marketSquares: [number, number, boolean][] = [[19, 57, true], [19, 56, true], [19, 54, true], [19, 53, true], [20, 52, false]];
   let flip = 1;
+  let slot = 0;
   for (const [c, r, alongZ] of marketSquares) {
     for (const along of [-4.5, 3.5]) {
       flip = -flip;
       const out = flip * 2.3;
       const [x, z] = alongZ ? [xOf(c) + out, zOf(r) + along] : [xOf(c) + along, zOf(r) + out];
-      object(STALLS[(c * 3 + r + (along > 0 ? 1 : 0)) % STALLS.length], x, z, alongZ ? (flip > 0 ? -Math.PI / 2 : Math.PI / 2) : flip > 0 ? Math.PI : 0);
+      const kind = STALLS[slot++];
+      const turn = alongZ ? (flip > 0 ? -Math.PI / 2 : Math.PI / 2) : flip > 0 ? Math.PI : 0;
+      object(kind, x, z, turn);
       const [cx, cz] = alongZ ? [x - flip * 0.2, z + 1.9] : [x + 1.9, z - flip * 0.2];
-      object(CRATES[(c * 3 + r) % CRATES.length], cx, cz, along);
+      if (kind === 'flowerStall') object('flowerStall', x, z + 1.9, turn);
+      else object(CRATES[(c * 3 + r) % CRATES.length], cx, cz, along);
     }
   }
+  // Behind the red snack cart, on the pavement: plastic tables and stools, set out for whoever stops to eat.
+  const eatX = xOf(19) - 3.9;
+  for (const z of [zOf(56) - 1.6, zOf(56) + 1.2]) {
+    object('table', eatX, z);
+    for (const [dx, dz] of [[0, -0.75], [0, 0.75], [-0.6, 0.1]] as const) object(dz === 0.1 ? 'stool' : 'chair', eatX + dx, z + dz, dz > 0 ? Math.PI : dz < 0 ? 0 : Math.PI / 2);
+  }
+  // A rail of washing out on the pavement across the way, by a doorway.
+  object('clothesRack', xOf(19) + 4, zOf(57) - 7.5, Math.PI / 2);
+  // Washing lines strung across the lane from window to window, high over the stalls: shirts, trousers, towels, a sheet.
+  const WASHING = [0xf2f2ee, 0x5f8fd0, 0xd85a4a, 0xf0c94a, 0x4f9f7a, 0xe89ab0, 0x2f3a4a, 0xc9b28a];
+  const wx0 = xOf(19) - 4.7, wx1 = xOf(19) + 4.7;
+  [zOf(53) + 2, zOf(54) + 9, zOf(56) - 3, zOf(57) + 4].forEach((z, k) => {
+    const y = ground(xOf(19), z) + 5.6 + (k % 2) * 0.5;
+    props.push({ shape: 'box', size: [(wx1 - wx0) / 2, 0.012, 0.012], pos: [(wx0 + wx1) / 2, y, z], color: 0x3a3a3a, ghost: true });
+    for (let x = wx0 + 0.7, n = k * 3; x < wx1 - 0.6; n++) {
+      const sheet = n % 7 === 3;
+      const half: [number, number, number] = sheet ? [0.7, 0.6, 0.01] : n % 3 === 0 ? [0.22, 0.42, 0.01] : [0.27, 0.3, 0.01];
+      props.push({ shape: 'box', size: half, pos: [x + half[0], y - half[1] - 0.02, z], color: WASHING[(n * 5 + k) % WASHING.length], ghost: true });
+      x += half[0] * 2 + 0.35 + ((n * 7) % 5) * 0.12;
+    }
+  });
+  // A gas shop on the east pavement, across from a stall: its cylinders stood out front against the wall, under its sign. A
+  // truck squeezing past the stall has room to spare; one that runs up on to the pavement sets them off.
+  const gasX = xOf(19) + 4.3;
+  for (const [dx, z] of [[0, 857.6], [0, 858.6], [0, 859.6], [-0.55, 858.1], [-0.55, 859.1]] as const) object('gasCylinder', gasX + dx, z);
+  const gasSign: SignDesc = { kind: 'gasShop', pos: [gasX + 0.3, ground(gasX, 858.6) + 2.1, 858.6], rotY: -Math.PI / 2 };
   const marketCrowd: CrowdDesc = { area: [xOf(19) - 2.5, zOf(53) - 8, xOf(19) + 2.5, zOf(57) + 8], count: 9, y: 0 };
 
   // The square at the foot of the steps: the lane's mouth on its south side is shut by a festival float standing across it.
@@ -652,6 +691,7 @@ export function uptown(): LevelDef {
     { kind: 'uturn', pos: [xOf(16), FOOT, fz0 + 1.5], rotY: 0 },
     { kind: 'detour', pos: [xOf(17) + 6, FOOT, fz0 + 1.5], rotY: 0 },
     { kind: 'ahead', pos: [px1 - 1.5, FOOT, pz0 + 2], rotY: Math.PI },
+    gasSign,
   ];
   for (let x = fx0 + 1; x < fx1 - 18; x += 1.6) object('cone', x, fz0 + 0.6);
   object('lamp', fx0 + 2, fz1 - 2);
@@ -720,14 +760,14 @@ export function uptown(): LevelDef {
     const street = traffic.length;
     firstDown.push(street);
     traffic.push({ from: [EAST, z], to: [xOf(31) + dx, z], cars: 1, scatter: true, speed: 8, next: street + 1 });
-    traffic.push({ from: [xOf(31) + dx, z], to: [xOf(31) + dx, zOf(51) + 2.25], cars: 3, scatter: true, speed: 10, next: ROAD_WEST });
+    traffic.push({ from: [xOf(31) + dx, z], to: [xOf(31) + dx, zOf(51) + 2.25], cars: 2, scatter: true, speed: 10, next: ROAD_WEST });
   });
   const firstUp: number[] = [];
   [-1.75, -5.25].forEach((dx, k) => {
     const z = SIDE - 1.75 - k * 3.5;
     const avenueLane = traffic.length;
     firstUp.push(avenueLane);
-    traffic.push({ from: [xOf(31) + dx, zOf(51) - 2.25], to: [xOf(31) + dx, z], cars: 2, scatter: true, speed: 8, next: avenueLane + 1 });
+    traffic.push({ from: [xOf(31) + dx, zOf(51) - 2.25], to: [xOf(31) + dx, z], cars: 1, scatter: true, speed: 8, next: avenueLane + 1 });
     traffic.push({ from: [xOf(31) + dx, z], to: [EAST, z], cars: 1, speed: 8, next: ROAD_EAST });
   });
   // The outer lane coming down turns across the inner one into the road, by a short stretch of its own.
@@ -1257,6 +1297,8 @@ export function uptown(): LevelDef {
     fires: [fire],
     machines,
     spreads,
+    // Level 1's whole city comes with it, its traffic and all, and most of that is far out of sight.
+    quietBeyond: 250,
     // For testing: just before each part, on the way.
     checkpoints: [
       { name: '起點・公車街', pos: [busX - 2.2, zOf(46)], yaw: 0 },

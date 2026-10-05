@@ -37,6 +37,8 @@ interface Line {
   since: number[];
   /** Where along the line the last one was let go, 0 to 1. */
   last: number;
+  /** Whether the truck was near enough last step for things to be coming down. */
+  awake: boolean;
 }
 
 /**
@@ -63,9 +65,10 @@ export class Rollers {
     for (const desc of descs) {
       const count = Rollers.count(desc);
       const wide = Math.hypot(desc.to[0] - desc.from[0], desc.to[1] - desc.from[1]);
-      this.lines.push({ desc, pool: objects.objects.slice(first, first + count), out: Array(count).fill(false), next: 0, clock: 0, last: 0.5, since: Array(count).fill(0), turned: Array(count).fill(0), across: [(desc.to[0] - desc.from[0]) / wide, (desc.to[1] - desc.from[1]) / wide] });
+      this.lines.push({ desc, pool: objects.objects.slice(first, first + count), out: Array(count).fill(false), next: 0, clock: 0, last: 0.5, awake: false, since: Array(count).fill(0), turned: Array(count).fill(0), across: [(desc.to[0] - desc.from[0]) / wide, (desc.to[1] - desc.from[1]) / wide] });
       first += count;
     }
+    for (const line of this.lines) for (const object of line.pool) objects.stow(object);
   }
 
   /** Whether the truck is within a line's `within` of the strip of hill its things come down. */
@@ -92,6 +95,7 @@ export class Rollers {
         const gone = (p.x - desc.from[0]) * dx + (p.z - desc.from[1]) * dz;
         if (p.y < WAITING_Y / 2) {
           this.objects.park(object);
+          this.objects.stow(object);
           line.out[n] = false;
           return;
         }
@@ -127,41 +131,58 @@ export class Rollers {
         object.body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
       });
       const mx = (desc.from[0] + desc.to[0]) / 2, mz = (desc.from[1] + desc.to[1]) / 2;
-      if (desc.within === undefined ? Math.hypot(truck.x - mx, truck.z - mz) > AWAKE_WITHIN : !this.near(desc, truck)) continue;
+      const awake = desc.within === undefined ? Math.hypot(truck.x - mx, truck.z - mz) <= AWAKE_WITHIN : this.near(desc, truck);
+      // Come upon a hill with a range set (one that is quiet until the truck is close): not bare while the first of them
+      // comes all the way down, but with them already on their way, here and there down it.
+      if (awake && !line.awake && desc.within !== undefined && line.out.filter(Boolean).length < 3) {
+        const spacing = desc.every * 12;
+        for (let d = spacing * (0.4 + this.random() * 0.4); d < desc.run - 20; d += spacing * (0.8 + this.random() * 0.4)) {
+          const n = line.next++ % pool.length;
+          this.letGo(line, n, 0.06 + this.random() * 0.88, d, 7 + this.random() * 4);
+        }
+      }
+      line.awake = awake;
+      if (!awake) continue;
       // Not like clockwork: each a little sooner or later than the last, but never so soon as to run into it.
       line.clock -= dt;
       while (line.clock <= 0) {
         line.clock += desc.every * (0.75 + this.random() * 0.5);
         const n = line.next++ % pool.length;
-        const object = pool[n];
         // Somewhere along the line, but well to one side of where the last one went.
         let t = 0.06 + this.random() * 0.88;
         for (let tries = 0; tries < 6 && Math.abs(t - line.last) < 0.3; tries++) t = 0.06 + this.random() * 0.88;
         line.last = t;
-        const x = desc.from[0] + (desc.to[0] - desc.from[0]) * t;
-        const z = desc.from[1] + (desc.to[1] - desc.from[1]) * t;
-        // On its side, across the hill: what was its upright is laid along the line.
-        const part = OBJECT_KINDS[object.desc.kind].parts[0];
-        const radius = part.size[0];
-        axis.set(desc.to[0] - desc.from[0], 0, desc.to[1] - desc.from[1]).normalize();
-        q.setFromUnitVectors(UP, axis);
         // All at much the same speed: a fast one let go after a slow one would catch it up.
-        const speed = desc.speed * (0.92 + this.random() * 0.16);
-        // Its middle is its radius above the ground: and as it lies, that is where its own middle is, half its height along itself.
-        const up = part.pos[1];
-        this.objects.release(
-          object,
-          { x: x - axis.x * up, y: this.ground(x, z) + radius + 0.15, z: z - axis.z * up },
-          { x: q.x, y: q.y, z: q.z, w: q.w },
-          { x: dx, z: dz },
-          speed,
-          radius,
-        );
-        line.out[n] = true;
-        line.since[n] = 0;
-        line.turned[n] = 0;
+        this.letGo(line, n, t, 0, desc.speed * (0.92 + this.random() * 0.16));
       }
     }
+  }
+
+  /** Let one go: at a place along the line, so far down the hill from it, already rolling at this speed. */
+  private letGo(line: Line, n: number, t: number, down: number, speed: number): void {
+    const { desc, pool } = line;
+    const [dx, dz] = desc.down;
+    const object = pool[n];
+    const x = desc.from[0] + (desc.to[0] - desc.from[0]) * t + dx * down;
+    const z = desc.from[1] + (desc.to[1] - desc.from[1]) * t + dz * down;
+    // On its side, across the hill: what was its upright is laid along the line.
+    const part = OBJECT_KINDS[object.desc.kind].parts[0];
+    const radius = part.size[0];
+    axis.set(desc.to[0] - desc.from[0], 0, desc.to[1] - desc.from[1]).normalize();
+    q.setFromUnitVectors(UP, axis);
+    // Its middle is its radius above the ground: and as it lies, that is where its own middle is, half its height along itself.
+    const up = part.pos[1];
+    this.objects.release(
+      object,
+      { x: x - axis.x * up, y: this.ground(x, z) + radius + 0.15, z: z - axis.z * up },
+      { x: q.x, y: q.y, z: q.z, w: q.w },
+      { x: dx, z: dz },
+      speed,
+      radius,
+    );
+    line.out[n] = true;
+    line.since[n] = 0;
+    line.turned[n] = 0;
   }
 
   /** Everything back to waiting. The object system has already put each where it waits. */
@@ -169,6 +190,8 @@ export class Rollers {
     this.seed = 7;
     for (const line of this.lines) {
       line.out.fill(false);
+      for (const object of line.pool) this.objects.stow(object);
+      line.awake = false;
       line.next = 0;
       line.clock = 0;
       line.last = 0.5;

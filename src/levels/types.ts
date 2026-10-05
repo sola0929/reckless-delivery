@@ -210,7 +210,7 @@ export interface SignDesc {
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
   /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'bends';
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends';
 }
 
 /** A railway track running along X, with trains passing at a steady interval. */
@@ -392,6 +392,8 @@ export interface LevelDef {
   machines?: MachineDesc[];
   /** Rice spread out on tarps to dry, [x, z] middle and half size: whatever wheels go over it throw it up. Only seen, not felt. */
   spreads?: { pos: Vec2; half: Vec2 }[];
+  /** Traffic, scooters and people further than this from the truck, metres, stand still until it comes nearer: on a level too big to see across. */
+  quietBeyond?: number;
   /** For testing: places just before each part of the level, to put the truck down at, by number key. */
   checkpoints?: { name: string; pos: Vec2; yaw: number }[];
   battle?: BattleDesc;

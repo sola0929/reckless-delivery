@@ -125,7 +125,9 @@ const audio = new GameAudio();
 playMusic('level');
 /** How heavy the heaviest thing the truck sent flying this frame was, 0 to 1; below 0 if it hit nothing. */
 let knockedWeight = -1;
-const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio };
+/** Where each frame's time goes, added up until a script reads and clears it: physics, everything else, drawing. */
+const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0 };
+const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
 let last = performance.now();
@@ -247,7 +249,7 @@ const SPOUT_SECONDS = 2.5;
 const splashAt = new Vector3();
 /** Broken hydrants, still spouting where they stood. */
 const geysers: { at: Vector3; left: number; strong?: boolean }[] = [];
-const CRACKLE_SECONDS = 3.2;
+const CRACKLE_SECONDS = 6;
 /** Strings of firecrackers going off where they fell, and how long until each one's next bang. */
 const crackles: { at: Vector3; left: number; next: number; laid?: boolean }[] = [];
 /** Loose ends of live wire, each spitting sparks for a while yet, and how long until its next flash. */
@@ -625,6 +627,7 @@ function updatePrompt(): void {
 }
 
 function frame(now: number): void {
+  const began = performance.now();
   const before = last;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -647,7 +650,8 @@ function frame(now: number): void {
       if (k > 9 || !input.take(`Digit${(k + 1) % 10}` as `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`)) return;
       sim.teleport(spot.pos[0], spot.pos[1], spot.yaw);
       truckSync.snap();
-      cargoViews.rebuild(sim);
+      // Moved with it, not made again: what has been wrecked on the way has no body to be made from.
+      cargoViews.snap();
       truckSync.apply(1);
       chase.snap(truckMesh.root.position, truckHeading());
       hud.popup(`跳到：${spot.name}`, window.innerWidth / 2, window.innerHeight * 0.3, 'big');
@@ -700,7 +704,9 @@ function frame(now: number): void {
   let hardestBump = 0;
   let steps = 0;
   while (accumulator >= PHYSICS.dt && steps < PHYSICS.maxStepsPerFrame) {
+    const stepBegan = performance.now();
     sim.step(drive, footInput(steps === 0));
+    timing.physics += performance.now() - stepBegan;
     for (const event of sim.drainEvents()) {
       cargoViews.handle(event);
       noteEvent(event);
@@ -894,7 +900,13 @@ function frame(now: number): void {
   }
   showPopups(dt);
 
+  const drawBegan = performance.now();
   view.renderer.render(view.scene, view.camera);
+  const drawn = performance.now();
+  timing.render += drawn - drawBegan;
+  timing.logic += drawBegan - began;
+  timing.frames++;
+  timing.worst = Math.max(timing.worst, drawn - began);
   // A tab in the background is hardly drawn at all: that is not the machine being slow.
   if (document.hidden) graphics.rest();
   else graphics.frame((now - before) / 1000);

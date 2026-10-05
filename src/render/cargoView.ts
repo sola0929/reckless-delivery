@@ -164,6 +164,11 @@ function partMesh(part: PartDesc, stage: Stage): THREE.Mesh {
   mesh.receiveShadow = true;
   mesh.position.set(...part.pos);
   if (part.rot) mesh.rotation.set(...part.rot);
+  if (part.cap !== undefined) {
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.024, 10), new THREE.MeshStandardMaterial({ color: part.cap, roughness: 0.5 }));
+    cap.position.y = part.size[1] + 0.012;
+    mesh.add(cap);
+  }
   if (part.shape === 'dome') {
     // The cut face, closing the open side of the half.
     const radius = part.size[0];
@@ -274,6 +279,12 @@ export class CargoViews {
   }
 
   /** Call after every physics step. */
+  /** Every item drawn where its body now is, with no gliding there: after the truck has been picked up and put down elsewhere. */
+  snap(): void {
+    for (const view of this.views.values()) view.sync?.snap();
+    for (const piece of this.loose) piece.sync.snap();
+  }
+
   capture(): void {
     for (const view of this.views.values()) view.sync?.capture();
     for (const piece of this.loose) piece.sync.capture();

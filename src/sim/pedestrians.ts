@@ -74,6 +74,8 @@ const local = new Vector3();
  * late, and they pick themselves up again afterwards.
  */
 export class Pedestrians {
+  /** See LevelDef.quietBeyond. */
+  quietBeyond = 0;
   readonly list: Pedestrian[] = [];
   /** How many have been sent flying since the last reset. */
   hits = 0;
@@ -141,6 +143,8 @@ export class Pedestrians {
     for (const p of this.list) {
       // On a bus: nowhere to be seen, and nothing to do until it lets them off.
       if (p.bus === 'aboard') continue;
+      // Out of sight on a big level: where they are, they stay, until the truck comes nearer.
+      if (this.quietBeyond && p.state !== 'down' && Math.hypot(p.pos.x - t.x, p.pos.z - t.z) > this.quietBeyond) continue;
       if (p.crowd.fenced) this.keepIn(p);
       if (p.state === 'down') {
         this.tumble(p, dt);

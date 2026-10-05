@@ -27,6 +27,8 @@ export interface PartDesc {
   texture?: 'crate' | 'melon' | 'flesh' | 'rice';
   /** Stage at which this part drops off the item. Anything still attached comes apart at stage 3. */
   detachAt?: 1 | 2;
+  /** A bottle's cap, of this colour: drawn on its top, and coming away with it, not a piece of its own. */
+  cap?: number;
 }
 
 export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice';
@@ -483,8 +485,9 @@ function soda(): CargoType {
   const bottles: PartDesc[] = [];
   for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
     const [x, z] = [-0.15 + i * 0.1, -0.1 + j * 0.1];
-    bottles.push({ shape: 'cylinder', size: [0.032, 0.05, 0], pos: [x, h + 0.02, z], color: GLASS[(i + j) % GLASS.length], mass: 0.3, detachAt: (i + j) % 2 ? 1 : 2 });
-    bottles.push({ shape: 'cylinder', size: [0.016, 0.012, 0], pos: [x, h + 0.08, z], color: 0xd9b24a, mass: 0.02, detachAt: (i + j) % 2 ? 1 : 2 });
+    // Each cap drawn on its bottle: a cap of its own, two hundredths of a kilo, thrown loose with every bottle, was a body
+    // the physics could hardly keep still, and four crates of them made the truck's way down any steps slow.
+    bottles.push({ shape: 'cylinder', size: [0.032, 0.05, 0], pos: [x, h + 0.02, z], color: GLASS[(i + j) % GLASS.length], mass: 0.32, detachAt: (i + j) % 2 ? 1 : 2, cap: 0xd9b24a });
   }
   return {
     id: 'soda',

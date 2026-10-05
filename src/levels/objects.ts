@@ -613,7 +613,7 @@ export const OBJECT_KINDS = {
   firecrackerMat: {
     mass: 3,
     effect: 'sparks',
-    crackle: 2.6,
+    crackle: 6,
     trip: true,
     // A string of them laid out on the ground: two rows of little red rolls along a fuse, gold paper at the head.
     parts: [

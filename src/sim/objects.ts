@@ -34,6 +34,10 @@ export interface LooseObject {
   tripIn?: number;
   /** For a piece of a scaffold coming down with the rest: seconds until it goes. */
   fallIn?: number;
+  /** Carried down a hill at the ground's height and so not touching it: to be made solid to the ground again when it stops. */
+  afloat?: boolean;
+  /** Knocked down far behind the truck and come to rest, or near enough: left lying there, out of the physics. */
+  shelved?: boolean;
   /** For something that walks about: where it is now and which way it faces, where it is going, and how long it stands pecking first. */
   walk?: { x: number; z: number; yaw: number; tx: number; tz: number; pause: number; peck: number };
 }
@@ -94,7 +98,14 @@ export const BLAST_RADIUS = 10;
 const BLAST_SPEED = 18;
 /** Lighter than this, kg, a loose thing is slowed as it rolls or slides. */
 const ROLLS_BELOW = 120;
+/** How near the truck must be for hens and the like to be walking about. */
+const WANDER_SEEN = 90;
+/** Something knocked about this far from the truck, metres, and going slower than this, m/s, is left where it lies. */
+const LEFT_BEHIND = 80;
+const LEFT_SLOWER = 2;
 const SOLID = groups(GROUP.prop, GROUP.all);
+/** Something rolling down a hill, carried at the height of the ground: everything but the ground. */
+const CARRIED = groups(GROUP.prop, GROUP.all & ~GROUP.ground);
 /** Something lying flat in the road, as a manhole cover: the traffic drives over it, and it is not knocked about by other things. */
 const FLAT = groups(GROUP.prop, GROUP.all & ~GROUP.prop);
 const solidOf = (kind: ObjectKind) => (kind.underfoot ? FLAT : SOLID);
@@ -227,7 +238,15 @@ export class ObjectSystem {
     // Firecrackers on the ground: set off by the truck rolling over them, and each sets off those beside it a moment later.
     for (const object of this.objects) {
       if (object.fallIn !== undefined && (object.fallIn -= STEP) <= 0) this.fall(object);
-      if (object.kind.wanders && !object.knocked && !object.near) this.stroll(object);
+      if (object.afloat && !object.rolling) this.settle(object);
+      // Hens about their doorsteps, while the truck is near enough to see them. Further off they stand still, asleep: every
+      // one awake is another body for the physics to keep against the ground, step after step.
+      if (object.kind.wanders && !object.knocked && !object.near && truck) {
+        const p = object.body.translation();
+        const t = truck.body.translation();
+        if (Math.hypot(p.x - t.x, p.z - t.z) < WANDER_SEEN) this.stroll(object);
+        else if (!object.body.isSleeping()) object.body.sleep();
+      }
       // Birds and the like, startled: up and away from the truck in a flurry, before it is on them.
       if (object.kind.flee && truck && !object.knocked && !object.near) {
         const p = object.body.translation();
@@ -257,6 +276,7 @@ export class ObjectSystem {
     }
     for (const object of this.objects) {
       if (object.fuse >= 0 && (object.fuse -= STEP) < 0) this.explode(object);
+      if (truck && (object.knocked || object.pace !== undefined) && this.leftBehind(object, truck)) continue;
       if (object.body.isSleeping()) {
         object.was = null;
         continue;
@@ -588,9 +608,26 @@ export class ObjectSystem {
 
   /** Back exactly as it was put, still, and asleep. */
   /** Let one go where it is put, lying as it is turned, moving and spinning as given: to roll until it meets something. */
+  /**
+   * Out of the world altogether, while it waits to be let go: not merely asleep. Something carried far and brought back,
+   * again and again, leaves the physics' map of what is near what ever more stretched; taken out and put back in, it is
+   * filed afresh each time.
+   */
+  stow(object: LooseObject): void {
+    // Swept collision off first, while it is still in the world to hear it: left on, the physics goes on working out where
+    // a thing would hit something, every step, even asleep and out of the world, and it costs as much as all the rest.
+    if (object.body.isCcdEnabled()) {
+      object.body.wakeUp();
+      object.body.enableCcd(false);
+    }
+    object.shelved = false;
+    object.body.setEnabled(false);
+  }
+
   release(object: LooseObject, at: { x: number; y: number; z: number }, turn: { x: number; y: number; z: number; w: number }, way: { x: number; z: number }, pace: number, radius: number): void {
     if (this.under.delete(object)) this.setGroups(object, solidOf(object.kind));
-    object.body.enableCcd(true);
+    object.shelved = false;
+    object.body.setEnabled(true);
     object.body.setLinearDamping(0);
     object.body.setAngularDamping(0.05);
     object.body.setTranslation(at, true);
@@ -598,6 +635,23 @@ export class ObjectSystem {
     object.body.setLinvel({ x: way.x * pace, y: 0, z: way.z * pace }, true);
     object.body.setAngvel({ x: (way.z * pace) / radius, y: 0, z: (-way.x * pace) / radius }, true);
     Object.assign(object, { rolling: true, pace, knocked: false, near: true, wrecked: false, carried: 0, was: null, hush: 0, fuse: -1 });
+    // Not touching the ground while it is carried over it: working out a cylinder against the ground's thousands of
+    // triangles, every step, for every one of them, is what made a hill of coils slow.
+    if (!object.afloat) {
+      object.afloat = true;
+      this.setGroups(object, CARRIED);
+      object.body.setGravityScale(0, true);
+    }
+  }
+
+  /** Something no longer carried: back on the ground, solid to it, and falling again. */
+  private settle(object: LooseObject): void {
+    // No longer carried at speed: no more sweeping for collisions.
+    if (object.body.isCcdEnabled()) object.body.enableCcd(false);
+    if (!object.afloat) return;
+    object.afloat = false;
+    if (!this.under.has(object)) this.setGroups(object, solidOf(object.kind));
+    object.body.setGravityScale(1, true);
   }
 
   /**
@@ -734,8 +788,32 @@ export class ObjectSystem {
     return Math.abs(v.x) < TRUCK.frame.half[0] + HELD_MARGIN && Math.abs(v.z) < TRUCK.frame.half[2] + 0.9 + HELD_MARGIN && Math.abs(v.y) < 3;
   }
 
+  /**
+   * Things knocked down a steep hill creep on down it and never quite settle, and a hundred of them, scooters, lamp posts
+   * and coils, left the rest of the level slow. Far behind the truck and nearly still, each lies where it is, out of the
+   * physics; come back to it, and it is loose again. Returns whether it is out.
+   */
+  private leftBehind(object: LooseObject, truck: Truck): boolean {
+    const p = object.body.translation();
+    const t = truck.body.translation();
+    const away = Math.hypot(p.x - t.x, p.z - t.z);
+    if (object.shelved) {
+      if (away > LEFT_BEHIND - 10) return true;
+      object.shelved = false;
+      object.body.setEnabled(true);
+      return false;
+    }
+    if (away < LEFT_BEHIND || object.rolling || object.fuse >= 0 || !object.body.isEnabled()) return false;
+    const v = object.body.linvel();
+    if (Math.hypot(v.x, v.y, v.z) > LEFT_SLOWER) return false;
+    object.shelved = true;
+    object.body.setEnabled(false);
+    return true;
+  }
+
   /** Take one away again, to where it waits to be let go. */
   park(object: LooseObject): void {
+    this.settle(object);
     if (this.under.delete(object)) this.setGroups(object, solidOf(object.kind));
     Object.assign(object, { rolling: false, knocked: false, near: false, wrecked: false, carried: 0, was: null, hush: 0, fuse: -1 });
     this.stand(object);
@@ -764,11 +842,16 @@ export class ObjectSystem {
     this.arcs = [];
     for (const object of this.objects) {
       object.cut = 0;
+      if (object.shelved) {
+        object.shelved = false;
+        object.body.setEnabled(true);
+      }
       // Whatever was never disturbed is still where it belongs, and is best left asleep. A piece of a scaffold that its
       // neighbour had just set going has been disturbed, though it has not moved yet: left with that, it would come down
       // again, and the rest after it.
       const going = object.fallIn !== undefined || object.near;
       object.fallIn = undefined;
+      this.settle(object);
       const walked = object.walk !== undefined;
       object.walk = undefined;
       if (!object.knocked && !object.rolling && !going && !walked && object.body.isSleeping()) continue;

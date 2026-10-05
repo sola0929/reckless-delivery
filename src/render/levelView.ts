@@ -266,20 +266,20 @@ function noticeTexture(kind: 'school' | 'works' | 'bends'): THREE.Texture {
 }
 
 /** A school's name in white on blue, in a gold frame. */
-function nameTexture(): THREE.Texture {
+function nameTexture(text = '山城國小', ground = '#1f4f9a', rim = '#d9a62e'): THREE.Texture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 112;
   const g = canvas.getContext('2d')!;
-  g.fillStyle = '#d9a62e';
+  g.fillStyle = rim;
   g.fillRect(0, 0, 512, 112);
-  g.fillStyle = '#1f4f9a';
+  g.fillStyle = ground;
   g.fillRect(8, 8, 496, 96);
   g.fillStyle = '#ffffff';
   g.font = 'bold 72px sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText('山城國小', 256, 60);
+  g.fillText(text, 256, 60);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
@@ -342,15 +342,16 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
 function signMeshes(signs: SignDesc[]): THREE.Group {
   const group = new THREE.Group();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
-  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : arrowTexture(kind) }));
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : arrowTexture(kind) }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
-    if (sign.kind === 'schoolName') {
-      // Upright, its middle where it is put: over a gate, on a wall.
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(6, 1.31, 0.1), [steel, steel, steel, steel, faceOf(sign.kind), steel]);
+    if (sign.kind === 'schoolName' || sign.kind === 'gasShop') {
+      // Upright, its middle where it is put: over a gate, on a wall. A shop's is smaller than a school's.
+      const wide = sign.kind === 'gasShop' ? 3 : 6;
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [steel, steel, steel, steel, faceOf(sign.kind), steel]);
       root.add(plate);
       group.add(root);
       continue;

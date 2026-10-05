@@ -229,6 +229,8 @@ export class Sim {
     this.truck = new Truck(this.world, level.spawn, level.heading);
     this.traffic = new Traffic(this.world, level.traffic, level.terrain && ((x, z) => heightAt(level.terrain, x, z)));
     this.riders = new Riders(this.world, level.riders ?? [], level.terrain && ((x, z) => heightAt(level.terrain, x, z)));
+    this.traffic.quietBeyond = level.quietBeyond ?? 0;
+    this.riders.quietBeyond = level.quietBeyond ?? 0;
     this.machines = new Machines(this.world, level.machines ?? [], (x, z) => (level.terrain ? heightAt(level.terrain, x, z) : 0));
     this.driver = new Driver(this.world, !!level.terrain);
     this.truck.rolls = !!level.rollback;
@@ -241,6 +243,7 @@ export class Sim {
     this.follow();
     const terrain = level.terrain;
     this.pedestrians = new Pedestrians(level.crowds ?? [], terrain && ((x, z) => heightAt(terrain, x, z)), level.keepOut);
+    this.pedestrians.quietBeyond = level.quietBeyond ?? 0;
     this.battle = new Battle(this.world, level.battle);
     this.cargoSystem = new CargoSystem(this.world, level.damageScale ?? 1);
     this.cargoSystem.load(level.cargo, level.spawn, level.heading);
@@ -586,6 +589,25 @@ export class Sim {
     this.pileups = [];
     this.horns = [];
     this.result = null;
+    // Things that roll a long way down a hill leave the physics' map of where everything is stretched out of shape, and every
+    // step after is slower for it: the restart starts from a map made afresh, as a level just loaded does.
+    if (this.level.rollers?.length) this.refile();
+  }
+
+  /** Every body taken out of the world and put back in, each as asleep or awake as it was: the physics files them all anew. */
+  private refile(): void {
+    const out: { body: RAPIER.RigidBody; asleep: boolean }[] = [];
+    this.world.forEachRigidBody((body) => {
+      if (!body.isEnabled()) return;
+      out.push({ body, asleep: body.isSleeping() });
+      body.setEnabled(false);
+    });
+    this.world.step(this.eventQueue);
+    this.eventQueue.drainContactForceEvents(() => {});
+    for (const { body, asleep } of out) {
+      body.setEnabled(true);
+      if (asleep) body.sleep();
+    }
   }
 
   /** Keep those who go after a vehicle at its tail: the patch they wander in is moved along behind it. */
