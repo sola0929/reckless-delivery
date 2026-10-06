@@ -137,6 +137,8 @@ export interface MachineDesc {
   /** Which way it faces at first: radians about Y, 0 = toward +Z. */
   yaw: number;
   area: [number, number, number, number];
+  /** Stands where it is put, switched off: a machine parked for the day. */
+  parked?: boolean;
 }
 
 /**

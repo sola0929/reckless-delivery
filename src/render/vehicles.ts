@@ -139,11 +139,38 @@ function van(s: Shapes): void {
   ends(s, 1.15, 3.7, 0.95);
 }
 
+/** A gravel lorry, waiting its turn at the quarry: the cab in its firm's colour, a steel tub heaped with sand behind it. */
+function dumpTruck(s: Shapes, cab: number): void {
+  const tub = 0xb5622e;
+  const sand = 0xc9b48a;
+  for (const z of [3.3, -1.7, -3.1]) for (const x of [-1.1, 1.1]) s.wheel(x, 0.52, z, 0.52, 0.16, TYRE, HUB);
+  s.box(0, 0.82, 0, 1.0, 0.18, 4.4, DARK);
+  // The cab: tall and square, glass across the front and in its doors, a row of amber lamps along the top of it.
+  s.box(0, 1.85, 3.75, 1.2, 0.85, 0.75, cab);
+  s.box(0, 2.2, 4.51, 1.05, 0.36, 0.02, GLASS);
+  for (const x of [-1.21, 1.21]) s.box(x, 2.2, 3.85, 0.02, 0.3, 0.45, GLASS);
+  s.box(0, 1.15, 4.52, 1.1, 0.12, 0.02, DARK);
+  for (let k = 0; k < 5; k++) s.box(-0.8 + k * 0.4, 2.76, 4.2, 0.07, 0.05, 0.07, AMBER);
+  // The tub, ribbed down its sides, and the load in it.
+  s.box(0, 1.08, -0.8, 1.22, 0.08, 3.6, tub);
+  for (const x of [-1.2, 1.2]) s.box(x, 1.8, -0.8, 0.05, 0.75, 3.6, tub);
+  s.box(0, 1.95, 2.76, 1.22, 0.9, 0.06, tub);
+  s.box(0, 1.8, -4.38, 1.22, 0.75, 0.06, tub);
+  for (let z = -3.8; z <= 2.3; z += 1.2) for (const x of [-1.27, 1.27]) s.box(x, 1.8, z, 0.03, 0.75, 0.06, DARK);
+  s.box(0, 2.45, -0.8, 1.15, 0.12, 3.5, sand);
+  s.box(0, 2.67, -0.8, 0.85, 0.12, 2.6, sand);
+  s.box(0, 2.84, -0.6, 0.5, 0.08, 1.5, sand);
+  for (const x of [-1.1, 1.1]) s.box(x, 0.55, -3.75, 0.25, 0.3, 0.02, DARK);
+  ends(s, 1.2, 4.5, 1.0);
+}
+
+const CABS = [0x2f6fb0, 0x3f8f5f, 0xe8e2d0, 0xc8372d];
+
 const BUSES = [0x3f8f5f, 0x2f6fb0, 0xd06a2a, 0xb33a3a];
 
 /** One vehicle of the traffic, drawn about the middle of its body, which is where the physics has it. */
 /** Where each kind's lamps are: half its width, half its length, and their height off the road. */
-const LAMPS: Record<VehicleKind, [number, number, number]> = { car: [0.9, 2.1, 0.62], taxi: [0.9, 2.1, 0.62], pickup: [0.9, 2.2, 0.66], bus: [1.25, 5.2, 0.9], garbage: [1.2, 3.3, 1.05], float: [1.2, 5.2, 0.9], palanquin: [0.3, 0.95, 1.2], van: [1.15, 3.7, 0.95] };
+const LAMPS: Record<VehicleKind, [number, number, number]> = { car: [0.9, 2.1, 0.62], taxi: [0.9, 2.1, 0.62], pickup: [0.9, 2.2, 0.66], bus: [1.25, 5.2, 0.9], garbage: [1.2, 3.3, 1.05], float: [1.2, 5.2, 0.9], palanquin: [0.3, 0.95, 1.2], van: [1.15, 3.7, 0.95], dumpTruck: [1.2, 4.5, 1.0] };
 const brakeMaterial = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
 
 /** A vehicle's brake lights, lit: bright red over its tail lamps, a little bigger than them. To be shown while it brakes. */
@@ -167,6 +194,7 @@ export function vehicleMesh(kind: VehicleKind, color: number, n: number): THREE.
   else if (kind === 'float') float(shapes);
   else if (kind === 'palanquin') palanquin(shapes);
   else if (kind === 'van') van(shapes);
+  else if (kind === 'dumpTruck') dumpTruck(shapes, CABS[n % CABS.length]);
   else car(shapes, color, false);
   const geometry = shapes.geometry();
   // Drawn standing on the road; the body's middle is that much above it.

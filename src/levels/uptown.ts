@@ -141,6 +141,8 @@ const DOWN_ROAD: Look = { tag: 'road', color: 0x4f555c, wall: 0x6e6a62 };
  * is for another day. [x0, z0, x1, z1]. It reaches north under the last leg and the second hairpin, so that a truck gone
  * through a barrier there comes down in it, not in the quarry with no way out.
  */
+/** Where along the last leg the gravel lorries queue for the quarry, nose to tail: the middle of each. */
+const LORRIES = [LEG_SOUTH + 8, LEG_SOUTH + 22, LEG_SOUTH + 36];
 const GATE_YARD: Rect = [QUARRY_EDGE - 28, LEG_SOUTH - 30, QUARRY_EDGE, LEG_NORTH + 22];
 const ALL_HEAPS: [number, number, number, number][] = [
   [QUARRY_EDGE - 22, LEG_SOUTH + 6, 8, 3], [QUARRY_EDGE - 40, LEG_SOUTH - 22, 7, 2.5], [QUARRY_EDGE - 54, LEG_SOUTH + 22, 9, 3.5],
@@ -216,13 +218,15 @@ function layHillRoad(relief: Relief, rect: (r: Rect) => [number, number][]) {
   // The hairpins, the foot, and the corner at the top where the road comes off the landing: level, reaching a little past the
   // road's outside, and from there a grassy bank down, or up, to the hillside, not a wall.
   relief.area(rect([down(x2), OUT_A, up(x1), LEG_SOUTH]), HAIRPIN_A, SHOULDER_LOOK);
-  relief.area(rect([down(x3), LEG_NORTH, up(x2), OUT_B]), HAIRPIN_B, SHOULDER_LOOK);
+  // The second hairpin's out to the quarry's edge as well, as the last leg's is: short of it, the top of that leg's terrace stood
+  // out past the hairpin's in a block.
+  relief.area(rect([QUARRY_EDGE, LEG_NORTH, up(x2), OUT_B]), HAIRPIN_B, SHOULDER_LOOK);
   relief.area(rect([QUARRY_EDGE, OUT_A, up(x3), LEG_SOUTH]), QUARRY_H, SHOULDER_LOOK);
   relief.area(rect([down(x1), LEG_NORTH, EAST_EDGE, OUT_B]), LANDING_H, SHOULDER_LOOK);
   const bank = (from: number, to: number, z: number, h: number, side: 'left' | 'right') => relief.slope([[from, z, h], [(from + to) / 2, z, h], [to, z, h]], side, { grade: 1, reach: 40 }, HILL_LOOK);
   bank(up(x1), down(x2), OUT_A, HAIRPIN_A, 'right');
   bank(up(x3), QUARRY_EDGE, OUT_A, QUARRY_H, 'right');
-  bank(up(x2), down(x3), OUT_B, HAIRPIN_B, 'left');
+  bank(up(x2), QUARRY_EDGE, OUT_B, HAIRPIN_B, 'left');
   bank(EAST_EDGE, down(x1), OUT_B, LANDING_H, 'left');
   // The road: off the landing, round to the south, down, and back and forth.
   // Each turn rounded a little short of the whole of the straight it comes off, so that no straight is used up entirely by
@@ -244,7 +248,8 @@ function layHillRoad(relief: Relief, rect: (r: Rect) => [number, number][]) {
       { x: x3, z: LEG_NORTH, h: HAIRPIN_B },
       { x: x3, z: LEG_SOUTH, h: QUARRY_H },
       { x: x3, z: LEG_SOUTH - out, h: QUARRY_H, round: turn },
-      { x: QUARRY_EDGE - 14, z: LEG_SOUTH - out, h: QUARRY_H },
+      // Ending just inside the yard's way in: the yard itself is gravel.
+      { x: QUARRY_EDGE - 4, z: LEG_SOUTH - out, h: QUARRY_H },
     ],
     HILL_ROAD,
     DOWN_ROAD,
@@ -1074,16 +1079,32 @@ export function uptown(): LevelDef {
     ];
     LEGS.forEach((x, n) => {
       // A lorry pulled half onto the verge, a third of the way down each leg, and things in clusters along the rest.
-      object('farmTruck', x - HILL_ROAD / 2 + 0.6, LEG_SOUTH + 20 + n * 9, 0);
+      // On the last, the gravel lorries' queue is along the barrier instead, and nothing put out across from them.
+      if (x !== LEGS[2]) object('farmTruck', x - HILL_ROAD / 2 + 0.6, LEG_SOUTH + 20 + n * 9, 0);
       for (let k = 0; k < 5; k++) {
         const z = LEG_SOUTH + 6 + k * 11 + (n % 2) * 4;
-        if (Math.abs(z - (LEG_SOUTH + 20 + n * 9)) < 5) continue;
+        if (x !== LEGS[2] && Math.abs(z - (LEG_SOUTH + 20 + n * 9)) < 5) continue;
+        if (x === LEGS[2] && LORRIES.some((at) => z + 4 > at - 5.5 && z < at + 5.5)) continue;
         const group = LEFT_OUT[(k + n) % LEFT_OUT.length];
         // In front of the houses, half in the road.
         group.forEach((kind, j) => object(kind, x + HILL_ROAD / 2 + 0.2 - (j % 2) * 0.7, z + j * 1.2, kind.startsWith('scooter') ? 0 : j));
       }
       crowds.push({ area: [x + HILL_ROAD / 2 + 0.2, LEG_SOUTH + 8, x + HILL_ROAD / 2 + 0.9, LEG_NORTH - 8], count: 3, y: 0 });
     });
+
+    // Beyond the last leg's barrier, on the ground between it and the drop to the quarry: what piles up round a quarry's way in.
+    // Culverts lying across the slope, worn-out tyres, heaps of gravel tipped on the level at the top, and stones scattered.
+    {
+      const edge = QUARRY_EDGE + 3;
+      for (const [kind, dx, z] of [
+        ['gravelPile', 0, LEG_NORTH + 10], ['gravelPile', 1.2, LEG_NORTH + 5.5],
+        ['culvertStack', 0, LEG_NORTH - 8], ['culvert', 0.4, LEG_NORTH - 14], ['culvert', -0.2, LEG_NORTH - 17.5],
+        ['tyreStack', -1, LEG_SOUTH + 33], ['tyreStack', 0.9, LEG_SOUTH + 32.4], ['tyre', 0.2, LEG_SOUTH + 30], ['tyre', -0.8, LEG_SOUTH + 28.8],
+        ['culvertStack', 0, LEG_SOUTH + 14],
+        ['tyreStack', -0.6, LEG_SOUTH + 5], ['tyre', 0.8, LEG_SOUTH + 6.2],
+      ] as const) object(kind, edge + dx, z, kind.startsWith('tyre') ? z : 0);
+      for (const [dx, dz] of [[-1.4, 2], [1.6, 8.5], [-0.8, 21], [1.2, 23.5], [-1.5, 40], [0.6, 44], [1.5, 51], [-1, 57]] as const) object('rockSmall', edge + dx, LEG_SOUTH + dz, dz);
+    }
 
     // What makes it a lived-in mountain road rather than a hard one: rice and radish set out to dry in trays on tarps at the
     // road's edge before a few doors; hens scratching about that go up in a flurry as the truck comes; chevron boards round
@@ -1163,7 +1184,7 @@ export function uptown(): LevelDef {
     }
 
     // The yard at the quarry's gate, where the load goes: a wall of concrete round it, and on its quarry side a gate of steel bars
-    // with the quarry seen through it, its machines at work; a guard's hut, the weighbridge, pallets of goods to be taken, a
+    // with the quarry seen through it, its machines at work; the site office, pallets of goods to be taken, a
     // forklift, cones.
     {
       const [gx0, gz0, gx1, gz1] = GATE_YARD;
@@ -1172,6 +1193,12 @@ export function uptown(): LevelDef {
         props.push({ shape: 'box', size: [hx, 1.3, hz], pos: [x, y + 1.3, z], color: 0x9a948a });
         props.push({ shape: 'box', size: [hx + 0.05, 0.08, hz + 0.05], pos: [x, y + 2.65, z], color: 0x6e6a62, ghost: true });
       };
+      // Gravel lorries queued down the last leg for the quarry, along its crash barrier: the road beside them wide enough for
+      // the truck, and not much more.
+      for (const z of LORRIES) {
+        const x = LEGS[2] - HILL_ROAD / 2 + 1.35;
+        standing.push({ from: [x, z + 0.25], to: [x, z - 0.25], cars: 1, speed: 0, kinds: ['dumpTruck'] });
+      }
       wall((gx0 + gx1) / 2, gz0, (gx1 - gx0) / 2, 0.2);
       wall((gx0 + gx1) / 2, gz1, (gx1 - gx0) / 2, 0.2);
       const gate = (gz0 + gz1) / 2;
@@ -1183,20 +1210,44 @@ export function uptown(): LevelDef {
       for (let dz = -5.7; dz <= 5.7; dz += 0.4) props.push({ shape: 'box', size: [0.04, 1.0, 0.04], pos: [gx0, y + 1.3, gate + dz], color: 0x3a3f45 });
       for (const dz of [-6.2, 6.2]) props.push({ shape: 'box', size: [0.35, 1.6, 0.35], pos: [gx0, y + 1.6, gate + dz], color: 0x7a756c });
       props.push({ shape: 'box', size: [0.03, 0.35, 1.6], pos: [gx0 + 0.15, y + 1.7, gate], color: 0xd0302a, ghost: true });
-      // The guard's hut by the way in, and its barrier arm, raised.
-      const [hx, hz] = [gx1 - 4, gz0 + 4];
-      props.push({ shape: 'box', size: [1.3, 1.25, 1.3], pos: [hx, y + 1.25, hz], color: 0xe8e2d0 });
-      props.push({ shape: 'box', size: [1.32, 0.35, 0.02], pos: [hx, y + 1.6, hz + 1.31], color: 0x1b2a3a, ghost: true });
-      props.push({ shape: 'box', size: [1.5, 0.1, 1.5], pos: [hx, y + 2.6, hz], color: 0x2f62a8, ghost: true });
-      // The weighbridge: a steel plate let into the ground, and its yellow edges.
-      decals.push({ pos: [gx1 - 13, gz0 + 14], size: [3.6, 10], color: 0x5a6068, base: y, y: 0.03 });
-      for (const dx of [-1.8, 1.8]) decals.push({ pos: [gx1 - 13 + dx, gz0 + 14], size: [0.2, 10], color: 0xf2c12e, base: y, y: 0.05 });
+      // The site office by the way in: a container, ribbed, a door and windows down its yard side, an air conditioner on its
+      // end; hard hats on a board by the door; two portable toilets beside it.
+      const [hx, hz] = [gx1 - 3, gz0 + 6];
+      props.push({ shape: 'box', size: [1.25, 1.35, 3.05], pos: [hx, y + 1.35, hz], color: 0x2f6fb0 });
+      for (let dz = -2.8; dz <= 2.8; dz += 0.4) props.push({ shape: 'box', size: [0.03, 1.3, 0.05], pos: [hx - 1.27, y + 1.35, hz + dz], color: 0x285e98, ghost: true });
+      props.push({ shape: 'box', size: [0.04, 1.0, 0.45], pos: [hx - 1.3, y + 1.0, hz + 1.6], color: 0xe8e2d0, ghost: true });
+      for (const dz of [-1.9, -0.4]) props.push({ shape: 'box', size: [0.04, 0.4, 0.55], pos: [hx - 1.3, y + 1.6, hz + dz], color: 0x1b2a3a, ghost: true });
+      props.push({ shape: 'box', size: [0.4, 0.3, 0.2], pos: [hx, y + 1.9, hz - 3.25], color: 0xe8e8e8, ghost: true });
+      props.push({ shape: 'box', size: [1.3, 0.06, 3.1], pos: [hx, y + 2.73, hz], color: 0xe8e2d0, ghost: true });
+      props.push({ shape: 'box', size: [0.04, 0.3, 0.6], pos: [hx - 1.3, y + 1.7, hz + 2.6], color: 0x6e5a40, ghost: true });
+      [0xf2c12e, 0xf2efe6, 0xf2c12e, 0xe8892a].forEach((color, k) => props.push({ shape: 'cylinder', size: [0.14, 0.08, 0.14], pos: [hx - 1.42, y + 1.62 + (k % 2) * 0.24, hz + 2.4 + Math.floor(k / 2) * 0.4], color, ghost: true }));
+      object('toilet', gx1 - 1.2, gz0 + 11.5);
+      object('toilet', gx1 - 1.2, gz0 + 13);
+      // A digger parked for the day at the yard's far end, its arm down.
+      machines.push({ kind: 'excavator', pos: [gx1 - 8, gz1 - 16], yaw: Math.PI, area: [gx1 - 8, gz1 - 16, gx1 - 8, gz1 - 16], parked: true });
       // Pallets of goods along the wall, waiting; a forklift; the place to stop marked out.
       for (let k = 0; k < 4; k++) {
         object('pallet', gx0 + 2, gate - 14 - k * 2.4);
         object(k % 2 ? 'riceSack' : 'box', gx0 + 2, gate - 14 - k * 2.4);
       }
       object('farmTruck', gx0 + 3, gate + 16, Math.PI / 2);
+      // Round where the load is put down, clear of it: cement on pallets, a bundle of rebar, drums, bricks, a mixer and a
+      // barrow, and a line of cones down the yard's open side.
+      const stack = (x: number, z: number) => {
+        object('pallet', x, z);
+        for (let layer = 0; layer < 2; layer++) for (const dz of [-0.26, 0.26]) objects.push({ kind: 'cementBag', pos: [x, ground(x, z) + 0.14 + layer * 0.2, z + dz], rotY: layer * 0.1 });
+      };
+      stack(gx0 + 2.2, gate - 3);
+      stack(gx0 + 2.2, gate - 0.8);
+      stack(gx0 + 2.2, gate + 1.4);
+      object('rebar', gx0 + 17, gate + 7, Math.PI / 2);
+      object('rebar', gx0 + 17.6, gate + 7.3, Math.PI / 2 + 0.05);
+      for (const [dx, dz] of [[0, 0], [0.75, 0.2], [0.3, 0.8]] as const) object('barrel', gx1 - 5 + dx, gate + 4 + dz);
+      object('bricks', gx1 - 4, gate - 7);
+      object('bricks', gx1 - 4, gate - 8.6);
+      object('mixer', gx0 + 20, gate + 13, 0.6);
+      object('wheelbarrow', gx0 + 18.4, gate + 11.6, -0.4);
+      for (let z = gz0 + 28; z <= gate - 12; z += 3.5) object('cone', gx1 - 4, z);
       for (const dz of [-8, 8]) object('cone', gx0 + 10, gate + dz);
       decals.push({ pos: [gx0 + 10, gate - 4], size: [9, 12], color: 0xf2c12e, base: y, y: 0.03 });
       decals.push({ pos: [gx0 + 10, gate - 4], size: [8.4, 11.4], color: 0x8a8378, base: y, y: 0.05 });

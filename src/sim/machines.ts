@@ -84,6 +84,7 @@ export class Machines {
   /** Call once per physics step, before the world steps. */
   update(dt: number, truck: { x: number; z: number }): void {
     for (const m of this.list) {
+      if (m.desc.parked) continue;
       const spec = SPECS[m.desc.kind];
       // The house swings round, faster or slower, one way or the other, now and then stopping.
       if (m.upper && (m.swingFor -= dt) <= 0) {

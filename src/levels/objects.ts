@@ -829,6 +829,8 @@ export const OBJECT_KINDS = {
     bang: { kind: 'drum', power: 1.2 },
     parts: [cyl(0.32, 0.46, [0, 0.46, 0], 0xb5362a), cyl(0.33, 0.04, [0, 0.62, 0], 0x2a2e33, { ghost: true }), cyl(0.33, 0.04, [0, 0.3, 0], 0x2a2e33, { ghost: true })],
   },
+  /** A sack of cement, grey paper with a blue band: knocked, it bursts in a cloud. */
+  cementBag: { mass: 25, effect: 'dust', parts: [box([0.4, 0.1, 0.25], [0, 0.1, 0], 0xd8d4c8), box([0.41, 0.03, 0.26], [0, 0.12, 0], 0x2f62a8, { ghost: true })] },
   sandbag: { mass: 30, parts: [box([0.45, 0.14, 0.24], [0, 0.14, 0], 0xb9a57a)] },
   /** A ridge tent: canvas over a pole, pegged down. Its length runs along Z. */
   armyTent: {
@@ -1046,6 +1048,31 @@ export const OBJECT_KINDS = {
     ],
   },
   /** A length of concrete pipe, lying on its side: it rolls. */
+  /** A concrete culvert pipe, lying on its side; and three of them stacked, two and one. Their axis runs along X. */
+  culvert: {
+    mass: 500,
+    effect: 'dust',
+    parts: [cyl(0.6, 1.2, [0, 0.6, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.47, 1.21, [0, 0.6, 0], 0x55595f, { rot: [0, 0, Math.PI / 2], ghost: true })],
+  },
+  culvertStack: {
+    mass: 1400,
+    effect: 'dust',
+    parts: ([[-0.61, 0.6], [0.61, 0.6], [0, 1.65]] as const).flatMap(([z, y]): ObjectPart[] => [
+      cyl(0.6, 1.2, [0, y, z], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }),
+      cyl(0.47, 1.21, [0, y, z], 0x55595f, { rot: [0, 0, Math.PI / 2], ghost: true }),
+    ]),
+  },
+  /** Worn-out tyres: four in a pile, and one lying flat. */
+  tyreStack: {
+    mass: 50,
+    parts: [0, 1, 2, 3].flatMap((k): ObjectPart[] => [
+      cyl(0.42, 0.12, [k === 2 ? 0.05 : 0, 0.12 + k * 0.24, k === 1 ? -0.04 : 0], 0x1e1f22),
+      cyl(0.24, 0.125, [k === 2 ? 0.05 : 0, 0.12 + k * 0.24, k === 1 ? -0.04 : 0], 0x3a3c40, { ghost: true }),
+    ]),
+  },
+  tyre: { mass: 12, parts: [cyl(0.42, 0.12, [0, 0.12, 0], 0x1e1f22), cyl(0.24, 0.125, [0, 0.12, 0], 0x3a3c40, { ghost: true })] },
+  /** A heap of gravel tipped at the roadside. */
+  gravelPile: { mass: 900, effect: 'dust', parts: [cone(1.4, 0.55, [0, 0.55, 0], 0xaea592), cone(0.9, 0.35, [0.3, 0.45, 0.2], 0x9c9384, { ghost: true })] },
   pipe: { mass: 90, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
   /** Bricks on a pallet. */
   bricks: {

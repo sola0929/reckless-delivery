@@ -1,7 +1,7 @@
 // The kinds of vehicle in the traffic. Each is solid as two boxes, a lower and an upper,
 // which is also roughly how it is drawn: so what can be stood on is what is seen.
 
-export type VehicleKind = 'car' | 'taxi' | 'pickup' | 'bus' | 'garbage' | 'float' | 'palanquin' | 'van';
+export type VehicleKind = 'car' | 'taxi' | 'pickup' | 'bus' | 'garbage' | 'float' | 'palanquin' | 'van' | 'dumpTruck';
 
 interface Box {
   half: [number, number, number];
@@ -50,4 +50,6 @@ export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
   garbage: spec(1.2, 1.3, 3.3, 5000, { width: 0.97, length: 0.97, share: 0.25, z: 0 }, 0.35, 2.6),
   // A removals van: a cab, and a tall box on the back, its doors open.
   van: spec(1.15, 1.4, 3.7, 6000, { width: 0.97, length: 0.97, share: 0.25, z: 0 }, 0.35),
+  // A gravel lorry, three axles, its tub heaped with sand: the heaviest thing on the road.
+  dumpTruck: spec(1.25, 1.45, 4.5, 16000, { width: 0.97, length: 0.98, share: 0.25, z: 0 }, 0.35),
 };
