@@ -22,23 +22,33 @@ export interface BuildingLook {
 }
 
 export interface PropDesc {
-  shape: 'box' | 'cylinder' | 'cone';
-  /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. */
+  shape: 'box' | 'cylinder' | 'cone' | 'sphere';
+  /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. sphere: [radius, radius, radius]. */
   size: Vec3;
   pos: Vec3;
   /** Euler XYZ, radians. */
   rot?: Vec3;
   color: number;
+  /** Drawn with this surface on it, as the cargo of that kind is: a melon's rind. Static props only. */
+  texture?: 'melon';
+  /** How it holds what rests on it: 0.8 if not given. Steel planks are slippery under a truck's frame. */
+  friction?: number;
   /** Dynamic when set, static otherwise. */
   mass?: number;
-  /** Turns see-through when it comes between the camera and the truck. Boxes only, unrotated. */
+  /** Turns see-through when it comes between the camera and the truck. */
   fade?: boolean;
+  /** Overhead plant the truck drives under: fades whenever it is anywhere near the camera's line to the truck, and further. Implies `fade`. */
+  overhead?: boolean;
   /** Drawn but not solid: rooftops, foliage, awnings. */
   ghost?: boolean;
+  /** A storey of a building the truck drives up through: hidden while the truck is below it, so that it is seen from above. Implies `fade`. */
+  cutaway?: boolean;
   /** A pavement: drawn laid in bricks rather than as a plain slab. Boxes only, unrotated. */
   paving?: boolean;
   /** Drawn as a building, with windows, shopfronts and a roof, rather than as a bare box. */
   building?: BuildingLook;
+  /** Where the line from the camera to the truck has to pass for it to fade, corner to corner, in place of round itself: a building's end wall, faded while the truck is at its door. Needs `fade`. */
+  fadeZone?: [Vec3, Vec3];
   /** Colour of its footprint on the minimap. Left off the map when unset. */
   mapColor?: number;
   /** Drawn on the minimap beneath the decals rather than above them: pavements under grass. */
@@ -79,11 +89,80 @@ export interface TrafficLane {
   respawn?: number;
   /** For its first vehicle: it stands where it starts until the truck comes within this far. */
   waitFor?: number;
+  /** Another lane alongside this one, the same length, the same way: this one's vehicles hold back to keep at least `gap`
+   * metres behind that one's, never level with them. */
+  keepFrom?: { lane: number; gap: number };
   cars: number;
   /** Cruising speed, m/s. */
   speed: number;
   /** What its first few vehicles are, in order. The rest are a mix of cars, taxis, small trucks and buses. */
   kinds?: VehicleKind[];
+}
+
+/**
+ * Rocks shaken off a conveyor overhead, falling through holes in the net under it: each place a hole is
+ * drops a few now and then, after a moment's warning, and each rock breaks on whatever it lands on.
+ */
+export interface DropperDesc {
+  /** Where each hole is: [x, height of the belt, z]. */
+  spots: Vec3[];
+  /** Seconds between one fall and the next at a hole, at least and at most. */
+  every: [number, number];
+  /** How many rocks a fall is, at least and at most. */
+  burst: [number, number];
+  /** Seconds of warning before a fall: the belt judders and grit trickles down. */
+  tell: number;
+  /** Where the warning lamps over each hole are, from the hole: one either side of the conveyor. */
+  lamps?: Vec3[];
+}
+
+/**
+ * A machine at work beside the road, going through its motions over and over, heavy and with only so much
+ * force behind them, so that the truck in their way is struck and shoved as such a weight would shove it.
+ *   slew       an excavator swinging its house round, arm out, from digging on one side to tipping on the other
+ *   pile       a pile driver: its hammer drawn up, and dropped
+ *   clamshell  a crane swinging a grab of mud from one side to the other, low
+ *   ball       a demolition ball swinging on its cable
+ *   boom       a telescopic boom pushed out across the road and drawn back
+ *   sway       a hanging bridge's deck, rocking from side to side as it hangs: `pos` its middle, `yaw` the way it runs
+ *   forklift   a forklift going about a floor: round `path` and round again, or (`back`) along it and back; `pos` the floor's
+ *              height at the path's start, `period` seconds a round
+ */
+export interface RigDesc {
+  kind: 'slew' | 'pile' | 'clamshell' | 'ball' | 'boom' | 'sway' | 'forklift';
+  /** Where it stands: on the ground there. */
+  pos: Vec3;
+  /** Which way its work lies: radians about Y, 0 = toward +Z. For a slew or a clamshell, the middle of its swing; for a boom, the way it pushes out; for a ball, the way it swings. */
+  yaw: number;
+  /** Seconds for one round of its work. */
+  period: number;
+  /** Where in that round it starts, 0 to 1. */
+  phase: number;
+  /** A hanging bridge's length, metres, end to end. */
+  long?: number;
+  /** A forklift's way: the corners it drives between, in the world; and whether it goes along them and back rather than round. */
+  path?: Vec2[];
+  back?: boolean;
+}
+
+/** Shallow water running over the road: it holds the truck back, and its current pushes it downstream. */
+export interface FordDesc {
+  pos: Vec2;
+  half: Vec2;
+  /** The way the water runs and how fast, m/s: it pushes the truck by how much faster it runs than the truck goes its way. */
+  flow: Vec2;
+  /** How much it holds the truck back (0 to 1), if not as a ford usually does. */
+  drag?: number;
+  /** How well the tyres grip on its bed (1 as on dry ground), if not as on dry ground. */
+  grip?: number;
+  /** How hard the tyres hold against being pushed sideways on its bed, over and above `grip` (1 as on dry ground): less where the water is deep enough to half float the truck. */
+  sideGrip?: number;
+  /** How high its water stands, where it is drawn with a surface running the way it flows; its bed is wherever the ground is under it. */
+  surface?: number;
+  /** How far its water pours down over the edge it runs to, where it falls over a ledge. */
+  fall?: number;
+  /** Over a truck's height: its surface drawn dark, the bed not seen through it. */
+  deep?: boolean;
 }
 
 /** A patch of ground with people wandering about on it. */
@@ -185,6 +264,30 @@ export interface RollerDesc {
   within?: number;
 }
 
+/**
+ * Water lying still, or nearly, over ground that is its own surface: what goes in floats, drifting slowly toward where
+ * the water goes out and turning round in front of it there; what is heavy sinks.
+ */
+export interface StillWaterDesc {
+  /** [minX, minZ, maxX, maxZ] */
+  area: [number, number, number, number];
+  surface: number;
+  /** Where its water goes out. */
+  outlet: Vec2;
+  /** How fast what floats drifts, m/s. */
+  drift: number;
+  /** Brown with mud: thrown up brown. */
+  muddy?: boolean;
+}
+
+/** A bird standing about: up and away when the truck comes near or sounds its horn, and down again at another of the birds' places, away from it. */
+export interface BirdDesc {
+  pos: Vec3;
+  yaw: number;
+  /** Only a place for one to come down at: none stands there at first. */
+  empty?: boolean;
+}
+
 /** A hole dug in the ground. Driving into one ends the run. */
 export interface PitDesc {
   pos: Vec2;
@@ -204,6 +307,8 @@ export interface SlickDesc {
   y?: number;
   /** How much of their usual hold the tyres keep there, 0 to 1. */
   grip: number;
+  /** What it is: spilt oil, drawn as dark pools (the default); or gravel spilt from a lorry, which the level draws itself. */
+  look?: 'oil' | 'gravel';
 }
 
 /** A warning sign beside the road. Drawn large and tilted back, to be read from above. */
@@ -211,8 +316,10 @@ export interface SignDesc {
   pos: Vec3;
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
-  /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends';
+  /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road; the name over a quarry's loading shed. */
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload';
+  /** As a prop's: faded while the camera's line to the truck passes through this box. Upright name signs only. */
+  fadeZone?: [Vec3, Vec3];
 }
 
 /** A railway track running along X, with trains passing at a steady interval. */
@@ -353,6 +460,8 @@ export interface BattleDesc {
 export interface FinishZone {
   pos: Vec2;
   half: Vec2;
+  /** Only counted with the truck higher than this: on a roof, not on the floors under it. */
+  above?: number;
 }
 
 export interface LevelDef {
@@ -365,6 +474,14 @@ export interface LevelDef {
   terrain?: TerrainDesc;
   /** Kinds of ground, by the names the terrain gives them, that there is no driving out of: water, say. A truck that is on one is done for, as it is in a pit. */
   sinks?: string[];
+  /** Still water things float on or sink in. */
+  stillWater?: StillWaterDesc[];
+  /** Concrete just poured, on a floor at a height: it drags at the truck and gives its tyres little hold. */
+  wet?: { area: [number, number, number, number]; y: number; drag: number; grip: number }[];
+  /** Still water drawn over ponds, for the look of it only: where, how high, its colour, and which way and how fast, m/s, its ripples drift (barely, if not given). */
+  pools?: { area: [number, number, number, number]; surface: number; tint: number; flow?: Vec2 }[];
+  /** Birds that fly up from the truck. */
+  birds?: BirdDesc[];
   /** Ground there is no driving out of: a paddy, a canal. Each is [minX, minZ, maxX, maxZ]. A truck that is in one is done for, as it is in a pit. */
   bogs?: [number, number, number, number][];
   /** The time of day, when it is not the middle of it. */
@@ -397,7 +514,7 @@ export interface LevelDef {
   /** Traffic, scooters and people further than this from the truck, metres, stand still until it comes nearer: on a level too big to see across. */
   quietBeyond?: number;
   /** For testing: places just before each part of the level, to put the truck down at, by number key. */
-  checkpoints?: { name: string; pos: Vec2; yaw: number }[];
+  checkpoints?: { name: string; pos: Vec2; yaw: number; /** The floor to put it down on, where that is not the ground: up a building. */ y?: number }[];
   battle?: BattleDesc;
   /** Where water plays: the top of each fountain's jet. */
   fountains?: Vec3[];
@@ -431,4 +548,10 @@ export interface LevelDef {
   rollback?: boolean;
   /** Places things are let go from, to roll down a hill. */
   rollers?: RollerDesc[];
+  /** Conveyors overhead dropping rocks. */
+  droppers?: DropperDesc[];
+  /** Machines at work in a fixed round. */
+  rigs?: RigDesc[];
+  /** Water to drive through. */
+  fords?: FordDesc[];
 }

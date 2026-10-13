@@ -89,6 +89,12 @@ interface Bit {
 const BURST_STYLES = {
   splinters: { colors: [0xb98a55, 0x96693c, 0xd9b36c], size: [0.04, 0.09], stretch: 3.5, life: [0.9, 1.6] },
   water: { colors: [0x4aa3e8, 0x7cc4f5, 0x2f7fd0], size: [0.05, 0.1], stretch: 1, life: [0.5, 1.0] },
+  // Thrown up out of a settling pond: brown, some of it foam.
+  mud: { colors: [0x8a7452, 0x9f8a66, 0x6f5c40, 0xd8d0bc], size: [0.05, 0.11], stretch: 1, life: [0.5, 1.0] },
+  /** Fresh concrete, thrown up grey. */
+  concrete: { colors: [0x8a8e90, 0x9a9e9f, 0x6f7375, 0xb4b6b0], size: [0.05, 0.1], stretch: 1, life: [0.4, 0.8] },
+  // Running water broken white against something standing in it: big drops, mostly white.
+  spray: { colors: [0xf4f9fb, 0xdcecf2, 0xffffff, 0xa8d4ea], size: [0.07, 0.16], stretch: 1, life: [0.3, 0.6] },
   pulp: { colors: [0xd8434a, 0xe86a70, 0x2f7a3a, 0xf2a0a4], size: [0.04, 0.09], stretch: 1.3, life: [0.6, 1.2] },
   bone: { colors: [0xece6d2, 0xcfc7ae], size: [0.03, 0.06], stretch: 2, life: [0.8, 1.3] },
   leaves: { colors: [0x4f8a4a, 0x5d9a52, 0x447d44, 0x7fae5a], size: [0.07, 0.14], stretch: 1.6, life: [1.0, 1.9] },
@@ -110,6 +116,12 @@ const BURST_STYLES = {
   juice: { colors: [0xffffff], size: [0.06, 0.13], stretch: 1, life: [0.7, 1.4] },
   // A firecracker's flash: big, white, and gone almost at once.
   flash: { colors: [0xffffff, 0xfff6c8, 0xffe07a], size: [0.18, 0.32], stretch: 1, life: [0.04, 0.09] },
+  // A toilet in pieces: white porcelain, glazed.
+  porcelain: { colors: [0xf4f4f0, 0xe4e4de, 0xcfd0cc], size: [0.04, 0.1], stretch: 1.5, life: [0.8, 1.4] },
+  // Paint out of a burst tin.
+  paintRed: { colors: [0xd8302a, 0xe85a4a, 0xb52a22], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
+  paintBlue: { colors: [0x2f62a8, 0x4a7fc8, 0x23497a], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
+  paintYellow: { colors: [0xe0b020, 0xf2c94c, 0xc89a18], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
   // A clay pot in pieces, and the earth out of it.
   shards: { colors: [0xb5533c, 0x9a4530, 0x6b4a32, 0x4f8a4a], size: [0.05, 0.11], stretch: 1.4, life: [0.9, 1.5] },
   // Gold paper money, square and flat, that flutters down slowly.
@@ -146,9 +158,9 @@ export class Bursts {
 
   /**
    * Throw `count` bits out from a point. `power` is their launch speed in m/s; `upward` above
-   * 1 sends them more up than out, like a jet.
+   * 1 sends them more up than out, like a jet. `carry`, if given, is added to every bit's velocity: thrown along by water or wind.
    */
-  emit(at: THREE.Vector3, style: BurstStyle, count: number, power: number, upward = 1, tint?: number): void {
+  emit(at: THREE.Vector3, style: BurstStyle, count: number, power: number, upward = 1, tint?: number, carry?: THREE.Vector3): void {
     const s = BURST_STYLES[style];
     const between = ([lo, hi]: readonly [number, number]) => lo + Math.random() * (hi - lo);
     for (let n = 0; n < count; n++) {
@@ -161,6 +173,7 @@ export class Bursts {
       b.pos.copy(at);
       b.pos.y += 0.1;
       b.vel.set(Math.cos(angle) * out, power * (0.5 + Math.random() * 0.8) * upward, Math.sin(angle) * out);
+      if (carry) b.vel.add(carry);
       const size = between(s.size);
       b.scale.set(size, size, size * s.stretch);
       b.rot.setFromEuler(new THREE.Euler(Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3));

@@ -28,6 +28,8 @@ export class Truck {
   boosting = false;
   /** How well the tyres hold the road, 1 normally; less on a slick. Set by whoever knows what the truck is driving on. */
   grip = 1;
+  /** How hard the tyres hold against being pushed sideways, over and above `grip`: 1 normally; less with the truck half afloat. */
+  sideGrip = 1;
   /** How much whatever is under the wheels holds the truck back: 0 on a road, toward 1 in the worst of it. */
   drag = 0;
   /** Whether it runs away down a hill when it is left without the handbrake on. Otherwise it stays wherever it stops. */
@@ -140,7 +142,7 @@ export class Truck {
     const c = this.controller;
     for (let i = 0; i < 4; i++) {
       c.setWheelFrictionSlip(i, TRUCK.wheel.frictionSlip * this.grip);
-      c.setWheelSideFrictionStiffness(i, TRUCK.wheel.sideFrictionStiffness * this.grip);
+      c.setWheelSideFrictionStiffness(i, TRUCK.wheel.sideFrictionStiffness * this.grip * this.sideGrip);
     }
     c.setWheelSteering(0, this.steer);
     c.setWheelSteering(1, this.steer);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { drawMelonRind } from './textures';
 import type { CargoEvent, CargoItem, Debris } from '../sim/cargo';
 import type { PartDesc, Stage } from '../sim/cargo-types';
 import type { Sim } from '../sim/sim';
@@ -32,20 +33,8 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, size, size);
 
-  if (base === 'melon') {
-    // Rind: green, with darker wavy stripes running from one end to the other.
-    g.fillStyle = '#4f9a4a';
-    g.fillRect(0, 0, size, size);
-    g.strokeStyle = '#1f5a2a';
-    g.lineWidth = 6;
-    g.lineCap = 'round';
-    for (let i = 0; i < 9; i++) {
-      const x = ((i + 0.5) * size) / 9;
-      g.beginPath();
-      for (let y = 0; y <= size; y += 8) g.lineTo(x + Math.sin(y * 0.22 + i * 1.7) * 3.2, y);
-      g.stroke();
-    }
-  }
+  // Rind: green, with darker wavy stripes running from one end to the other.
+  if (base === 'melon') drawMelonRind(g, size);
   if (base === 'flesh') {
     // A cut face: pale rind at the rim, red inside, a ring of seeds.
     const mid = size / 2;
@@ -203,6 +192,9 @@ export class CargoViews {
   private readonly at = new THREE.Vector3();
   private time = 0;
 
+  /** Called with the colour of what a burst tin threw over the truck. */
+  onSpill: ((color: number) => void) | null = null;
+
   constructor(private readonly scene: THREE.Scene, private readonly bursts: Bursts) {}
 
   /** Throw away every mesh and build the load again, e.g. after a reset. */
@@ -269,7 +261,8 @@ export class CargoViews {
         this.scene.remove(view.group);
         view.sync = null;
         view.leakLeft = 0;
-        this.bursts.emit(item.lastPos, item.type.burst, item.type.burst === 'water' || item.type.burst === 'pulp' ? 60 : 30, 4.5);
+        this.bursts.emit(item.lastPos, item.type.burst, item.type.burst === 'water' || item.type.burst === 'pulp' || item.type.burst.startsWith('paint') ? 60 : 30, 4.5);
+        if (item.type.burst.startsWith('paint')) this.onSpill?.(item.type.parts[1].color);
         break;
       case 'fallen':
       case 'recovered':
@@ -317,7 +310,7 @@ export class CargoViews {
         if (view.leakTimer >= LEAK_INTERVAL) {
           view.leakTimer = 0;
           // Whatever it is full of: water from a jar, juice from a melon.
-          this.bursts.emit(this.at.copy(view.group.position), item.type.burst === 'pulp' ? 'pulp' : 'water', 1, 0.8);
+          this.bursts.emit(this.at.copy(view.group.position), item.type.burst === 'pulp' || item.type.burst.startsWith('paint') ? item.type.burst : 'water', 1, 0.8);
         }
       }
     }

@@ -1,4 +1,4 @@
-import { Plane, Raycaster, Vector2, Vector3 } from 'three';
+import { Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import { DRIVER, PHYSICS } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
@@ -18,6 +18,7 @@ import { BodySync, TruckMesh } from './render/meshes';
 import { ObjectsView, PedestriansView } from './render/objectsView';
 import { RidersView } from './render/ridersView';
 import { MachinesView } from './render/machinesView';
+import { RigsView } from './render/rigsView';
 import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
 import { heightAt } from './levels/terrain';
@@ -89,6 +90,10 @@ const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
 const machinesView = new MachinesView(view.scene, sim.machines.list);
+const lampTruck = new Vector3();
+const rigsView = new RigsView(view.scene, sim.rigs.list, sim.droppers.rocks, sim.droppers.holes);
+/** Whether the level has a building to drive up through, seen in section. */
+const cutaway = sim.level.props.some((p) => p.cutaway);
 /** Testing tools: only when run locally from the dev server. The published build has none of it. */
 const TESTING = import.meta.env.DEV;
 if (TESTING && sim.level.checkpoints?.length) {
@@ -108,6 +113,8 @@ document.getElementById('hud')!.append(lockRing);
 let beepWait = 0;
 let hornWait = 0;
 const cargoViews = new CargoViews(view.scene, bursts);
+// A tin of paint burst on the bed: the truck wears it.
+cargoViews.onSpill = (color) => truckMesh.stain(color);
 cargoViews.rebuild(sim);
 
 const forward = new Vector3();
@@ -247,6 +254,7 @@ const GEYSER_SECONDS = 7;
 /** How long water comes up out of a manhole each time it blows. */
 const SPOUT_SECONDS = 2.5;
 const splashAt = new Vector3();
+const fallCarry = new Vector3();
 /** Broken hydrants, still spouting where they stood. */
 const geysers: { at: Vector3; left: number; strong?: boolean }[] = [];
 const CRACKLE_SECONDS = 6;
@@ -289,6 +297,84 @@ const CARGO_QUIET = 2;
 const CARGO_HUSH = 0.35;
 const cargoHush = new WeakMap<CargoItem, number>();
 /** How much quieter a sound is for being this far from the truck, and how far is out of earshot. */
+/**
+ * After each step: rocks off the conveyors (grit trickling down before they go, and each one breaking where it lands);
+ * mud off a crane's grab, over the truck's windscreen if it is under it; water thrown up by the wheels in a ford.
+ */
+function worksite(): void {
+  const t = sim.truck.body.translation();
+  for (const tell of sim.droppers.tells) {
+    bursts.emit(splashAt.set(tell.x, tell.y - 0.5, tell.z), 'dust', 10, 0.8, 0.1, 0x9a9488);
+    bursts.emit(splashAt, 'shards', 8, 0.5, 0, 0x8b8880);
+    const near = tell.first ? hearing(Math.hypot(tell.x - t.x, tell.z - t.z)) : 0;
+    if (near > 0) audio.knock('heavy', 0.25 + near * 0.3, 0.15);
+  }
+  for (const rock of sim.droppers.breaks) {
+    bursts.emit(splashAt.set(rock.x, rock.y, rock.z), 'dust', 26, 3.5, 1);
+    bursts.emit(splashAt, 'shards', 18, 4.5, 1.4, 0x8b8880);
+    const near = hearing(Math.hypot(rock.x - t.x, rock.z - t.z));
+    if (near > 0) audio.thud('heavy', Math.min(1, rock.size) * (0.4 + near * 0.6), 0.6);
+  }
+  for (const slam of sim.rigs.slams) {
+    bursts.emit(splashAt.set(slam.x, slam.y, slam.z), 'dust', 30, 4, 0.6, 0x8a7a5e);
+    const near = hearing(Math.hypot(slam.x - t.x, slam.z - t.z));
+    if (near > 0) audio.thud('heavy', Math.min(1, slam.speed / 18) * (0.5 + near * 0.5), 0.7);
+  }
+  for (const mud of sim.rigs.mud) {
+    bursts.emit(splashAt.set(mud.x, mud.y, mud.z), 'juice', 10, 1.5, 0.2, 0x5a4a38);
+    // Straight down on to the cab: the windscreen.
+    if (sim.driver.mode === 'driving' && Math.hypot(mud.x - t.x, mud.z - t.z) < 2.6 && mud.y > t.y) hud.splat(0x5a4a38, 0.55);
+  }
+  // White water where a river pours over a ledge, at its foot, along the stretch near the truck.
+  for (const fall of sim.level.fords ?? []) {
+    if (!fall.fall || fall.surface === undefined || Math.abs(t.z - fall.pos[1]) > fall.half[1] + 30 || Math.random() < 0.5) continue;
+    const z = Math.max(fall.pos[1] - fall.half[1], Math.min(fall.pos[1] + fall.half[1], t.z + (Math.random() - 0.3) * 50));
+    const lip = fall.pos[0] + Math.sign(fall.flow[0]) * fall.half[0];
+    // Going over: carried out off the lip.
+    splashAt.set(lip, fall.surface, z);
+    bursts.emit(splashAt, 'spray', 2, 0.8, 1, undefined, fallCarry.set(Math.sign(fall.flow[0]) * 2.5, 0, 0));
+    // At the foot: thrown up high enough to be seen over the lip.
+    splashAt.set(lip + Math.sign(fall.flow[0]) * 1.2, fall.surface - fall.fall, z);
+    bursts.emit(splashAt, 'spray', 4, 2.2, 1.6);
+  }
+  // Fresh concrete thrown up grey off the wheels.
+  if (sim.level.wet && sim.wetAt(t)) {
+    const v = sim.truck.body.linvel();
+    if (Math.hypot(v.x, v.z) > 1.5 && Math.random() < 0.5) bursts.emit(splashAt.set(t.x, t.y - 0.6, t.z), 'concrete', 4, 1.2, 0.6);
+  }
+  const ford = sim.level.fords && sim.fordAt(t);
+  if (ford) {
+    const v = sim.truck.body.linvel();
+    const speed = Math.hypot(v.x, v.z);
+    const r = sim.truck.body.rotation();
+    const q = new Quaternion(r.x, r.y, r.z, r.w);
+    if (speed > 1.5 && Math.random() < 0.6) {
+      for (const side of [-1.3, 1.3]) {
+        const at = new Vector3(side, -0.6, 2.2 * (Math.random() < 0.5 ? 1 : -1)).applyQuaternion(q).add(new Vector3(t.x, t.y, t.z));
+        bursts.emit(at, 'water', Math.round(4 + speed), 1 + speed * 0.35, 1.6);
+      }
+    }
+    // Running water breaking against the truck's side that faces upstream: thrown up white along it and carried on over
+    // and past, the harder the faster it comes on against the truck.
+    const run = Math.hypot(ford.flow[0], ford.flow[1]);
+    if (run > 0) {
+      const ux = ford.flow[0] / run, uz = ford.flow[1] / run;
+      const against = run - (v.x * ux + v.z * uz);
+      const right = new Vector3(1, 0, 0).applyQuaternion(q);
+      const side = right.x * ux + right.z * uz > 0 ? -1 : 1;
+      if (against > 0.8) {
+        // Going along with the truck, and thrown back off its side, up against the stream.
+        const carry = new Vector3(v.x - ux * against * 0.35, 0, v.z - uz * against * 0.35);
+        if (Math.random() < 0.5) {
+          const at = new Vector3(side * 1.5, 0, (Math.random() - 0.5) * 6.4).applyQuaternion(q).add(new Vector3(t.x, 0, t.z));
+          at.y = ford.surface ?? t.y - 0.6;
+          bursts.emit(at, 'spray', Math.round(1 + against * 0.6), 0.5 + against * 0.3, 2.5, undefined, carry);
+        }
+      }
+    }
+  }
+}
+
 const hearing = (metres: number) => (metres > 45 ? 0 : 1 / (1 + metres / 15));
 
 /**
@@ -612,7 +698,13 @@ function updatePrompt(): void {
   const { driver, truck, cargoSystem } = sim;
   if (sim.result) return hud.setPrompt('');
   if (driver.mode === 'driving') {
-    if (truck.grip < 1) return hud.setPrompt('路面有油，小心打滑', true);
+    if (sim.level.wet && sim.wetAt(truck.body.translation())) return hud.setPrompt('水泥還沒乾，開不快', true);
+    if (truck.grip < 1 && !sim.fordAt(truck.body.translation())) {
+      // Oil, unless what it is on is gravel spilt from a lorry.
+      const at = truck.body.translation();
+      const gravel = sim.level.slicks?.some((k) => k.look === 'gravel' && Math.abs(at.x - k.pos[0]) < k.half[0] && Math.abs(at.z - k.pos[1]) < k.half[1]);
+      return hud.setPrompt(gravel ? '路面有砂石，小心打滑' : '路面有油，小心打滑', true);
+    }
     const slow = Math.abs(truck.forwardSpeed()) < DRIVER.exitSpeed;
     return hud.setPrompt(slow && sim.cargo.some((c) => c.fallen && c.body) ? '<b>C</b> 下車撿貨' : '');
   }
@@ -648,7 +740,7 @@ function frame(now: number): void {
     const spots = sim.level.checkpoints ?? [];
     spots.forEach((spot, k) => {
       if (k > 9 || !input.take(`Digit${(k + 1) % 10}` as `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`)) return;
-      sim.teleport(spot.pos[0], spot.pos[1], spot.yaw);
+      sim.teleport(spot.pos[0], spot.pos[1], spot.yaw, spot.y);
       truckSync.snap();
       // Moved with it, not made again: what has been wrecked on the way has no body to be made from.
       cargoViews.snap();
@@ -668,6 +760,7 @@ function frame(now: number): void {
     levelView.snap();
     ridersView.snap();
     machinesView.snap();
+    rigsView.snap();
     truckSync.snap();
     hud.hideResult();
     hud.showBanner();
@@ -763,8 +856,11 @@ function frame(now: number): void {
       if (at) hud.popup('被火車撞飛！', at.x, at.y, 'big');
     }
     for (const splash of sim.drainSplashes()) {
+      // Something knocked into a settling pond far off by a machine, unseen: unheard too.
+      const at = sim.truck.body.translation();
+      if (splash.muddy && Math.hypot(splash.x - at.x, splash.z - at.z) > 70) continue;
       const big = splash.mass > 400;
-      bursts.emit(splashAt.set(splash.x, splash.y + 0.2, splash.z), 'water', big ? 90 : 24, big ? 9 : 5, 2);
+      bursts.emit(splashAt.set(splash.x, splash.y + 0.2, splash.z), splash.muddy ? 'mud' : 'water', big ? 90 : 24, big ? 9 : 5, 2);
       audio.splash(big);
     }
     for (const person of sim.drainPedestrianHits()) showHit(person.pos, SHOUTS, false);
@@ -794,6 +890,8 @@ function frame(now: number): void {
     levelView.capture();
     ridersView.capture();
     machinesView.capture();
+    rigsView.capture();
+    worksite();
     truckSync.capture();
     cargoViews.capture();
     accumulator -= PHYSICS.dt;
@@ -809,7 +907,12 @@ function frame(now: number): void {
   truckSync.apply(alpha);
   cargoViews.apply(alpha);
   cargoViews.update(dt);
-  objectsView.update();
+  // In a building driven up through, what is on the storeys above the truck is not drawn, as the storeys are not.
+  objectsView.update(cutaway ? sim.truck.body.translation().y + 2.7 : undefined);
+  {
+    const t = sim.truck.body.translation();
+    rigsView.apply(alpha, now / 1000, view.camera.position, lampTruck.set(t.x, t.y, t.z));
+  }
   objectsView.blink(now % 1100 < 550);
   wreckage.update(dt);
   pedestriansView.update(dt);

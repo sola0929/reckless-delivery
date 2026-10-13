@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import type { ObjectPart } from '../levels/objects';
 import type { LooseObject } from '../sim/objects';
 import type { Pedestrian } from '../sim/pedestrians';
+import { surfaceTexture } from './textures';
 
-type Shape = 'box' | 'cylinder' | 'cone';
+type Shape = ObjectPart['shape'];
 
 interface PartSlot {
   mesh: THREE.InstancedMesh;
@@ -35,13 +36,19 @@ interface Entry {
   settled: boolean;
   /** Which of its wires were drawn as parted. */
   cut: number;
+  /** Whether it is on a storey above the truck, not drawn. */
+  above?: boolean;
 }
 
 const UNIT: Record<Shape, () => THREE.BufferGeometry> = {
   box: () => new THREE.BoxGeometry(2, 2, 2),
   cylinder: () => new THREE.CylinderGeometry(1, 1, 2, 12),
   cone: () => new THREE.ConeGeometry(1, 2, 10),
+  sphere: () => new THREE.SphereGeometry(1, 14, 10),
 };
+
+/** Parts are drawn one mesh to each shape, and to each surface where a part carries one. */
+const meshKey = (part: ObjectPart) => (part.texture ? `${part.shape}:${part.texture}` : part.shape);
 
 /**
  * Draws every loose object in the level. There are a couple of thousand, each of a few
@@ -61,23 +68,26 @@ export class ObjectsView {
   private lit = true;
 
   constructor(scene: THREE.Scene, objects: readonly LooseObject[]) {
-    const counts: Record<Shape, number> = { box: 0, cylinder: 0, cone: 0 };
-    for (const o of objects) for (const p of o.kind.parts) counts[p.shape]++;
+    const counts = new Map<string, { part: ObjectPart; n: number }>();
+    for (const o of objects) for (const p of o.kind.parts) {
+      const entry = counts.get(meshKey(p)) ?? { part: p, n: 0 };
+      entry.n++;
+      counts.set(meshKey(p), entry);
+    }
 
-    const byShape = {} as Record<Shape, THREE.InstancedMesh>;
-    for (const shape of Object.keys(counts) as Shape[]) {
-      if (!counts[shape]) continue;
-      const mesh = new THREE.InstancedMesh(UNIT[shape](), new THREE.MeshStandardMaterial({ roughness: 0.8 }), counts[shape]);
+    const byShape: Record<string, THREE.InstancedMesh> = {};
+    for (const [key, { part, n }] of counts) {
+      const mesh = new THREE.InstancedMesh(UNIT[part.shape](), new THREE.MeshStandardMaterial({ roughness: 0.8, map: part.texture ? surfaceTexture(part.texture) : null }), n);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       // Spread across the whole map; the default bounds would cull them wrongly.
       mesh.frustumCulled = false;
-      byShape[shape] = mesh;
+      byShape[key] = mesh;
       this.meshes.push(mesh);
       scene.add(mesh);
     }
 
-    const next: Record<Shape, number> = { box: 0, cylinder: 0, cone: 0 };
+    const next: Record<string, number> = {};
     const euler = new THREE.Euler();
     const turn = new THREE.Quaternion();
     const scale = new THREE.Vector3();
@@ -85,13 +95,13 @@ export class ObjectsView {
     for (const object of objects) {
       const place = (part: ObjectPart): THREE.Matrix4 => {
         const [a, b, c] = part.size;
-        scale.set(a, b, part.shape === 'box' ? c : a);
+        scale.set(a, b, part.shape === 'box' || part.shape === 'sphere' ? c : a);
         const [rx, ry, rz] = part.rot ?? [0, 0, 0];
         return new THREE.Matrix4().compose(new THREE.Vector3(...part.pos), turn.setFromEuler(euler.set(rx, ry, rz)), scale);
       };
       const slots = object.kind.parts.map((part, i) => {
-        const mesh = byShape[part.shape];
-        const index = next[part.shape]++;
+        const mesh = byShape[meshKey(part)];
+        const index = (next[meshKey(part)] = (next[meshKey(part)] ?? -1) + 1);
         const after = object.kind.wrecked?.[i];
         mesh.setColorAt(index, color.set(part.color));
         return { mesh, index, local: place(part), wrecked: after ? place(after) : null, color: part.color, wreckedColor: after?.color ?? part.color, flash: !!part.flash, side: part.wire === 1 ? 1 : part.wire === -1 ? 2 : 0, slack: part.slack ? place(part.slack) : null };
@@ -117,7 +127,8 @@ export class ObjectsView {
     this.update();
   }
 
-  update(): void {
+  /** @param ceiling in a building driven up through: things higher than this are on a storey above the truck, and not drawn. */
+  update(ceiling?: number): void {
     let changed = false;
     let recoloured = false;
     for (const entry of this.entries) {
@@ -134,6 +145,13 @@ export class ObjectsView {
         entry.cut = entry.object.cut;
         entry.settled = false;
       }
+      if (ceiling !== undefined) {
+        const above = entry.object.body.translation().y > ceiling;
+        if (above !== !!entry.above) {
+          entry.above = above;
+          entry.settled = false;
+        }
+      }
       if (asleep && entry.settled) continue;
       entry.settled = asleep;
       changed = true;
@@ -143,8 +161,8 @@ export class ObjectsView {
       for (const slot of entry.slots) {
         // A parted wire hangs from a pole that is still standing. On the one that has gone over it is simply gone.
         const parted = slot.slack && entry.cut & slot.side ? (entry.object.knocked ? GONE : slot.slack) : null;
-        const local = parted ?? (entry.wrecked && slot.wrecked ? slot.wrecked : slot.local);
-        slot.mesh.setMatrixAt(slot.index, this.world.multiplyMatrices(this.body, local));
+        const local = entry.above ? GONE : parted ?? (entry.wrecked && slot.wrecked ? slot.wrecked : slot.local);
+        slot.mesh.setMatrixAt(slot.index, entry.above ? GONE : this.world.multiplyMatrices(this.body, local));
       }
     }
     if (changed) for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
@@ -154,11 +172,19 @@ export class ObjectsView {
 
 const SKIN = 0xe8c9a8;
 const TROUSERS = 0x2f343c;
+/** The bands of a hi-vis vest: pale, as reflective tape is in daylight. */
+const TAPE = 0xe6e8e2;
 
-/** Draws the pedestrians: a body, a head and two legs each, as four instanced meshes. */
+/**
+ * Draws the pedestrians: a body, a head and two legs each, as instanced meshes; a hat, crown and brim, on those who wear
+ * one; on workers, the reflective bands round their vests.
+ */
 export class PedestriansView {
   private readonly bodies: THREE.InstancedMesh;
   private readonly heads: THREE.InstancedMesh;
+  private readonly crowns: THREE.InstancedMesh;
+  private readonly brims: THREE.InstancedMesh;
+  private readonly bands: THREE.InstancedMesh;
   private readonly legs: THREE.InstancedMesh;
   private readonly arms: THREE.InstancedMesh;
   private readonly strides: number[];
@@ -176,6 +202,11 @@ export class PedestriansView {
     const material = () => new THREE.MeshStandardMaterial({ roughness: 0.75 });
     this.bodies = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.24, 0.5, 4, 10), material(), n);
     this.heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 12, 10), material(), n);
+    // A hard hat: a dome a little bigger than the head, a ridge along it, and a brim standing out all round, wider at the front.
+    this.crowns = new THREE.InstancedMesh(new THREE.SphereGeometry(0.225, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), material(), n);
+    this.brims = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.27, 0.27, 0.025, 16).translate(0, 0, 0.04), material(), n);
+    // Two bands round the vest, at chest and waist.
+    this.bands = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.248, 0.248, 0.05, 14, 1, true), new THREE.MeshStandardMaterial({ roughness: 0.4, side: THREE.DoubleSide }), n * 2);
     this.legs = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.085, 0.42, 3, 8).translate(0, -0.25, 0), material(), n * 2);
     // Arms: only dancers' are seen; everyone else keeps theirs out of sight, as before.
     this.arms = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.06, 0.4, 3, 8).translate(0, -0.24, 0), material(), n * 2);
@@ -183,13 +214,18 @@ export class PedestriansView {
     const color = new THREE.Color();
     people.forEach((p, i) => {
       this.bodies.setColorAt(i, color.set(p.color));
-      this.heads.setColorAt(i, color.set(p.hat ?? SKIN));
+      // A worker's hard hat is drawn as one; anyone else's hat, a cook's, a soldier's helmet, colours the head as before.
+      this.heads.setColorAt(i, color.set(p.crowd.workers ? SKIN : p.hat ?? SKIN));
+      this.crowns.setColorAt(i, color.set(p.hat ?? SKIN));
+      this.brims.setColorAt(i, color.set(p.hat ?? SKIN));
+      this.bands.setColorAt(i * 2, color.set(TAPE));
+      this.bands.setColorAt(i * 2 + 1, color.set(TAPE));
       this.legs.setColorAt(i * 2, color.set(TROUSERS));
       this.legs.setColorAt(i * 2 + 1, color.set(TROUSERS));
       this.arms.setColorAt(i * 2, color.set(p.color));
       this.arms.setColorAt(i * 2 + 1, color.set(p.color));
     });
-    for (const mesh of [this.bodies, this.heads, this.legs, this.arms]) {
+    for (const mesh of [this.bodies, this.heads, this.legs, this.arms, this.crowns, this.brims, this.bands]) {
       mesh.castShadow = true;
       mesh.frustumCulled = false;
       mesh.count = people.length;
@@ -198,6 +234,7 @@ export class PedestriansView {
     }
     this.legs.count = people.length * 2;
     this.arms.count = people.length * 2;
+    this.bands.count = people.length * 2;
   }
 
   /** How big to draw someone: children smaller. */
@@ -218,6 +255,7 @@ export class PedestriansView {
         this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
         this.place(this.bodies, i, 0, 1.05, 0, 0);
         this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.dress(p, i, 1.62);
         this.place(this.legs, i * 2, 0.11, 0.72, 0, cook ? 0 : Math.max(0, b) * 0.4);
         this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, cook ? 0 : Math.max(0, -b) * 0.4);
         this.placeArm(i * 2, 0.3, cook ? 1.3 + b * 0.4 : 1.6 + b * 1.0, cook ? b * 0.6 : 0.6);
@@ -231,6 +269,7 @@ export class PedestriansView {
         this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
         this.place(this.bodies, i, 0, 1.05, 0, 0);
         this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.dress(p, i, 1.62);
         this.place(this.legs, i * 2, 0.11, 0.72, 0, b * 0.15);
         this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, -b * 0.15);
         this.placeArm(i * 2, 0.3, 1.2, 0);
@@ -245,6 +284,7 @@ export class PedestriansView {
         this.base.multiply(this.part.makeTranslation(0, -0.35, 0));
         this.place(this.bodies, i, 0, 1.05, 0, 0);
         this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.dress(p, i, 1.62);
         this.place(this.legs, i * 2, 0.11, 0.72, 0.15, -1.1);
         this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0.15, -1.1);
         this.placeArm(i * 2, 0.3, 0.6 + swing * 1.3, 0);
@@ -260,6 +300,7 @@ export class PedestriansView {
         this.base.multiply(this.part.makeTranslation(b * 0.18, up * 0.06, 0));
         this.place(this.bodies, i, 0, 1.05, 0, 0);
         this.place(this.heads, i, 0, 1.62, 0, 0);
+        this.dress(p, i, 1.62);
         this.place(this.legs, i * 2, 0.11, 0.72, 0, Math.max(0, b) * 0.5);
         this.place(this.legs, i * 2 + 1, -0.11, 0.72, 0, Math.max(0, -b) * 0.5);
         this.placeArm(i * 2, 0.3, Math.PI - 0.4 - up * 0.9, -0.5);
@@ -274,12 +315,31 @@ export class PedestriansView {
       const lift = down ? 0.25 : 0;
       this.place(this.bodies, i, 0, 1.05 + lift, 0, 0);
       this.place(this.heads, i, 0, 1.62 + lift, 0, 0);
+        this.dress(p, i, 1.62 + lift);
       this.strides[i] += p.speed * dt * 2.6;
       const swing = down ? 0 : Math.sin(this.strides[i]) * 0.7 * Math.min(1, p.speed / 1.5);
       this.place(this.legs, i * 2, 0.11, 0.72 + lift, 0, swing);
       this.place(this.legs, i * 2 + 1, -0.11, 0.72 + lift, 0, -swing);
     });
-    for (const mesh of [this.bodies, this.heads, this.legs, this.arms]) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of [this.bodies, this.heads, this.legs, this.arms, this.crowns, this.brims, this.bands]) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** A worker's hard hat, on the head put at `head` up the figure, and the bands round the vest under it. */
+  private dress(p: Pedestrian, i: number, head: number): void {
+    if (p.hat === null || !p.crowd.workers) {
+      this.crowns.setMatrixAt(i, GONE);
+      this.brims.setMatrixAt(i, GONE);
+    } else {
+      this.place(this.crowns, i, 0, head + 0.04, 0, 0);
+      this.place(this.brims, i, 0, head + 0.05, 0, 0);
+    }
+    if (!p.crowd.workers) {
+      this.bands.setMatrixAt(i * 2, GONE);
+      this.bands.setMatrixAt(i * 2 + 1, GONE);
+      return;
+    }
+    this.place(this.bands, i * 2, 0, head - 0.42, 0, 0);
+    this.place(this.bands, i * 2 + 1, 0, head - 0.72, 0, 0);
   }
 
   /** A dancer's arm, from the shoulder: raised `lift` radians from hanging, and out to the side by `out`. */

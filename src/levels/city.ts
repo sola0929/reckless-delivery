@@ -519,10 +519,15 @@ function shade(hex: number, by: number): number {
  * a frame at the corners and along the top, and doors with their locking bars at one end.
  */
 function container(b: Builder, x: number, y: number, z: number, turned: boolean, color: number): void {
+  containerModel(b.props, x, y, z, turned, color, MAP_BUILDING);
+}
+
+/** The same container, for any level: drawn into the props given, its body marked on the minimap in that colour if one is given. */
+export function containerModel(props: PropDesc[], x: number, y: number, z: number, turned: boolean, color: number, mapColor?: number): void {
   const [hw, hh, hl] = [1.2, 1.3, 3];
   /** A box given by where it is along the container, across it and up it. */
   const part = (along: number, across: number, up: number, sa: number, sc: number, su: number, tint: number, ghost = true) =>
-    b.props.push({ shape: 'box', size: turned ? [sa, su, sc] : [sc, su, sa], pos: turned ? [x + along, y + up, z + across] : [x + across, y + up, z + along], color: tint, ghost, mapColor: ghost ? undefined : MAP_BUILDING });
+    props.push({ shape: 'box', size: turned ? [sa, su, sc] : [sc, su, sa], pos: turned ? [x + along, y + up, z + across] : [x + across, y + up, z + along], color: tint, ghost, mapColor: ghost ? undefined : mapColor });
   part(0, 0, hh, hl, hw, hh, color, false);
   const dark = shade(color, 0.74);
   for (const side of [-1, 1]) {

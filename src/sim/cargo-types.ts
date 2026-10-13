@@ -31,7 +31,7 @@ export interface PartDesc {
   cap?: number;
 }
 
-export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice';
+export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice' | 'porcelain' | 'paintRed' | 'paintBlue' | 'paintYellow';
 
 export interface CargoType {
   id: string;
@@ -516,6 +516,108 @@ function soda(): CargoType {
   };
 }
 
+const PORCELAIN = 0xf4f4f0, PORCELAIN_SHADE = 0xdcdcd6;
+
+/**
+ * A toilet, bare, as it comes off the lorry to be fitted: the pedestal, the bowl with its seat, the cistern at the back
+ * with its lid. Low and heavy for its size, so it stays where it is put; but it is porcelain. A hard knock cracks it, and a
+ * landing from a height breaks it in pieces.
+ */
+function toilet(): CargoType {
+  // A big one, the showroom kind: the one thing on its load.
+  const k = 1.6;
+  const sized = (p: PartDesc): PartDesc => ({ ...p, size: [p.size[0] * k, p.size[1] * k, p.size[2] * k], pos: [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k], mass: p.mass * 1.6 });
+  const t: CargoType = {
+    id: 'toilet',
+    name: '馬桶',
+    value: 900,
+    threshold: 5,
+    maxHit: 46,
+    give: 9,
+    salvage: 0.1,
+    friction: 0.85,
+    hull: { shape: 'box', size: [0.22 * k, 0.38 * k, 0.36 * k] },
+    parts: [
+      { shape: 'box', size: [0.13, 0.17, 0.19], pos: [0, -0.21, -0.06], color: PORCELAIN, mass: 14 },
+      { shape: 'cylinder', size: [0.21, 0.08, 0], pos: [0, 0.04, -0.1], color: PORCELAIN, mass: 10 },
+      { shape: 'cylinder', size: [0.215, 0.012, 0], pos: [0, 0.13, -0.1], color: PORCELAIN_SHADE, mass: 1 },
+      { shape: 'cylinder', size: [0.14, 0.013, 0], pos: [0, 0.135, -0.1], color: 0x7a7e80, mass: 0.1 },
+      { shape: 'box', size: [0.2, 0.17, 0.08], pos: [0, 0.19, 0.27], color: PORCELAIN, mass: 10 },
+      { shape: 'box', size: [0.21, 0.015, 0.09], pos: [0, 0.37, 0.27], color: PORCELAIN_SHADE, mass: 2, detachAt: 1 },
+      { shape: 'cylinder', size: [0.025, 0.008, 0], pos: [0, 0.39, 0.27], color: 0xb8bcc0, mass: 0.1 },
+    ],
+    debris: [
+      { shape: 'box', size: [0.13, 0.12, 0.17], pos: [0, -0.24, -0.05], color: PORCELAIN, mass: 12 },
+      { shape: 'box', size: [0.15, 0.06, 0.12], pos: [0.06, 0.02, -0.16], rot: [0.3, 0.4, 0.2], color: PORCELAIN, mass: 5 },
+      { shape: 'box', size: [0.12, 0.05, 0.1], pos: [-0.08, 0.04, -0.02], rot: [-0.2, 0.9, 0.3], color: PORCELAIN_SHADE, mass: 4 },
+      { shape: 'box', size: [0.18, 0.12, 0.07], pos: [0, 0.16, 0.27], rot: [0.2, 0, 0.1], color: PORCELAIN, mass: 8 },
+    ],
+    burst: 'porcelain',
+  };
+  return { ...t, parts: t.parts.map(sized), debris: t.debris!.map(sized) };
+}
+
+/**
+ * A tin of paint, a band of its colour round it. Round: on its side it rolls; standing, it stays. It takes a knock, but
+ * burst, its paint goes everywhere, over the bed and the truck.
+ */
+function paint(id: string, band: number, burst: BurstKind): CargoType {
+  // The big tins, twenty litres.
+  const k = 1.4;
+  const sized = (p: PartDesc): PartDesc => ({ ...p, size: [p.size[0] * k, p.size[1] * k, p.size[2] * k], pos: [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k], mass: p.mass * 2.2 });
+  const t: CargoType = {
+    id,
+    name: '油漆桶',
+    value: 100,
+    threshold: 4.5,
+    maxHit: 60,
+    give: 8,
+    salvage: 0.05,
+    friction: 0.6,
+    rolling: 3,
+    hull: { shape: 'cylinder', size: [0.15 * k, 0.19 * k, 0] },
+    parts: [
+      { shape: 'cylinder', size: [0.15, 0.19, 0], pos: [0, 0, 0], color: 0xe4e6e4, mass: 9 },
+      { shape: 'cylinder', size: [0.152, 0.07, 0], pos: [0, -0.02, 0], color: band, mass: 0.2 },
+      { shape: 'cylinder', size: [0.14, 0.012, 0], pos: [0, 0.195, 0], color: 0x8c9096, mass: 0.3, detachAt: 2 },
+      { shape: 'box', size: [0.13, 0.008, 0.008], pos: [0, 0.23, 0], color: 0x5f646a, mass: 0.05 },
+    ],
+    burst,
+    leaks: true,
+  };
+  return { ...t, parts: t.parts.map(sized) };
+}
+
+/**
+ * A bundle of reinforcing bars, six and a half metres long, wired together in three places: longer than the bed, it lies
+ * on top of the load and sticks out a long way past the tailgate. Steel: nothing hurts it. But nothing holds it either:
+ * smooth on smooth crates, it shoots forward under hard braking and slides off the back going up a slope, and once it is
+ * off it is all off.
+ */
+function rebar(): CargoType {
+  const half = 3.2;
+  const bars: PartDesc[] = [];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) bars.push({ shape: 'cylinder', size: [0.025, half, 0], pos: [-0.12 + i * 0.08, -0.07 + j * 0.07, 0], rot: [Math.PI / 2, 0, 0], color: (i + j) % 2 ? 0x6a4a32 : 0x7a5a3e, mass: 26 });
+  return {
+    id: 'rebar',
+    name: '鋼筋',
+    value: 330,
+    threshold: 14,
+    maxHit: 8,
+    give: 20,
+    salvage: 0.8,
+    friction: 1.0,
+    hull: { shape: 'box', size: [0.16, 0.11, half] },
+    parts: [
+      ...bars,
+      ...[-2.2, 0, 2.2].map((z): PartDesc => ({ shape: 'box', size: [0.17, 0.12, 0.02], pos: [0, 0, z], color: 0x3a3f45, mass: 0.2 })),
+      // A red rag tied on its end, as the law wants of a load sticking out.
+      { shape: 'box', size: [0.1, 0.12, 0.004], pos: [0, -0.18, -half - 0.01], color: 0xd8302a, mass: 0.05 },
+    ],
+    burst: 'sparks',
+  };
+}
+
 export const CARGO_TYPES = {
   crate: crate('crate', '木箱', 0.35, 25, 100, WOOD),
   smallCrate: crate('smallCrate', '小木箱', 0.25, 10, 50, 0xd9b36c),
@@ -528,6 +630,11 @@ export const CARGO_TYPES = {
   washer: washer(),
   sack: sack(),
   soda: soda(),
+  toilet: toilet(),
+  paintRed: paint('paintRed', 0xc8372d, 'paintRed'),
+  paintBlue: paint('paintBlue', 0x2f62a8, 'paintBlue'),
+  paintYellow: paint('paintYellow', 0xe0b020, 'paintYellow'),
+  rebar: rebar(),
 } satisfies Record<string, CargoType>;
 
 export type CargoTypeId = keyof typeof CARGO_TYPES;

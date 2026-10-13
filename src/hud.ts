@@ -19,6 +19,7 @@ const FAILURES: Record<Failure, [string, string]> = {
   overturned: ['翻車了', '貨車翻覆，配送失敗'],
   pit: ['掉進坑裡了', '貨車開不出來，配送失敗'],
   water: ['掉進河裡了', '貨車沉入水中，配送失敗'],
+  fall: ['從高處摔下去了', '貨車摔壞了，配送失敗'],
 };
 
 const HELP_DRIVING =

@@ -18,11 +18,14 @@ import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
 import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
 import { Rollers } from './rollers';
 import { Machines } from './machines';
+import { Droppers } from './droppers';
+import { Rigs } from './rigs';
 import { Pedestrians, type Pedestrian, type Vehicle } from './pedestrians';
 import { Riders, SCOOTER_MASS, type Rider } from './riders';
 import { Traffic } from './traffic';
 import { Trains } from './trains';
 import { Truck, type DriveInput } from './truck';
+import { Afloat } from './afloat';
 import { Water, type Splash } from './water';
 
 export interface PropInstance {
@@ -37,7 +40,7 @@ interface Pose {
 }
 
 /** The ways a run can end badly: the truck on its roof, in a pit, or in the river. */
-export type Failure = 'overturned' | 'pit' | 'water';
+export type Failure = 'overturned' | 'pit' | 'water' | 'fall';
 
 /** The load, counted by what state each item ended up in. */
 export interface Tally {
@@ -100,10 +103,20 @@ const HORN_REACH = 15;
 const FLING = { shell: 0.5, rocket: 0.75, tank: 1 };
 /** How much of that a car passes on, beside what a roadside object of the same weight would: it gives. */
 const CAR_JOLT = 0.7;
+/** How much a machine at work hitting the truck shakes the load, against a car: less, for its great weight comes on slowly, through its joints. */
+const RIG_JOLT = 0.3;
 /** A scooter passes on rather more for its weight: light as it is, it would otherwise cost nothing at all. It still comes to well under a car's. */
 const SCOOTER_JOLT = 1.25;
 /** What one round of gunfire takes out of whatever it hits, of a hundred. */
 const GUN_DAMAGE = 9;
+/** How much a ford holds the truck back, as mud does (0 to 1). */
+const FORD_DRAG = 0.45;
+/**
+ * How hard running water pushes the truck, side on, per m/s it runs faster than the truck goes its way, m/s²: so it
+ * carries a truck standing in it along, holds back one going against it, and hurries on one going with it until it goes
+ * as fast as the water.
+ */
+const WATER_PUSH = 0.85;
 const PARKED: DriveInput = { throttle: 0, steer: 0, handbrake: true };
 
 /** One star for passing, a second for delivering most of the load, a third for doing that inside the par time. */
@@ -123,9 +136,12 @@ export class Sim {
   readonly traffic: Traffic;
   readonly riders: Riders;
   readonly machines: Machines;
+  readonly rigs: Rigs;
+  readonly droppers: Droppers;
   readonly driver: Driver;
   readonly trains: Trains;
   readonly water: Water;
+  private readonly afloat: Afloat;
   readonly objects: ObjectSystem;
   private readonly rollers: Rollers;
   readonly pedestrians: Pedestrians;
@@ -138,6 +154,8 @@ export class Sim {
   readonly fullValue: number;
   /** Seconds since the start line was crossed; stops at delivery. */
   time = 0;
+  /** When the truck last sounded its horn, by `time`; -1 before it has. */
+  lastHonk = -1;
   /** Whether the run is under way: the truck has crossed the start line, if the level has one. */
   started: boolean;
   /** How many times the truck has been set back on its wheels after overturning. */
@@ -218,8 +236,11 @@ export class Sim {
       const shape =
         desc.shape === 'box' ? RAPIER.ColliderDesc.cuboid(a, b, c)
         : desc.shape === 'cylinder' ? RAPIER.ColliderDesc.cylinder(b, a)
+        : desc.shape === 'sphere' ? RAPIER.ColliderDesc.ball(a)
         : RAPIER.ColliderDesc.cone(b, a);
-      shape.setFriction(0.8).setCollisionGroups(groups(dynamic ? GROUP.prop : GROUP.ground, GROUP.all));
+      shape.setFriction(desc.friction ?? 0.8).setCollisionGroups(groups(dynamic ? GROUP.prop : GROUP.ground, GROUP.all));
+      // A slippery one is slippery whatever rests on it, however much grip that has of its own.
+      if (desc.friction !== undefined) shape.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
       if (dynamic) shape.setMass(desc.mass!);
       this.world.createCollider(shape, body);
       this.props.push({ desc, body });
@@ -232,10 +253,13 @@ export class Sim {
     this.traffic.quietBeyond = level.quietBeyond ?? 0;
     this.riders.quietBeyond = level.quietBeyond ?? 0;
     this.machines = new Machines(this.world, level.machines ?? [], (x, z) => (level.terrain ? heightAt(level.terrain, x, z) : 0));
+    this.rigs = new Rigs(this.world, level.rigs ?? []);
+    this.droppers = new Droppers(this.world, level.droppers ?? []);
     this.driver = new Driver(this.world, !!level.terrain);
     this.truck.rolls = !!level.rollback;
     this.started = !level.startLine;
     this.water = new Water(level.pits ?? []);
+    this.afloat = new Afloat(level.stillWater ?? []);
     this.trains = new Trains(this.world, level.tracks ?? [], level.bounds[0][0], level.bounds[1][0]);
     this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? [])], !!level.terrain);
     if (level.terrain) this.objects.ground = (x, z) => heightAt(level.terrain!, x, z);
@@ -262,6 +286,7 @@ export class Sim {
     const driving = this.driver.mode === 'driving' && !this.result;
     this.truck.grip = this.gripAt(this.truck.body.translation());
     this.truck.drag = this.dragAt(this.truck.body.translation());
+    this.truck.sideGrip = (this.level.fords && this.fordAt(this.truck.body.translation())?.sideGrip) ?? 1;
     this.flung -= PHYSICS.dt;
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
     this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.riders, this.trains, !this.result);
@@ -285,7 +310,8 @@ export class Sim {
     this.inPit = down ? this.inPit + PHYSICS.dt : 0;
     if (this.inPit > PIT_SECONDS && this.level.finish) {
       const t = this.truck.body.translation();
-      this.fail(this.water.poolAt(t.x, t.z) ? 'water' : 'pit');
+      // Down from up high: where the level calls the ground under its heights a drop.
+      this.fail(this.water.poolAt(t.x, t.z) ? 'water' : under && under.tag === 'drop' ? 'fall' : under && under.tag === 'water' ? 'water' : 'pit');
     }
     const walkers = this.pedestrians.inRoad().map((p) => p.pos);
     this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
@@ -298,7 +324,22 @@ export class Sim {
     this.horns.push(...this.traffic.horns);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
     if (this.machines.list.length) this.machines.update(PHYSICS.dt, this.truck.body.translation());
+    if (this.rigs.list.length) this.rigs.update(PHYSICS.dt, this.truck.body.translation());
+    this.wade();
     this.world.step(this.eventQueue);
+    // A machine's bucket, hammer, ball or boom come against the truck checks it as a car run into it would; the load feels it.
+    if (this.rigs.list.length) {
+      const struck = this.rigs.struck(this.truck.body);
+      if (struck > 0) this.cargoSystem.jolt(struck * RIG_JOLT * JOLT_PER_SPEED_LOST, this.truck);
+    }
+    if (this.droppers.rocks.length) {
+      this.droppers.update(PHYSICS.dt, this.truck.body.translation());
+      // A rock come down on the load checks the truck as a car run into would: the load feels it, the more the heavier.
+      const truckMass = this.truck.body.mass();
+      let jolt = 0;
+      for (const rock of this.droppers.breaks) if (this.truck.isOnBed(rock)) jolt = Math.max(jolt, (rock.impact * rock.mass) / (truckMass + rock.mass));
+      if (jolt > 0) this.cargoSystem.jolt(jolt * JOLT_PER_SPEED_LOST, this.truck);
+    }
     this.eventQueue.drainContactForceEvents((event) => {
       this.cargoSystem.addForce(event.collider1(), event.collider2(), event.totalForceMagnitude());
     });
@@ -411,12 +452,13 @@ export class Sim {
 
   /** Things that have just gone into the water. */
   drainSplashes(): Splash[] {
-    return this.water.drainSplashes();
+    return [...this.water.drainSplashes(), ...this.afloat.drainSplashes()];
   }
 
   /** For testing: the truck, and its load as it lies on the bed, picked up and put down somewhere else, facing `yaw`, at rest. */
-  teleport(x: number, z: number, yaw: number): void {
-    const ground = this.level.terrain ? heightAt(this.level.terrain, x, z) : 0;
+  /** @param floor where to put it down, if not on the ground there: on a floor up a building. */
+  teleport(x: number, z: number, yaw: number, floor?: number): void {
+    const ground = floor ?? (this.level.terrain ? heightAt(this.level.terrain, x, z) : 0);
     const to = new Vector3(x, ground + 1.2, z);
     const from = this.truck.body.translation();
     const r = this.truck.body.rotation();
@@ -553,10 +595,14 @@ export class Sim {
     this.jets = [];
     this.spouts = [];
     this.water.reset();
+    this.afloat.reset();
+    this.lastHonk = -1;
     this.truck.reset();
     this.traffic.reset();
     this.riders.reset();
     this.machines.reset();
+    this.rigs.reset();
+    this.droppers.reset();
     this.battle.reset();
     this.flung = 0;
     this.battleSounds = [];
@@ -665,8 +711,12 @@ export class Sim {
     return (t.x - line.pos[0]) * line.dir[0] + (t.z - line.pos[1]) * line.dir[1] > 0;
   }
 
-  private gripAt(p: { x: number; z: number }): number {
+  private gripAt(p: { x: number; y: number; z: number }): number {
+    const wet = this.wetAt(p);
+    if (wet) return wet.grip;
     for (const s of this.level.slicks ?? []) if (Math.abs(p.x - s.pos[0]) < s.half[0] && Math.abs(p.z - s.pos[1]) < s.half[1]) return s.grip;
+    const ford = this.level.fords && this.fordAt(p);
+    if (ford?.grip) return ford.grip;
     return this.patchAt(p) === 'mud' ? 0.6 : 1;
   }
 
@@ -718,6 +768,7 @@ export class Sim {
     const fz = 1 - 2 * (r.x * r.x + r.y * r.y);
     const length = Math.hypot(fx, fz) || 1;
     this.pedestrians.scare(t.x, t.z, fx / length, fz / length, HORN_REACH);
+    this.lastHonk = this.time;
   }
 
   /**
@@ -746,9 +797,45 @@ export class Sim {
     return null;
   }
 
-  private dragAt(p: { x: number; z: number }): number {
+  /** Fresh concrete the truck is on, if it is on some: on that floor, not under or over it. */
+  wetAt(p: { x: number; y: number; z: number }) {
+    return this.level.wet?.find((w) => p.x > w.area[0] && p.x < w.area[2] && p.z > w.area[1] && p.z < w.area[3] && Math.abs(p.y - w.y) < 1.6);
+  }
+
+  private dragAt(p: { x: number; y: number; z: number }): number {
+    const wet = this.wetAt(p);
+    if (wet) return wet.drag;
+    const ford = this.fordAt(p);
+    if (ford) return ford.drag ?? FORD_DRAG;
     const patch = this.patchAt(p);
     return patch === 'wire' ? 1 : patch === 'mud' ? 0.6 : 0;
+  }
+
+  /** The ford the truck is in, if it is in one. */
+  fordAt(p: { x: number; z: number }) {
+    return this.level.fords?.find((f) => Math.abs(p.x - f.pos[0]) < f.half[0] && Math.abs(p.z - f.pos[1]) < f.half[1]);
+  }
+
+  /**
+   * In a ford, the water pushes the truck by how much faster it runs than the truck goes its way: downstream while it
+   * stands, harder against it going upstream, on with it going downstream until it keeps pace, and back if it goes faster;
+   * hardest on its side, least on its nose or tail.
+   */
+  private wade(): void {
+    const ford = this.level.fords && this.fordAt(this.truck.body.translation());
+    if (!ford) return;
+    const speed = Math.hypot(ford.flow[0], ford.flow[1]);
+    if (!speed) return;
+    const ux = ford.flow[0] / speed, uz = ford.flow[1] / speed;
+    const v = this.truck.body.linvel();
+    const against = speed - (v.x * ux + v.z * uz);
+    // How much of the truck the water meets: its side, 7.4 m long, across the stream; its end, 2.6 m wide, into it.
+    const r = this.truck.body.rotation();
+    const fx = 2 * (r.x * r.z + r.w * r.y), fz = 1 - 2 * (r.x * r.x + r.y * r.y);
+    const along = Math.abs(fx * ux + fz * uz) / Math.max(1e-6, Math.hypot(fx, fz));
+    const face = (Math.sqrt(1 - along * along) * 7.4 + along * 2.6) / 7.4;
+    const push = WATER_PUSH * face * against * this.truck.body.mass() * PHYSICS.dt;
+    this.truck.body.applyImpulse({ x: ux * push, y: 0, z: uz * push }, true);
   }
 
   /** Running into something heavy checks the truck, and the load feels it. */
@@ -790,6 +877,14 @@ export class Sim {
     for (const object of this.objects.objects) if (object.knocked) this.water.soak(object.body);
     for (const car of this.traffic.cars) if (car.knocked > 0) this.water.soak(car.body);
     for (const rider of this.riders.list) if (rider.knocked > 0) this.water.soak(rider.body);
+    if (this.afloat.any) {
+      // What floats: wood, cardboard, bottles and the like; what is heavy goes down.
+      const floats = (item: CargoItem) => ['splinters', 'pulp', 'water'].includes(item.type.burst);
+      for (const item of this.cargo) if (item.body && !item.held) this.afloat.step(item.body, !floats(item), PHYSICS.dt);
+      for (const piece of this.cargoSystem.debris) this.afloat.step(piece.body, !floats(piece.owner), PHYSICS.dt);
+      for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled()) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
+      for (const car of this.traffic.cars) if (car.knocked > 0) this.afloat.step(car.body, true, PHYSICS.dt);
+    }
     if (this.driver.mode !== 'driving' && this.water.under({ x: this.driver.pos.x, y: this.driver.pos.y + 1, z: this.driver.pos.z })) {
       this.driver.fishOut(this.truck, this.cargoSystem);
     }
@@ -814,7 +909,7 @@ export class Sim {
     // The driver has to be in the cab: parking in the bay and wandering off doesn't count.
     if (!finish || this.driver.mode !== 'driving') return;
     const t = this.truck.body.translation();
-    const inside = Math.abs(t.x - finish.pos[0]) < finish.half[0] && Math.abs(t.z - finish.pos[1]) < finish.half[1];
+    const inside = Math.abs(t.x - finish.pos[0]) < finish.half[0] && Math.abs(t.z - finish.pos[1]) < finish.half[1] && (finish.above === undefined || t.y > finish.above);
     this.dwell = inside && Math.abs(this.truck.forwardSpeed()) < DELIVERY_SPEED ? this.dwell + PHYSICS.dt : 0;
     if (this.dwell < DELIVERY_SECONDS) return;
 

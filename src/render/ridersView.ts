@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OBJECT_KINDS, type ObjectPart } from '../levels/objects';
 import type { Rider } from '../sim/riders';
 
+type Drawn = Exclude<ObjectPart['shape'], 'sphere'>;
+
 const SCOOTERS = [OBJECT_KINDS.scooterRed, OBJECT_KINDS.scooterBlue, OBJECT_KINDS.scooterWhite, OBJECT_KINDS.scooterBlack, OBJECT_KINDS.scooterYellow, OBJECT_KINDS.scooterTeal];
 const JACKETS = [0x3a6fb3, 0xb33a3a, 0x4a8f5a, 0xe0c341, 0x8a5fb3, 0xd9792b, 0x2f3b4a, 0xd9d9d9, 0x3aa6a6];
 const HELMETS = [0xf0f0ec, 0x22252a, 0xd0392c, 0xf2c12e, 0x2f62a8, 0xe89ab0];
@@ -57,7 +59,8 @@ export class RidersView {
   constructor(scene: THREE.Scene, private readonly riders: readonly Rider[]) {
     const n = Math.max(1, riders.reduce((sum, rider) => sum + peopleOf(rider), 0));
     const counts = { box: 0, cylinder: 0, cone: 0 };
-    riders.forEach((rider, i) => partsOf(i, rider).forEach((part) => counts[part.shape]++));
+    // What riders carry is made of boxes, cylinders and cones only.
+    riders.forEach((rider, i) => partsOf(i, rider).forEach((part) => counts[part.shape as Drawn]++));
     // Each one's people: where its first is among all of them.
     let people = 0;
     this.firsts = riders.map((rider) => (people += peopleOf(rider)) - peopleOf(rider));
@@ -77,8 +80,8 @@ export class RidersView {
     const turn = new THREE.Quaternion();
     riders.forEach((_, i) => {
       this.slots.push(partsOf(i, riders[i]).map((part) => {
-        const mesh = shapes[part.shape];
-        const index = next[part.shape]++;
+        const mesh = shapes[part.shape as Drawn];
+        const index = next[part.shape as Drawn]++;
         const [a, b, c] = part.size;
         const [rx, ry, rz] = part.rot ?? [0, 0, 0];
         const local = new THREE.Matrix4().compose(new THREE.Vector3(...part.pos), turn.setFromEuler(euler.set(rx, ry, rz)), new THREE.Vector3(a, b, part.shape === 'box' ? c : a));

@@ -11,6 +11,8 @@ export interface Splash {
   z: number;
   /** Roughly how big the thing was, kg. */
   mass: number;
+  /** Into muddy water. */
+  muddy?: boolean;
 }
 
 /**

@@ -55,6 +55,8 @@ export interface Lane {
   split: boolean;
   /** Where a car knocked out of the traffic goes back in. */
   respawn: Lane | null;
+  /** The lane alongside whose cars this one's keep behind, and how far. */
+  keepFrom: { lane: Lane; gap: number } | null;
 }
 
 export interface TrafficCar {
@@ -138,17 +140,21 @@ export class Traffic {
   constructor(world: RAPIER.World, lanes: TrafficLane[], private readonly ground?: (x: number, z: number) => number) {
     let n = 0;
     const made: Lane[] = [];
+    const shifts: number[] = [];
     for (const desc of lanes) {
       const from = new Vector3(desc.from[0], CAR_Y, desc.from[1]);
       const dir = new Vector3(desc.to[0] - desc.from[0], 0, desc.to[1] - desc.from[1]);
       const length = dir.length();
       dir.normalize();
       q.setFromAxisAngle(UP, Math.atan2(dir.x, dir.z));
-      const lane: Lane = { from, dir, length, cruise: desc.speed, facing: { x: q.x, y: q.y, z: q.z, w: q.w }, stops: desc.stops ?? [], waitFor: desc.waitFor, next: null, nextAt: desc.nextAt ?? 0, also: null, split: false, respawn: null };
+      const lane: Lane = { from, dir, length, cruise: desc.speed, facing: { x: q.x, y: q.y, z: q.z, w: q.w }, stops: desc.stops ?? [], waitFor: desc.waitFor, next: null, nextAt: desc.nextAt ?? 0, also: null, split: false, respawn: null, keepFrom: null };
       made.push(lane);
 
       // Evenly spaced along the lane, with each lane shifted so they don't arrive in a row.
-      const shift = (this.lanes++ * 0.37) % 1;
+      // One that keeps from another starts with its vehicles half way between that one's.
+      const own = (this.lanes++ * 0.37) % 1;
+      const shift = desc.keepFrom && shifts[desc.keepFrom.lane] !== undefined ? (shifts[desc.keepFrom.lane] + 0.5) % 1 : own;
+      shifts.push(shift);
       for (let i = 0; i < desc.cars; i++) {
         // A bus begins at its first stop.
         const s = i === 0 && desc.stops?.length ? desc.stops[0].at : desc.scatter ? ((i + 0.15 + Math.random() * 0.7) / desc.cars) * length : ((i + shift) / desc.cars) * length;
@@ -191,6 +197,7 @@ export class Traffic {
         this.splits.push(made[k]);
       }
       if (desc.respawn !== undefined) made[k].respawn = made[desc.respawn] ?? null;
+      if (desc.keepFrom && made[desc.keepFrom.lane]) made[k].keepFrom = { lane: made[desc.keepFrom.lane], gap: desc.keepFrom.gap };
     });
   }
 
@@ -259,6 +266,12 @@ export class Traffic {
       // it (one that has just come in at its start is behind, not ahead) and those at the start of the next.
       for (const other of this.cars) {
         if (other === car || other.knocked > 0) continue;
+        // One in the lane alongside, a little ahead or level or just behind: hold back until it is far enough ahead.
+        if (lane.keepFrom && other.lane === lane.keepFrom.lane) {
+          const by = other.s - car.s;
+          if (by > -lane.keepFrom.gap && by < lane.keepFrom.gap) gap = Math.min(gap, by + half.length - lane.keepFrom.gap);
+          continue;
+        }
         let ahead: number;
         if (other.lane === lane) ahead = lane.next ? other.s - car.s : (other.s - car.s + lane.length) % lane.length;
         else if (lane.next && other.lane === lane.next) ahead = lane.length - car.s + other.s - lane.nextAt;

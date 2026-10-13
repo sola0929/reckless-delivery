@@ -60,6 +60,7 @@ export function propMesh(desc: PropDesc): THREE.Mesh {
   const mesh =
     desc.shape === 'box' ? boxMesh(desc.size, material)
     : desc.shape === 'cylinder' ? shadowed(new THREE.Mesh(new THREE.CylinderGeometry(a, a, b * 2, 24), material))
+    : desc.shape === 'sphere' ? shadowed(new THREE.Mesh(new THREE.SphereGeometry(a, 20, 14), material))
     : shadowed(new THREE.Mesh(new THREE.ConeGeometry(a, b * 2, 20), material));
   mesh.position.set(...desc.pos);
   if (desc.rot) mesh.rotation.set(...desc.rot);
@@ -158,6 +159,8 @@ export class TruckMesh {
   private readonly brakeLamp = new THREE.MeshStandardMaterial({ color: 0x7a1010, emissive: 0xff2010, emissiveIntensity: 0 });
   /** Splashes of whatever the truck has driven through. */
   private readonly stains: THREE.Mesh[] = [];
+  /** How many splashes there have been since the last wash, for drawing each over the last. */
+  private layer = 0;
   private readonly blot = new THREE.CircleGeometry(1, 9);
 
   constructor() {
@@ -388,7 +391,10 @@ export class TruckMesh {
    * and down the sides of the bed. They stay until the truck is washed.
    */
   stain(color: number): void {
-    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    // Each splash drawn a hair over the ones before it: blots of two splashes over one another in the same place would
+    // otherwise shimmer, neither in front.
+    this.layer = (this.layer + 1) % 40;
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -3 - this.layer * 0.15, polygonOffsetUnits: -3 - this.layer * 2 });
     const [cw, ch, cl] = TRUCK.cab.half;
     const [, cy, cz] = TRUCK.cab.pos;
     const [sx, sy, sz] = TRUCK.sideWall.pos;
@@ -416,6 +422,7 @@ export class TruckMesh {
   wash(): void {
     for (const stain of this.stains) stain.removeFromParent();
     this.stains.length = 0;
+    this.layer = 0;
   }
 
   /** Where smoke comes out once the engine is suffering, in the world. */

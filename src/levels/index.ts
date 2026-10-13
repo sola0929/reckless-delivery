@@ -11,9 +11,11 @@ import { range } from './range';
 import { reliefShow } from './reliefShow';
 import { sandbox } from './sandbox';
 import { slopes } from './slopes';
+import { quarryLab } from './quarryLab';
+import { quarry } from './quarry';
 import type { LevelDef } from './types';
 
-export const LEVELS: Record<string, () => LevelDef> = { city, hilltown, battlefield, sandbox, range, hills, steps, bends, relief: reliefShow, jiufen, hillcity, slopes, uptown };
+export const LEVELS: Record<string, () => LevelDef> = { city, hilltown, battlefield, sandbox, range, hills, steps, bends, relief: reliefShow, jiufen, hillcity, slopes, uptown, quarrylab: quarryLab, quarry };
 
 export const FIRST_LEVEL = 'hillcity';
 
@@ -35,11 +37,13 @@ export const LEVEL_LIST: LevelEntry[] = [
   // Level 1 is the city on its hillside; the flat city it was first built as is kept only as what the others are made from.
   { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true },
   { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true },
+  { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true },
 ];
 
 /** Places to drive about with nothing at stake. Always open, and they keep no record. */
 export const FREE_PLAY: LevelEntry[] = !DEV ? [] : [
   { id: 'sandbox', name: '測試場', badge: '∞', note: '沒有目標，隨便開、隨便撞', ready: true },
+  { id: 'quarrylab', name: '第三關試驗場', badge: '3?', note: '料堆、輸送帶落石、堤道機具、河床便橋、施工中大樓，按 1～6 跳到各站', ready: true },
   { id: 'slopes', name: '坡道試驗場', badge: '⟋', note: '大斜坡上閃車流和滾下來的瓦斯桶、鐵桶；再繞著高塔開上塔頂', ready: true },
   { id: 'city', name: '平地城市（舊版第一關）', badge: '平', note: '第一關搬上山坡以前的樣子：同樣的街道，沒有高低差', ready: true },
   { id: 'jiufen', name: '九份試作', badge: '九', note: '照真實九份的道路和地勢做的試作，還沒有設計難點', ready: true },

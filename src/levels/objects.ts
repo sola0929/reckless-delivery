@@ -4,8 +4,8 @@ import type { Vec3 } from '../config';
 // go flying. Each is one loose rigid body built from a few simple parts.
 
 export interface ObjectPart {
-  shape: 'box' | 'cylinder' | 'cone';
-  /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. */
+  shape: 'box' | 'cylinder' | 'cone' | 'sphere';
+  /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. sphere: [radius, radius, radius]. */
   size: Vec3;
   /** Relative to the object's origin, which is at ground level under its middle. */
   pos: Vec3;
@@ -14,6 +14,8 @@ export interface ObjectPart {
   color: number;
   /** Drawn but not solid: a tree's crown, a canopy. */
   ghost?: boolean;
+  /** Drawn with this surface on it, as the cargo of that kind is: a melon's rind. */
+  texture?: 'melon';
   /** Its share of the object's mass, relative to the other solid parts. Defaults to 1. */
   weight?: number;
   /** A lamp that flashes: lit and dark by turns. */
@@ -52,6 +54,8 @@ export interface ObjectKind {
   sturdy?: number;
   /** Walks about within this many metres of where it was put, stopping now and then to peck: a hen. */
   wanders?: number;
+  /** Goes to the bottom of still water rather than floating. */
+  sinks?: boolean;
   /** Startled by the truck coming within this many metres, going at any speed: it is off, flapping, before it is hit. */
   flee?: number;
   /** Lies flat in the road: the traffic drives over it, and other things pass over it too; only the truck and what falls on it move it. */
@@ -406,6 +410,8 @@ export const OBJECT_KINDS = {
   barrier: { mass: 14, parts: [box([1.4, 0.4, 0.1], [0, 0.55, 0], 0xf2c230), box([0.06, 0.3, 0.35], [1.1, 0.3, 0], DARK), box([0.06, 0.3, 0.35], [-1.1, 0.3, 0], DARK)] },
   fence: { mass: 10, effect: 'splinters', parts: [box([1.0, 0.5, 0.04], [0, 0.55, 0], 0xd08a2e), box([0.05, 0.6, 0.05], [0.9, 0.6, 0], DARK), box([0.05, 0.6, 0.05], [-0.9, 0.6, 0], DARK)] },
   bollard: { mass: 40, parts: [cyl(0.1, 0.45, [0, 0.45, 0], 0xd9d9d9)] },
+  /** A yellow plastic post on a bridge's kerb, a band of white on it that shows in the lights. */
+  delineator: { mass: 4, parts: [foot(0.12, 0x2a2e33), cyl(0.06, 0.45, [0, 0.5, 0], 0xf2c12e), cyl(0.065, 0.06, [0, 0.82, 0], 0xf2f2ee, { ghost: true })] },
   post: { mass: 35, parts: [cyl(0.12, 0.5, [0, 0.5, 0], 0xd9d9d9)] },
   /** The bar of a barrier gate or a level crossing; rests across two posts. */
   gateArm: { mass: 8, effect: 'splinters', parts: [box([3.4, 0.06, 0.06], [0, 0.06, 0], 0xe03a2a)] },
@@ -830,8 +836,8 @@ export const OBJECT_KINDS = {
     parts: [cyl(0.32, 0.46, [0, 0.46, 0], 0xb5362a), cyl(0.33, 0.04, [0, 0.62, 0], 0x2a2e33, { ghost: true }), cyl(0.33, 0.04, [0, 0.3, 0], 0x2a2e33, { ghost: true })],
   },
   /** A sack of cement, grey paper with a blue band: knocked, it bursts in a cloud. */
-  cementBag: { mass: 25, effect: 'dust', parts: [box([0.4, 0.1, 0.25], [0, 0.1, 0], 0xd8d4c8), box([0.41, 0.03, 0.26], [0, 0.12, 0], 0x2f62a8, { ghost: true })] },
-  sandbag: { mass: 30, parts: [box([0.45, 0.14, 0.24], [0, 0.14, 0], 0xb9a57a)] },
+  cementBag: { mass: 25, sinks: true, effect: 'dust', parts: [box([0.4, 0.1, 0.25], [0, 0.1, 0], 0xd8d4c8), box([0.41, 0.03, 0.26], [0, 0.12, 0], 0x2f62a8, { ghost: true })] },
+  sandbag: { mass: 30, sinks: true, parts: [box([0.45, 0.14, 0.24], [0, 0.14, 0], 0xb9a57a)] },
   /** A ridge tent: canvas over a pole, pegged down. Its length runs along Z. */
   armyTent: {
     mass: 40,
@@ -898,7 +904,7 @@ export const OBJECT_KINDS = {
   /** A duck. They stand about in the road in dozens. */
   duck: { mass: 2, effect: 'feathers', parts: [box([0.11, 0.1, 0.17], [0, 0.16, 0], 0xf2efe6), box([0.06, 0.07, 0.07], [0, 0.34, 0.14], 0xf2efe6, { ghost: true }), box([0.03, 0.02, 0.05], [0, 0.33, 0.24], 0xe8a020, { ghost: true })] },
   /** A watermelon, left where it grew: it bursts. */
-  melon: { mass: 7, juice: 0xe2485a, parts: [cyl(0.22, 0.2, [0, 0.2, 0], 0x3f8a48), cyl(0.225, 0.03, [0, 0.2, 0], 0x2f6a38, { ghost: true })] },
+  melon: { mass: 7, juice: 0xe2485a, parts: [{ shape: 'sphere', size: [0.24, 0.24, 0.24], pos: [0, 0.24, 0], color: 0xffffff, texture: 'melon' }, cyl(0.035, 0.025, [0, 0.49, 0], 0x1f5a2a, { ghost: true })] },
   /** Sacks of rice, stacked: they split. */
   riceSack: { mass: 26, effect: 'grain', parts: [box([0.42, 0.14, 0.26], [0, 0.14, 0], 0xd9cba0), box([0.4, 0.13, 0.25], [0.04, 0.41, 0.02], 0xcfc094, { rot: [0, 0.3, 0] }), box([0.2, 0.02, 0.05], [0, 0.29, 0.27], 0xb5362a, { ghost: true })] },
   /** A rack of greens put out to dry. */
@@ -955,9 +961,9 @@ export const OBJECT_KINDS = {
     ],
   },
   /** A boulder come down off the hillside: a truck does not shove it aside, it hits it. */
-  boulder: { mass: 650, effect: 'dust', parts: [box([0.75, 0.55, 0.65], [0, 0.55, 0], 0x7d7a72, { rot: [0.15, 0.4, 0.1] }), box([0.5, 0.35, 0.55], [0.35, 0.95, -0.1], 0x8b8880, { ghost: true, rot: [0.3, 0.9, 0.2] })] },
+  boulder: { mass: 650, sinks: true, effect: 'dust', parts: [box([0.75, 0.55, 0.65], [0, 0.55, 0], 0x7d7a72, { rot: [0.15, 0.4, 0.1] }), box([0.5, 0.35, 0.55], [0.35, 0.95, -0.1], 0x8b8880, { ghost: true, rot: [0.3, 0.9, 0.2] })] },
   /** A lump of rock small enough to shift. */
-  rockSmall: { mass: 38, effect: 'dust', parts: [box([0.3, 0.22, 0.26], [0, 0.22, 0], 0x8b8880, { rot: [0.2, 0.5, 0.15] })] },
+  rockSmall: { mass: 38, sinks: true, effect: 'dust', parts: [box([0.3, 0.22, 0.26], [0, 0.22, 0], 0x8b8880, { rot: [0.2, 0.5, 0.15] })] },
   /** A post with boards on it, saying which way and how far. */
   trailSign: { mass: 9, effect: 'splinters', parts: [foot(0.18, DARK), cyl(0.05, 0.9, [0, 0.9, 0], WOOD), box([0.4, 0.09, 0.02], [0.2, 1.6, 0], 0xe8d49a, { ghost: true }), box([0.35, 0.09, 0.02], [-0.18, 1.35, 0], 0xe8d49a, { ghost: true })] },
   /** Racks of logs that mushrooms are grown on. */
@@ -1048,6 +1054,33 @@ export const OBJECT_KINDS = {
     ],
   },
   /** A length of concrete pipe, lying on its side: it rolls. */
+  /** A steel prop holding up a slab while its concrete sets: 3.9 m from its foot plate to its head. */
+  shoringProp: {
+    mass: 22,
+    effect: 'sparks',
+    parts: [box([0.15, 0.02, 0.15], [0, 0.02, 0], DARK, { weight: 6 }), cyl(0.045, 1.92, [0, 1.96, 0], 0xb8bcc0), cyl(0.06, 0.4, [0, 1.3, 0], 0xd0a030, { ghost: true }), box([0.16, 0.03, 0.16], [0, 3.88, 0], DARK)],
+  },
+  /** A panel of safety netting on two posts, along an edge with nothing beyond it. Along X. */
+  netPanel: {
+    mass: 14,
+    parts: [
+      box([1.0, 0.03, 0.1], [0, 0.03, 0], DARK, { weight: 4 }),
+      ...[-0.95, 0.95].map((x) => box([0.03, 0.55, 0.03], [x, 0.55, 0], STEEL)),
+      box([0.95, 0.5, 0.012], [0, 0.6, 0], 0x2f6a4a, { ghost: true }),
+      box([0.97, 0.04, 0.02], [0, 1.08, 0], 0xd8302a, { ghost: true }),
+    ],
+  },
+  /** A red-and-white pole marking the edge of a track across rough ground. */
+  rallyPole: {
+    mass: 4,
+    parts: [foot(0.14, DARK), cyl(0.035, 0.6, [0, 0.65, 0], 0xf2f2ee), ...[0.3, 0.75, 1.15].map((y) => cyl(0.037, 0.1, [0, y, 0], 0xd8302a, { ghost: true }))],
+  },
+  /** A pump on a skid, its hose run off into the water. */
+  pumpSet: {
+    mass: 140,
+    effect: 'sparks',
+    parts: [box([0.5, 0.06, 0.35], [0, 0.06, 0], DARK), box([0.4, 0.3, 0.3], [0, 0.42, 0], 0x2f6fb0), cyl(0.12, 0.25, [0.45, 0.4, 0], 0x2a2c30, { rot: [0, 0, Math.PI / 2], ghost: true })],
+  },
   /** A concrete culvert pipe, lying on its side; and three of them stacked, two and one. Their axis runs along X. */
   culvert: {
     mass: 500,
@@ -1073,7 +1106,7 @@ export const OBJECT_KINDS = {
   tyre: { mass: 12, parts: [cyl(0.42, 0.12, [0, 0.12, 0], 0x1e1f22), cyl(0.24, 0.125, [0, 0.12, 0], 0x3a3c40, { ghost: true })] },
   /** A heap of gravel tipped at the roadside. */
   gravelPile: { mass: 900, effect: 'dust', parts: [cone(1.4, 0.55, [0, 0.55, 0], 0xaea592), cone(0.9, 0.35, [0.3, 0.45, 0.2], 0x9c9384, { ghost: true })] },
-  pipe: { mass: 90, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
+  pipe: { mass: 90, sinks: true, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
   /** Bricks on a pallet. */
   bricks: {
     mass: 110,
@@ -1106,6 +1139,56 @@ export const OBJECT_KINDS = {
       box([0.05, 0.2, 0.05], [0, 0.2, 0.5], DARK),
     ],
   },
+  /** A small forklift: its body and counterweight, the seat under a guard, the mast at the front with its forks down. Heavy:
+   * it is shoved aside, not sent flying, and the load feels it. */
+  forklift: {
+    mass: 1400,
+    effect: 'sparks',
+    parts: [
+      box([0.6, 0.45, 1.0], [0, 0.65, 0.1], 0xe0a81e),
+      box([0.62, 0.3, 0.35], [0, 0.85, -0.85], 0x3a3f45, { weight: 2 }),
+      box([0.55, 0.05, 0.55], [0, 2.05, 0.15], 0x2e3034, { ghost: true }),
+      ...[-0.5, 0.5].flatMap((x) => [box([0.04, 0.6, 0.04], [x, 1.45, 0.6], 0x2e3034, { ghost: true }), box([0.04, 0.6, 0.04], [x, 1.45, -0.3], 0x2e3034, { ghost: true })]),
+      ...[-0.35, 0.35].map((x) => box([0.05, 1.2, 0.05], [x, 1.2, 1.15], 0x2e3034)),
+      ...[-0.25, 0.25].map((x) => box([0.06, 0.03, 0.55], [x, 0.08, 1.75], 0x2e3034, { ghost: true })),
+      ...[[-0.55, 0.7], [0.55, 0.7], [-0.55, -0.6], [0.55, -0.6]].map(([x, z]) => cyl(0.25, 0.1, [x, 0.25, z], 0x1c1d20, { rot: [0, 0, Math.PI / 2] })),
+    ],
+  },
+  /** Two metres of bamboo windbreak: two posts, three rails, the dry leaves woven in. Along its length, x. */
+  windbreak: {
+    mass: 14,
+    effect: 'splinters',
+    parts: [
+      ...[-1, 1].map((x) => cyl(0.05, 0.95, [x, 0.95, 0], 0x9a8a52)),
+      box([1.0, 0.75, 0.05], [0, 0.95, 0], 0xb8a878),
+      ...[0.5, 1.0, 1.5].map((y) => box([1.0, 0.03, 0.03], [0, y, 0.06], 0x9a8a52, { ghost: true })),
+    ],
+  },
+  /** A rack of glass: an A-frame on its feet, the sheets leaning on it either side. It goes to pieces. */
+  glassRack: {
+    mass: 90,
+    effect: 'shards',
+    parts: [
+      ...[-1.1, 1.1].map((z) => box([0.05, 1.0, 0.05], [0, 1.0, z], 0x8c9096)),
+      box([0.3, 0.05, 1.15], [0, 0.05, 0], 0x8c9096),
+      ...[-1, 1].map((side) => box([0.03, 0.9, 1.1], [side * 0.25, 0.9, 0], 0x6fa8c8, { rot: [0, 0, side * 0.18] })),
+    ],
+  },
+  /** A stack of formwork boards, plywood, six or so. */
+  formwork: { mass: 70, effect: 'splinters', parts: [box([1.2, 0.27, 0.6], [0, 0.27, 0], 0xc9a26b), ...[0.12, 0.3, 0.48].map((y) => box([1.21, 0.01, 0.61], [0, y, 0], 0xa8854f, { ghost: true }))] },
+  /** A grower's tin shed on the flats: corrugated sides, its roof aslant. Light as sheds go: it is shoved over and dented. */
+  farmShed: { mass: 220, effect: 'sparks', parts: [box([0.9, 1.1, 1.2], [0, 1.1, 0], 0x8a9aa4), box([1.1, 0.06, 1.4], [0, 2.3, 0], 0x2f5f8a, { rot: [0.12, 0, 0] })] },
+  /** Five metres of a bean trellis: canes leaning together over the row, grown over with leaves. Along z. */
+  beanTrellis: {
+    mass: 14,
+    effect: 'leaves',
+    parts: [
+      ...[-0.3, 0.3].map((lean) => box([0.05, 0.75, 2.5], [lean * 1.1, 0.72, 0], lean > 0 ? 0x5f8a3f : 0x6f9a48, { rot: [0, 0, lean] })),
+      ...[-2, 0, 2].map((z) => box([0.02, 0.8, 0.02], [0, 0.8, z], 0xb89a62, { ghost: true })),
+    ],
+  },
+  /** A plastic water drum, blue. */
+  waterDrum: { mass: 30, parts: [cyl(0.3, 0.45, [0, 0.45, 0], 0x2f62a8), cyl(0.31, 0.03, [0, 0.88, 0], 0x23497a, { ghost: true })] },
   /** Pigeons, pecking about until something comes at them. */
   pigeons: {
     mass: 2,

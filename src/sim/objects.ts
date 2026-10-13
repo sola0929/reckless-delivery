@@ -211,6 +211,7 @@ export class ObjectSystem {
         const shape =
           part.shape === 'box' ? roundedBox(a, b, c)
           : part.shape === 'cylinder' ? (desc.rolls ? RAPIER.ColliderDesc.roundCylinder(b - ROLL_EDGE, a - ROLL_EDGE, ROLL_EDGE) : RAPIER.ColliderDesc.cylinder(b, a))
+          : part.shape === 'sphere' ? RAPIER.ColliderDesc.ball(a)
           : RAPIER.ColliderDesc.cone(b, a);
         const [rx, ry, rz] = part.rot ?? [0, 0, 0];
         q.setFromEuler(e.set(rx, ry, rz));
