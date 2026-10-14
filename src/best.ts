@@ -22,16 +22,9 @@ export type LevelState = 'soon' | 'locked' | 'open' | 'done';
 
 const key = (levelId: string) => `cargo-best:${levelId}`;
 
-/** The state of each level in a list that is unlocked in order. */
+/** The state of each level in a list: every level that is built is open from the start, whether or not the one before it is passed. */
 export function levelStates(levels: readonly { id: string; ready: boolean }[]): LevelState[] {
-  let opened = true;
-  return levels.map(({ id, ready }) => {
-    if (!ready) return 'soon';
-    const passed = loadBest(id) !== null;
-    const state: LevelState = passed ? 'done' : opened ? 'open' : 'locked';
-    opened = passed;
-    return state;
-  });
+  return levels.map(({ id, ready }) => (!ready ? 'soon' : loadBest(id) !== null ? 'done' : 'open'));
 }
 
 export function loadBest(levelId: string): Best | null {

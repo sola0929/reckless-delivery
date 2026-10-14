@@ -32,7 +32,7 @@ export interface LevelEntry {
   ready: boolean;
 }
 
-/** The deliveries, in the order they are unlocked: each one opens when the one before it has been passed. */
+/** The deliveries, in order; all of them can be played from the start. */
 export const LEVEL_LIST: LevelEntry[] = [
   // Level 1 is the city on its hillside; the flat city it was first built as is kept only as what the others are made from.
   { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true },

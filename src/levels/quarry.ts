@@ -821,7 +821,7 @@ export function quarry(): LevelDef {
     ],
     finish: end.finish,
     stars: [0, 0.6],
-    par: 300,
+    par: 180,
   };
 }
 

@@ -83,8 +83,8 @@ function showMenu(): void {
     free.append(strip);
   }
 
-  // "Start" goes to the delivery furthest along that can be played.
-  const next = LEVEL_LIST.filter((_, i) => states[i] === 'open' || states[i] === 'done').pop()?.id ?? FIRST_LEVEL;
+  // "Start" goes to the first delivery not yet passed, or the first one when all are.
+  const next = LEVEL_LIST.find((_, i) => states[i] === 'open')?.id ?? FIRST_LEVEL;
   // Settings: the volumes and the picture quality, the same ones the pause menu has.
   const sfx = document.getElementById('set-sfx') as HTMLInputElement;
   const music = document.getElementById('set-music') as HTMLInputElement;
