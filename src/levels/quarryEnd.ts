@@ -105,7 +105,7 @@ export function secondHalf(s: Site, signs: SignDesc[], from: Vec2): EndBuilt {
   // the other's, so that they come at the truck in either lane in turn.
   // The second lane's keep well behind the first's, never level with them, so that there is always a way between.
   const first = s.traffic.length;
-  for (const [n, x] of [ROAD_X - LANE, ROAD_X + LANE].entries()) s.traffic.push({ from: [x, SHED_N.z1 - 4], to: [x, SHED_S.z0 + 6], cars: 3, speed: 20, kinds: ['dumpTruck', 'dumpTruck', 'dumpTruck'], respawn: first + n, ...(n ? { keepFrom: { lane: first, gap: 55 } } : {}) });
+  for (const [n, x] of [ROAD_X - LANE, ROAD_X + LANE].entries()) s.traffic.push({ from: [x, SHED_N.z1 - 4], to: [x, SHED_S.z0 + 6], cars: 4, speed: 20, kinds: ['dumpTruck', 'dumpTruck', 'dumpTruck', 'dumpTruck'], respawn: first + n, ...(n ? { keepFrom: { lane: first, gap: 40 } } : {}) });
   for (const [z0, z1, open] of [[SHED_S.z0, SHED_S.z1, 1], [SHED_N.z0, SHED_N.z1, -1]] as const) shed(s, z0, z1, open, open > 0 ? SAND_Y : SITE_Y);
 
   // ---- The site ----
@@ -142,8 +142,9 @@ function melonField(s: Site, from: Vec2): void {
   const { props, decals } = s;
   const Y = SAND_Y;
   const LEAVES = [0x4f7a38, 0x5f8a3f, 0x6f9a48];
-  /** A block of ridges running north, from x0 to x1, between z0 and z1; the ones nearest the track with melons that can be knocked. */
-  const block = (x0: number, x1: number, z0: number, z1: number, k: number, near: (x: number) => boolean) => {
+  /** A block of ridges running north, from x0 to x1, between z0 and z1, melons along them: in the field itself, every one of them
+   *  can be run into and burst; in the plots beyond, out at the bar's edge, they are only to be looked at. */
+  const block = (x0: number, x1: number, z0: number, z1: number, k: number, real = true) => {
     for (let x = x0 + 0.8, i = 0; x < x1 - 0.5; x += 1.8, i++) {
       const long = z1 - z0;
       props.push({ shape: 'box', size: [0.55, 0.12, long / 2], pos: [x, Y + 0.1, (z0 + z1) / 2], color: 0xc9b07a, ghost: true });
@@ -153,7 +154,7 @@ function melonField(s: Site, from: Vec2): void {
         decals.push({ pos: [x + (hash(j, i + k) - 0.5) * 0.8, z], size: [0.9 + h * 0.6, 0.7 + hash(i, j + k) * 0.5], rotY: h * 3, color: LEAVES[(i + j) % 3], base: Y, y: 0.03 + (j % 3) * 0.01 });
         if (h < 0.32) {
           const mx = x + (hash(j + 3, i) - 0.5) * 0.5;
-          if (near(mx)) s.object('melon', mx, z, h * 6, Y + 0.12);
+          if (real) s.object('melon', mx, z, h * 6, Y + 0.12);
           else props.push({ shape: 'sphere', size: [0.25, 0.22, 0.25], pos: [mx, Y + 0.34, z], rot: [Math.PI / 2, h * 6, 0], color: 0xffffff, texture: 'melon', ghost: true });
         }
       }
@@ -161,10 +162,10 @@ function melonField(s: Site, from: Vec2): void {
   };
   const tx = from[0];
   // West of the track, two blocks; east of it, between it and the haul road, one; and round the bend, north of it.
-  block(42, tx - 12, 1034, 1050, 1, (x) => x > tx - 15);
-  block(42, tx - 3.6, 1054, 1090, 2, (x) => x > tx - 6.5);
-  block(tx + 3.6, 112, 1034, 1048, 3, (x) => x < tx + 6.5);
-  block(98, 114, 1072, 1092, 4, () => false);
+  block(42, tx - 12, 1034, 1050, 1);
+  block(42, tx - 3.6, 1054, 1090, 2);
+  block(tx + 3.6, 112, 1034, 1048, 3);
+  block(98, 114, 1072, 1092, 4);
   // West of the growers' shed, and east past the lorries' shed: the rest of the bar farmed in plots of all sizes, each its
   // own crop or its own stage, as a river bar's growers have it. Melons, peanuts, sweet potatoes heaped in ridges, rows under
   // black plastic with the seedlings through it, low white tunnels over the young plants; a plot left fallow with the
@@ -182,7 +183,7 @@ function melonField(s: Site, from: Vec2): void {
       const ridge = (at: number, wide: number, high: number, color: number) => props.push({ shape: 'box', size: alongX ? [w / 2 - 0.3, high, wide / 2] : [wide / 2, high, l / 2 - 0.3], pos: alongX ? [cx, Y + high * 0.6, at] : [at, Y + high * 0.6, cz], color, ghost: true });
       switch (kind) {
         case 'melon':
-          block(x0, x1, z0, z1, k, () => false);
+          block(x0, x1, z0, z1, k, false);
           break;
         case 'peanut':
           decals.push({ pos: [cx, cz], size: [w, l], color: 0x9a8058, base: Y, y: 0.015 });

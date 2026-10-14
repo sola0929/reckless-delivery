@@ -45,9 +45,13 @@ const FILES = {
   cracker: ['cracker-0.mp3', 'cracker-1.mp3'],
   crackers: ['crackers-0.mp3', 'crackers-1.mp3'],
   flap: ['flap-0.mp3'],
+  // Stones coming down and clattering; a tyre struck.
+  rock: ['rock-fall-0.wav', 'rock-fall-1.wav'],
+  tyre: ['tyre-hit-0.wav', 'tyre-hit-1.wav'],
   skid: 'skid-loop.wav',
   train: 'train-loop.wav',
   bell: 'bell-loop.wav',
+  river: 'river-loop.wav',
 };
 /** For each looping sound: where in its recording the loop starts, how long it is, and how long the join is blended over, seconds. */
 const LOOPS = {
@@ -55,6 +59,7 @@ const LOOPS = {
   skid: { from: 0.18, seconds: 0.55, blend: 0.12 },
   train: { from: 0.5, seconds: 5, blend: 0.45 },
   bell: { from: 0.5, seconds: 3.6, blend: 0.3 },
+  river: { from: 0.2, seconds: 10, blend: 1 },
 };
 /** The lists of one-shot recordings in FILES, as against the single looping ones. */
 type Group = { [K in keyof typeof FILES]: (typeof FILES)[K] extends string[] ? K : never }[keyof typeof FILES];
@@ -62,7 +67,7 @@ type Group = { [K in keyof typeof FILES]: (typeof FILES)[K] extends string[] ? K
 const LEAD_IN: Record<string, number> = { 'crash-hard-1.mp3': 0.38 };
 
 /** What a thing by the roadside is made of, as far as the noise it makes goes. */
-export type Material = 'tree' | 'wood' | 'metal' | 'barrel' | 'soft' | 'ceramic' | 'melon' | 'bone' | 'heavy';
+export type Material = 'tree' | 'wood' | 'metal' | 'barrel' | 'soft' | 'ceramic' | 'melon' | 'bone' | 'heavy' | 'rubber' | 'stone';
 
 export interface EngineState {
   /** Along the truck's nose, m/s. */
@@ -78,6 +83,8 @@ export interface EngineState {
   train: number;
   /** Whether a crossing bell is ringing within earshot. */
   bell: boolean;
+  /** How close running water is, 0 out of earshot to 1 at its edge. */
+  river: number;
 }
 
 interface Clip {
@@ -89,7 +96,7 @@ interface Clip {
 }
 
 /** The things by the roadside: their recordings are evened out, so one take isn't twice as loud as the next. */
-const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'flap']);
+const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'flap', 'rock', 'tyre']);
 /** The loudness they are brought to, at their loudest moment. */
 const EVEN_TO = 0.3;
 
@@ -101,9 +108,9 @@ export class GameAudio {
   private engine: AudioBufferSourceNode | null = null;
   private engineGain!: GainNode;
   private engineFilter!: BiquadFilterNode;
-  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [], cracker: [], crackers: [], flap: [] };
+  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [], cracker: [], crackers: [], flap: [], rock: [], tyre: [] };
   /** The sounds that run on and on, each with its own volume: tyres, trains, the crossing bell. */
-  loops: Record<'skid' | 'train' | 'bell', { source: AudioBufferSourceNode; gain: GainNode } | null> = { skid: null, train: null, bell: null };
+  loops: Record<'skid' | 'train' | 'bell' | 'river', { source: AudioBufferSourceNode; gain: GainNode } | null> = { skid: null, train: null, bell: null, river: null };
 
   private lastBump = 0;
   private lastKnock = 0;
@@ -168,7 +175,7 @@ export class GameAudio {
       return ctx.decodeAudioData(await response.arrayBuffer());
     };
     try {
-      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash', 'cracker', 'crackers', 'flap'] as const;
+      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash', 'cracker', 'crackers', 'flap', 'rock', 'tyre'] as const;
       const [idle, ...sets] = await Promise.all([
         fetchBuffer(FILES.engine),
         ...groups.map((group) => Promise.all(FILES[group].map(fetchBuffer))),
@@ -190,7 +197,7 @@ export class GameAudio {
       this.loaded = true;
 
       // The rest can come in a moment later without anyone noticing.
-      for (const name of ['skid', 'train', 'bell'] as const) {
+      for (const name of ['skid', 'train', 'bell', 'river'] as const) {
         const recording = await fetchBuffer(FILES[name]);
         const source = ctx.createBufferSource();
         const { from, seconds, blend } = LOOPS[name];
@@ -227,13 +234,14 @@ export class GameAudio {
     this.engineGain.gain.setTargetAtTime(volume, t, 0.2);
 
     // Tyres squeal quickly and stop quickly; a train swells and fades as it goes by.
-    const { skid, train, bell } = this.loops;
+    const { skid, train, bell, river } = this.loops;
     if (skid) {
       skid.gain.gain.setTargetAtTime(clamp(state.skid, 0, 1) * 0.42, t, 0.06);
       skid.source.playbackRate.setTargetAtTime(0.9 + pace * 0.25, t, 0.2);
     }
     if (train) train.gain.gain.setTargetAtTime(clamp(state.train, 0, 1) ** 2 * 0.9, t, 0.12);
     if (bell) bell.gain.gain.setTargetAtTime(state.bell ? 0.3 : 0, t, 0.08);
+    if (river) river.gain.gain.setTargetAtTime(clamp(state.river, 0, 1) ** 2 * 0.45, t, 0.4);
   }
 
   /**
@@ -304,6 +312,14 @@ export class GameAudio {
       case 'soft':
         this.play(pick(this.clips.soft), volume, rate, { muffle: 1200 });
         break;
+      case 'rubber':
+        // A tyre: a deep, dead bounce.
+        this.play(pick(this.clips.tyre), volume, rate);
+        break;
+      case 'stone':
+        // Rock, brick or concrete: stones clattering down. Only the start of it for something small.
+        this.play(pick(this.clips.rock), volume, 1 + (Math.random() - 0.5) * 0.16, weight < 0.3 ? { seconds: 0.9 } : {});
+        break;
       default:
         // Not something that stands by the road; but if it is hit, it sounds as it would landing.
         this.thud(material, strength, weight);
@@ -345,6 +361,12 @@ export class GameAudio {
       case 'ceramic':
         // Two jars touching, or two jars meeting hard.
         this.play(this.clips.potClink[strength > 0.35 ? 1 : 0], v * 0.9, 0.95 + wobble);
+        break;
+      case 'rubber':
+        this.play(pick(this.clips.tyre), v * 0.8, 1.05 + wobble, { seconds: 0.35 });
+        break;
+      case 'stone':
+        this.play(pick(this.clips.rock), v * 0.85, 1.05 + wobble, weight < 0.3 ? { seconds: 0.7 } : {});
         break;
       case 'melon':
         // A dull, wet knock.

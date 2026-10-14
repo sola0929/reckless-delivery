@@ -123,6 +123,8 @@ const UP = new Vector3(0, 1, 0);
  */
 export class Traffic {
   readonly cars: TrafficCar[] = [];
+  /** How many cars have been knocked out of the traffic since the last reset: by the truck, by each other, or by something heavy. */
+  hits = 0;
   /** Cars that ran into the truck, or were run into by it, during the latest step. */
   fresh: TrafficCar[] = [];
   /** Cars that a wreck was shoved into during the latest step: where, and how fast the two met. */
@@ -330,6 +332,7 @@ export class Traffic {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
+        this.hits++;
         car.impact = 0;
         this.pileups.push({ x: v.x, z: v.z, speed: Math.max(car.speed, 5) });
         car.speed = 0;
@@ -342,6 +345,7 @@ export class Traffic {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
+        this.hits++;
         car.impact = Math.hypot(lane.dir.x * car.speed - tv.x, lane.dir.z * car.speed - tv.z);
         // Whoever was driving it has something to say, if they were driving it.
         if (lane.cruise > 0) this.horns.push({ x: t.x, z: t.z, long: 1, car: this.cars.indexOf(car) });
@@ -397,6 +401,7 @@ export class Traffic {
 
   reset(): void {
     this.fresh = [];
+    this.hits = 0;
     for (const lane of this.splits) lane.split = false;
     for (const car of this.cars) {
       car.lane = car.home;
@@ -420,6 +425,7 @@ export class Traffic {
     car.body.setLinvel({ x: car.lane.dir.x * car.speed * 0.5 + velocity.x * 0.9, y: Math.min(4, speed * 0.25), z: car.lane.dir.z * car.speed * 0.5 + velocity.z * 0.9 }, true);
     car.body.setAngvel({ x: (velocity.z / Math.max(1, speed)) * 1.5, y: 1.2, z: (-velocity.x / Math.max(1, speed)) * 1.5 }, true);
     car.knocked = KNOCKED_SECONDS;
+    this.hits++;
     car.impact = speed;
     car.speed = 0;
     this.pileups.push({ x: p.x, z: p.z, speed: Math.max(speed, 6), heavy: true });

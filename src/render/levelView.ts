@@ -358,15 +358,15 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
 function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
   const group = new THREE.Group();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
-  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : arrowTexture(kind) }));
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : arrowTexture(kind) }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
-    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload') {
+    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight') {
       // Upright, its middle where it is put: over a gate, on a wall. A shop's is smaller than a school's, a shed's larger.
-      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : 6;
+      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : 6;
       // One that fades has materials of its own.
       const [back, face] = sign.fadeZone ? [steel.clone(), faceOf(sign.kind).clone()] : [steel, faceOf(sign.kind)];
       const plate = new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);
@@ -842,6 +842,7 @@ export class LevelView {
     }
     for (const { car, mesh } of this.brakes) mesh.visible = car.braking && car.knocked <= 0;
     if (this.finishGlow) {
+      this.finishGlow.visible = !this.sim.finishShut;
       (this.finishGlow.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(this.time * 3) * 0.07;
     }
 

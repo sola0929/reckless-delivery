@@ -23,9 +23,14 @@ const FAILURES: Record<Failure, [string, string]> = {
 };
 
 const HELP_DRIVING =
-  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>R</b> 重來　<b>Esc</b> 暫停　<b>滾輪</b> 縮放';
+  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>R</b> 重來　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>右鍵拖曳</b> 轉視角';
 const HELP_ON_FOOT =
   '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>R</b> 重來　<b>Esc</b> 暫停';
+
+const PAD_DRIVING =
+  '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>A</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Back</b> 重來　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角、縮放';
+const PAD_ON_FOOT =
+  '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 蓄力拋出　<b>LT</b> 取消　<b>Y</b> 上車　<b>Back</b> 重來　<b>Start</b> 暫停';
 
 export class Hud {
   private readonly speedEl = el('speed');
@@ -52,6 +57,7 @@ export class Hud {
   /** Called by the pause button in the corner of the screen. */
   onPause: (() => void) | null = null;
   private onFoot: boolean | null = null;
+  private pad = false;
   private speedText = '';
   private cargoText = '';
   private valueText = '';
@@ -66,6 +72,15 @@ export class Hud {
     goal.style.left = `${level.stars[1] * 100}%`;
     el('timer-stat').hidden = freePlay;
     this.nav.hidden = freePlay;
+    // The tutorial: no clock, no stars, nothing to measure the load against; the arrow points at the next thing to do.
+    if (level.practice) {
+      goal.hidden = true;
+      el('timer-stat').hidden = true;
+      el('value-full').hidden = true;
+      el('value-bar').hidden = true;
+      this.nav.querySelector('.label')!.textContent = '目標';
+      el('result-retry').innerHTML = '開始第 1 關';
+    }
     for (const id of ['result-retry', 'pause-retry']) el(id).addEventListener('click', () => this.onRetry?.());
     // Leaving from the result page loses nothing. Leaving mid-run does, so it asks first.
     for (const id of ['result-menu', 'pause-leave']) el(id).addEventListener('click', () => this.onMenu?.());
@@ -94,6 +109,11 @@ export class Hud {
 
   /** The level's name, what each star asks for and what is on the truck: up until the run begins. */
   showBanner(): void {
+    // The tutorial has its own line at the top instead.
+    if (this.level.practice) {
+      this.banner.hidden = true;
+      return;
+    }
     el('banner-title').textContent = this.level.name;
     el('banner-brief').textContent = this.level.brief;
     const scored = !!this.level.finish;
@@ -185,6 +205,11 @@ export class Hud {
   }
 
   /** Point the arrow at the delivery bay. `angle` is clockwise from straight up the screen, radians. */
+  /** Show or hide the arrow: in the tutorial it is there only while there is somewhere to go. */
+  showNav(on: boolean): void {
+    if (this.level.practice && this.nav.hidden === on) this.nav.hidden = !on;
+  }
+
   navigate(angle: number, distance: number): void {
     this.navArrow.style.transform = `rotate(${angle}rad)`;
     const text = String(Math.round(distance));
@@ -192,10 +217,11 @@ export class Hud {
   }
 
   /** The key list along the bottom, for driving or for being on foot. */
-  setMode(onFoot: boolean): void {
-    if (onFoot === this.onFoot) return;
+  setMode(onFoot: boolean, pad = false): void {
+    if (onFoot === this.onFoot && pad === this.pad) return;
     this.onFoot = onFoot;
-    this.help.innerHTML = onFoot ? HELP_ON_FOOT : HELP_DRIVING;
+    this.pad = pad;
+    this.help.innerHTML = pad ? (onFoot ? PAD_ON_FOOT : PAD_DRIVING) : onFoot ? HELP_ON_FOOT : HELP_DRIVING;
   }
 
   /** A one-line hint about what can be done right now. Empty hides it. May contain <b> for key names. */
@@ -213,6 +239,7 @@ export class Hud {
    * became of the rest, and how the run stands against the best on record.
    */
   showResult(result: Result, fullValue: number, records?: RecordsSet): void {
+    if (this.level.practice) return this.showGraduation(result);
     const failed = result.failure !== undefined;
     const passed = !failed && result.stars > 0;
     const [title, reason] = failed ? FAILURES[result.failure!] : [passed ? '送達！' : '未達標', ''];
@@ -229,14 +256,19 @@ export class Hud {
       `<div class="figure"><b>${money(result.value)}</b><span>/ ${money(fullValue)}</span><em>${percent}%</em></div>` +
       `<div class="bar"><div class="fill${result.fraction >= two ? ' good' : ''}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div></div>`;
 
+    // Two rows: what became of the load, then the time and what the run did on the way.
     const { intact, damaged, destroyed, lost } = result.tally;
-    const tile = (label: string, value: string, bad = false) => `<div class="tile${bad ? ' bad' : ''}"><b>${value}</b><span>${label}</span></div>`;
+    const { people, cars, things } = result.trip;
+    const tile = (label: string, value: string, look = '') => `<div class="tile${look ? ' ' + look : ''}"><b>${value}</b><span>${label}</span></div>`;
     el('result-rows').innerHTML = [
-      tile('完好', String(intact)),
-      tile('受損', String(damaged), damaged > 0),
-      tile('全毀', String(destroyed), destroyed > 0),
-      tile('遺失', String(lost), lost > 0),
-      tile('用時', clock(result.seconds), !failed && result.seconds > this.level.par),
+      tile('剩餘貨物', `${intact + damaged}<small> / ${intact + damaged + destroyed + lost}</small>`),
+      tile('受損', String(damaged), damaged > 0 ? 'bad' : ''),
+      tile('全毀', String(destroyed), destroyed > 0 ? 'bad' : ''),
+      tile('遺失', String(lost), lost > 0 ? 'bad' : ''),
+      tile('用時', clock(result.seconds), !failed && result.seconds > this.level.par ? 'bad' : ''),
+      tile('撞倒的人', String(people), 'trip'),
+      tile('撞翻車輛', String(cars), 'trip'),
+      tile('撞飛物品', String(things), 'trip'),
     ].join('');
 
     const enough = !failed && result.fraction >= two;
@@ -260,6 +292,23 @@ export class Hud {
         line('最短時間', clock(result.seconds), before ? clock(before.seconds) : null, records.time)
       : '';
     // The card from the start has had its day, if it is somehow still up.
+    this.banner.hidden = true;
+    this.result.hidden = false;
+  }
+
+  /** The end of the tutorial: what has been learnt, and on to level 1. */
+  private showGraduation(result: Result): void {
+    el('result-level').textContent = this.level.name;
+    el('result-title').textContent = '結業！';
+    el('result-title').className = 'passed';
+    el('result-stars').innerHTML = '';
+    el('result-reason').textContent = '開車、煞車、飛越、撿貨都會了，可以正式上路送貨了。';
+    el('result-verdict').textContent = '「保證送達，不保證完整。歡迎加入胡鬧快遞。」';
+    const learnt = ['油門與轉彎', '看到火車就煞車', '急加速飛越斷橋', '下車撿貨', '卸貨'];
+    el('result-value').innerHTML = '';
+    el('result-rows').innerHTML = '';
+    el('result-goals').innerHTML = learnt.map((text) => `<div class="result-goal met"><span class="star">✓</span>${text}<i></i></div>`).join('');
+    el('result-record').innerHTML = `<div class="record"><span>用時</span><b>${clock(result.seconds)}</b></div>`;
     this.banner.hidden = true;
     this.result.hidden = false;
   }

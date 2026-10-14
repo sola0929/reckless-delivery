@@ -473,7 +473,7 @@ body {
 /* What became of each item, and the time. */
 #result-rows {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
@@ -496,6 +496,16 @@ body {
 
 #result-rows .tile.bad b {
   color: #ff8a7a;
+}
+
+#result-rows .tile.trip b {
+  color: #ffd166;
+}
+
+#result-rows .tile b small {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 /* The three stars and what each one asks for. */
@@ -731,3 +741,110 @@ button.quiet:hover {
   letter-spacing: 2px;
   white-space: nowrap;
 }
+
+/* ---------- The tutorial: the lesson's line at the top, its tick when done, the dark between a mishap and trying again. ---------- */
+
+#lesson {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  width: min(600px, calc(100vw - 32px));
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 12px 20px 14px;
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 14px;
+  background: rgba(17, 23, 33, 0.88);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  text-align: center;
+  pointer-events: auto;
+}
+#lesson[hidden] { display: none; }
+#lesson.in { animation: lesson-in 0.35s ease-out; }
+@keyframes lesson-in {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+}
+.lesson-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+#lesson-step {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #ffd166;
+  color: #131a24;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.lesson-tag { opacity: 0.6; }
+#lesson-skip {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font: inherit;
+  cursor: pointer;
+}
+#lesson-skip:hover { color: #fff; }
+#lesson-text {
+  margin-top: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+/* Keys drawn as keys. */
+#lesson-text b {
+  display: inline-block;
+  min-width: 1.4em;
+  margin: 0 3px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffd166;
+  font-size: 16px;
+  line-height: 1.5;
+}
+#lesson-help {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+  color: #ffd9a0;
+}
+#lesson-help[hidden] { display: none; }
+.lesson-tick {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(47, 122, 58, 0.94);
+  color: #fff;
+  font-size: 40px;
+  font-weight: 900;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+#lesson.done .lesson-tick { opacity: 1; transform: none; }
+
+#fade {
+  position: fixed;
+  inset: 0;
+  background: #0d1118;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+#fade.on { opacity: 1; }
+
+/* In the tutorial the minimap and the help line stay, but there is nothing to time. */
+body.practice #value-goal { display: none; }

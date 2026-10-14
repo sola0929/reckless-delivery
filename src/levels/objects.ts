@@ -1107,6 +1107,8 @@ export const OBJECT_KINDS = {
   /** A heap of gravel tipped at the roadside. */
   gravelPile: { mass: 900, effect: 'dust', parts: [cone(1.4, 0.55, [0, 0.55, 0], 0xaea592), cone(0.9, 0.35, [0.3, 0.45, 0.2], 0x9c9384, { ghost: true })] },
   pipe: { mass: 90, sinks: true, parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
+  /** The same pipe at the weight of concrete: shoved aside rather than sent flying. Level 1 keeps the light one. */
+  concretePipe: { mass: 450, sinks: true, effect: 'dust', parts: [cyl(0.34, 1.3, [0, 0.34, 0], 0xa9a59b, { rot: [0, 0, Math.PI / 2] }), cyl(0.26, 1.31, [0, 0.34, 0], 0x4a4f57, { rot: [0, 0, Math.PI / 2], ghost: true })] },
   /** Bricks on a pallet. */
   bricks: {
     mass: 110,

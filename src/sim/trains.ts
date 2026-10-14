@@ -13,6 +13,8 @@ const ROAD_HALF = 8;
 const CLEAR_BEYOND = 2;
 const TRUCK_HALF_WIDTH = TRUCK.frame.half[0];
 const TRUCK_HALF_LENGTH = TRUCK.frame.half[2];
+/** A train that waits for the truck waits this far from the crossing, its middle: just out of sight in a siding. */
+const HOLD_BACK = 40;
 
 export interface Train {
   body: RAPIER.RigidBody;
@@ -30,6 +32,9 @@ interface Track {
   /** Where along X a train comes into being. */
   start: number;
   trains: Train[];
+  /** Its own clock: held at nought while it waits for the truck to come near. */
+  clock: number;
+  going: boolean;
 }
 
 const q = new Quaternion();
@@ -43,7 +48,6 @@ const side = new Vector3();
 export class Trains {
   readonly trains: Train[] = [];
   private readonly tracks: Track[] = [];
-  private time = 0;
 
   constructor(world: RAPIER.World, descs: TrackDesc[], minX: number, maxX: number) {
     descs.forEach((desc, index) => {
@@ -52,10 +56,11 @@ export class Trains {
       // warning; it runs until it is off the map on the other side.
       const lead = desc.speed * (WARNING_SECONDS + 1) + TRAIN_HALF.length + ROAD_HALF;
       const off = TRAIN_HALF.length * 2;
-      const start = desc.direction > 0 ? Math.min(minX - off, desc.watchX - lead) : Math.max(maxX + off, desc.watchX + lead);
+      // One that waits for the truck waits close by, so that it comes across in front of the truck however fast that comes.
+      const start = desc.await !== undefined ? desc.watchX - desc.direction * HOLD_BACK : desc.direction > 0 ? Math.min(minX - off, desc.watchX - lead) : Math.max(maxX + off, desc.watchX + lead);
       const end = desc.direction > 0 ? maxX + off : minX - off;
       const count = Math.ceil(Math.abs(end - start) / spacing);
-      const track: Track = { desc, spacing, loop: count * spacing, start, trains: [] };
+      const track: Track = { desc, spacing, loop: count * spacing, start, trains: [], clock: 0, going: desc.await === undefined };
       for (let i = 0; i < count; i++) {
         const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
         world.createCollider(
@@ -75,13 +80,21 @@ export class Trains {
     this.place(true);
   }
 
-  update(dt: number): void {
-    this.time += dt;
+  /** `truck` is where the truck is, for a track that waits for it. */
+  update(dt: number, truck?: { x: number; z: number }): void {
+    for (const track of this.tracks) {
+      const wait = track.desc.await;
+      if (!track.going && wait !== undefined && truck && Math.hypot(truck.x - track.desc.watchX, truck.z - track.desc.z) < wait) track.going = true;
+      if (track.going) track.clock += dt;
+    }
     this.place(false);
   }
 
   reset(): void {
-    this.time = 0;
+    for (const track of this.tracks) {
+      track.clock = 0;
+      track.going = track.desc.await === undefined;
+    }
     this.place(true);
   }
 
@@ -129,7 +142,7 @@ export class Trains {
     for (const track of this.tracks) {
       const { direction, speed, phase, z } = track.desc;
       track.trains.forEach((train, i) => {
-        const along = (phase * track.spacing + i * track.spacing + speed * this.time) % track.loop;
+        const along = (phase * track.spacing + i * track.spacing + speed * track.clock) % track.loop;
         const x = track.start + direction * along;
         const wrapped = Math.abs(x - train.x) > track.spacing / 2;
         train.x = x;

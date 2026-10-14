@@ -312,12 +312,33 @@ export interface SlickDesc {
 }
 
 /** A warning sign beside the road. Drawn large and tilted back, to be read from above. */
+/**
+ * One lesson of the tutorial: a single thing to do, said in a line at the top of the screen when the place for it comes up,
+ * and done when it has been done there.
+ */
+export interface LessonDesc {
+  /** The task, keys in <b>…</b>: as said to someone at the keyboard, and to someone holding a controller. */
+  keys: string;
+  pad: string;
+  /** Said under it as well, once the player has been at it a while, or has had to try it again. */
+  help: string;
+  /** Shown only once the truck is past this Z, going north; until then the line is left empty. */
+  from?: number;
+  /** A ring on the ground to make for, and the arrow pointing to it. */
+  goal?: Vec2;
+  /** Done once the truck is past this Z on the ground (or, given `stopBefore`, once it stands still short of that Z while a
+   *  crossing's lamps are on); once what was lying in the road is aboard and the driver back at the wheel; or on delivery. */
+  done: { pastZ: number; stopBefore?: number } | 'found' | 'delivered';
+  /** Where the truck is put back to try again after a mishap here, and the way it then faces (radians about Y, 0 = north). */
+  retry: { pos: Vec2; yaw: number };
+}
+
 export interface SignDesc {
   pos: Vec3;
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
   /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road; the name over a quarry's loading shed. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload';
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight';
   /** As a prop's: faded while the camera's line to the truck passes through this box. Upright name signs only. */
   fadeZone?: [Vec3, Vec3];
 }
@@ -337,6 +358,11 @@ export interface TrackDesc {
   phase: number;
   /** The X of the road that crosses it, where the signal watches for trains. */
   watchX: number;
+  /**
+   * Held close to the crossing, out of sight, until the truck comes this close to it, metres; then it comes across. Unset,
+   * the trains run from the start, one every period.
+   */
+  await?: number;
 }
 
 /** A signal at a crossing: red while a train is coming on its track, green otherwise. */
@@ -531,6 +557,13 @@ export interface LevelDef {
   stars: [number, number];
   /** The third star: two stars' worth delivered within this many seconds. */
   par: number;
+  /**
+   * A practice run, the tutorial: nothing ends it but the delivery. Down a hole, in the water, over on its roof, hit by a train:
+   * the game puts the truck back to try that part again. No stars, no par, no record.
+   */
+  practice?: boolean;
+  /** The tutorial's lessons, one after another: each shown when it is reached, done when its task is. */
+  lessons?: LessonDesc[];
   /** Things playing music, by their place in `objects`: notes rise from each until it is knocked over. */
   music?: number[];
   /** Places people do not walk into: a stage, a temple. */

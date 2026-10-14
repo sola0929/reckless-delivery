@@ -2,7 +2,10 @@ import { Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import { DRIVER, PHYSICS } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
+import { stepFocus } from './gamepad';
 import { Input } from './input';
+import { LessonGuide } from './lessons';
+import { finishLoading, setStage, settle } from './loading';
 import { GameAudio, type Material } from './audio';
 import { saveBest } from './best';
 import { playMusic, uiSound } from './jukebox';
@@ -34,13 +37,18 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 // ?level=sandbox opens the test course instead of the first level.
 const levelId = new URLSearchParams(location.search).get('level') ?? FIRST_LEVEL;
 const level = (LEVELS[levelId] ?? LEVELS[FIRST_LEVEL])();
+// The loading screen is moved on between the long pieces of setting up.
+setStage(1, 0.5);
+await settle();
 const sim = await Sim.create(level);
+setStage(2);
+await settle();
 const view = createView(canvas, level);
 const input = new Input(canvas);
 const hud = new Hud(level);
 // On ground that rises and falls, the view is from lower and further back, looking further ahead: from high above, a hill looks flat.
 const terrain = level.terrain;
-const chase = new ChaseCamera(view.camera, terrain ? { height: 9, distance: 13, lookAhead: 7, ground: (x, z) => heightAt(terrain, x, z, sim.truck.body.translation().y + 3) } : undefined);
+const chase = new ChaseCamera(view.camera, terrain ? { height: 9, distance: 13, lookAhead: 7, ground: (x, z, reach = 3) => heightAt(terrain, x, z, sim.truck.body.translation().y + reach) } : undefined);
 const graphics = new Graphics(view);
 // The switch in the pause menu: one of four, the one in force lit. On automatic it says what it has settled on.
 const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('#gfx-quality button')];
@@ -85,7 +93,18 @@ let engineTimer = 0;
 const bursts = new Bursts();
 view.scene.add(smoke.mesh, engineSmoke.mesh, wreckSmoke.mesh, bursts.mesh);
 
+setStage(2, 0.45);
+await settle();
 const objectsView = new ObjectsView(view.scene, sim.objects.objects);
+/** The tutorial's guide, on a level with lessons. */
+const guide = level.lessons ? new LessonGuide(level.lessons) : null;
+if (guide) {
+  view.scene.add(guide.ring);
+  guide.onLesson = () => uiSound('confirm');
+  document.getElementById('lesson-skip')!.addEventListener('click', () => {
+    location.search = '?level=hillcity';
+  });
+}
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
@@ -157,6 +176,22 @@ function skidding(drive: DriveInput, speed: number): number {
 }
 
 /** How close the nearest train is: 1 alongside, 0 at 80 m or more. */
+/** Running water, heard: the rivers' fords, as rectangles [x0, z0, x1, z1]. Pools, even those drawn drifting (the
+ *  settling ponds by the machines, the water under the temporary bridge), stand still enough to be silent. */
+const RUNNING: [number, number, number, number][] = (level.fords ?? [])
+  .filter((f) => f.flow[0] !== 0 || f.flow[1] !== 0)
+  .map((f) => [f.pos[0] - f.half[0], f.pos[1] - f.half[1], f.pos[0] + f.half[0], f.pos[1] + f.half[1]]);
+/** Heard from this far from the water's edge, metres. */
+const RIVER_EARSHOT = 30;
+/** How close the nearest running water is to whoever is being played, 0 to 1. */
+function riverNearness(): number {
+  if (!RUNNING.length) return 0;
+  const at = sim.driver.mode === 'driving' ? sim.truck.body.translation() : sim.driver.pos;
+  let nearest = Infinity;
+  for (const [x0, z0, x1, z1] of RUNNING) nearest = Math.min(nearest, Math.hypot(Math.max(0, x0 - at.x, at.x - x1), Math.max(0, z0 - at.z, at.z - z1)));
+  return Math.max(0, 1 - nearest / RIVER_EARSHOT);
+}
+
 function trainNearness(): number {
   const at = sim.truck.body.translation();
   let nearest = Infinity;
@@ -268,11 +303,17 @@ const SPLASH_REACH = 7;
 
 /** Something has just been sent flying: throw up whatever it is made of. */
 /** Things that sound of neither wood nor metal when hit. */
-const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa']);
+const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa',
+  // Sacks, plastic and straw.
+  'sandbag', 'cementBag', 'jerrycan', 'rallyPole', 'delineator', 'barrier', 'flagOrange', 'flagPurple', 'flagTeal', 'haystack']);
+/** Rubber: a dull bounce. */
+const RUBBER = new Set(['tyre', 'tyreStack']);
 /** Hollow metal: a boom rather than a ring. */
 const HOLLOW = new Set(['barrel', 'bin']);
 /** Rock. */
-const STONE = new Set(['boulder', 'rockSmall']);
+const STONE = new Set(['boulder', 'rockSmall', 'bricks']);
+/** Dead weight: a thump. */
+const WEIGHT = new Set(['gravelPile', 'culvert', 'culvertStack', 'pipe', 'concretePipe']);
 
 /** What a roadside object sounds like, from what it is. */
 function materialOfObject(object: KnockEvent['object']): Material {
@@ -280,9 +321,13 @@ function materialOfObject(object: KnockEvent['object']): Material {
   if (kind.effect === 'shards') return 'ceramic';
   if (kind.effect === 'leaves') return 'tree';
   if (kind.effect === 'splinters') return 'wood';
+  // Fruit (a melon in a field): a dull wet knock. Paint, the other thing full of juice, is in tins.
+  if (kind.juice !== undefined && !desc.kind.startsWith('paint')) return 'melon';
   if (HOLLOW.has(desc.kind)) return 'barrel';
-  // Stone: no ring to it, only the dead weight; the crash is the truck's, as against a wall.
-  if (STONE.has(desc.kind)) return 'heavy';
+  // Stone: no ring to it; stones clattering down.
+  if (STONE.has(desc.kind)) return 'stone';
+  if (WEIGHT.has(desc.kind)) return 'heavy';
+  if (RUBBER.has(desc.kind)) return 'rubber';
   return SOFT.has(desc.kind) ? 'soft' : 'metal';
 }
 
@@ -303,17 +348,28 @@ const cargoHush = new WeakMap<CargoItem, number>();
  */
 function worksite(): void {
   const t = sim.truck.body.translation();
+  const now = performance.now() / 1000;
+  // Of the grit trickling and the rocks landing, only the nearest of each is heard, and not again for a moment: several
+  // belts at once otherwise make one long clatter.
+  let tellNear = 0, rockNear = 0, rockSize = 0;
   for (const tell of sim.droppers.tells) {
     bursts.emit(splashAt.set(tell.x, tell.y - 0.5, tell.z), 'dust', 10, 0.8, 0.1, 0x9a9488);
     bursts.emit(splashAt, 'shards', 8, 0.5, 0, 0x8b8880);
-    const near = tell.first ? hearing(Math.hypot(tell.x - t.x, tell.z - t.z)) : 0;
-    if (near > 0) audio.knock('heavy', 0.25 + near * 0.3, 0.15);
+    if (tell.first) tellNear = Math.max(tellNear, hearing(Math.hypot(tell.x - t.x, tell.z - t.z)));
+  }
+  if (tellNear > 0 && now - tellHeard > TELL_HUSH) {
+    tellHeard = now;
+    audio.thud('stone', 0.1 + tellNear * 0.2, 0.1);
   }
   for (const rock of sim.droppers.breaks) {
     bursts.emit(splashAt.set(rock.x, rock.y, rock.z), 'dust', 26, 3.5, 1);
     bursts.emit(splashAt, 'shards', 18, 4.5, 1.4, 0x8b8880);
     const near = hearing(Math.hypot(rock.x - t.x, rock.z - t.z));
-    if (near > 0) audio.thud('heavy', Math.min(1, rock.size) * (0.4 + near * 0.6), 0.6);
+    if (near > rockNear) [rockNear, rockSize] = [near, rock.size];
+  }
+  if (rockNear > 0 && now - rockHeard > ROCK_HUSH) {
+    rockHeard = now;
+    audio.thud('stone', Math.min(1, rockSize) * (0.25 + rockNear * 0.45), 0.6);
   }
   for (const slam of sim.rigs.slams) {
     bursts.emit(splashAt.set(slam.x, slam.y, slam.z), 'dust', 30, 4, 0.6, 0x8a7a5e);
@@ -375,6 +431,9 @@ function worksite(): void {
   }
 }
 
+/** When grit trickling and a rock landing were last heard, and how long before the next of each may be. */
+let tellHeard = 0, rockHeard = 0;
+const TELL_HUSH = 1.5, ROCK_HUSH = 0.7;
 const hearing = (metres: number) => (metres > 45 ? 0 : 1 / (1 + metres / 15));
 
 /**
@@ -644,15 +703,55 @@ document.addEventListener('visibilitychange', () => {
 // The retry button on the result page does what R does.
 let retryAsked = false;
 hud.onRetry = () => {
-  retryAsked = true;
+  // At the end of the tutorial the button goes on to level 1.
+  if (level.practice && sim.result) location.search = '?level=hillcity';
+  else retryAsked = true;
 };
+
+/** Put everything back as it was at the start of the run. */
+function resetRun(): void {
+  setPaused(false);
+  bannerUp = true;
+  bannerAge = 0;
+  closeBanner = false;
+  sim.reset();
+  levelView.snap();
+  ridersView.snap();
+  machinesView.snap();
+  rigsView.snap();
+  truckSync.snap();
+  hud.hideResult();
+  hud.showBanner();
+  resultShown = false;
+  cargoViews.rebuild(sim);
+  objectsView.refresh();
+  wreckage.clear();
+  geysers.length = 0;
+  crackles.length = 0;
+  arcs.length = 0;
+  truckMesh.wash();
+  truckSync.apply(1);
+  chase.snap(truckMesh.root.position, truckHeading());
+  smoke.clear();
+  engineSmoke.clear();
+  wreckSmoke.clear();
+  bursts.clear();
+  pendingLoss.clear();
+  hud.clearPopups();
+  accumulator = 0;
+}
+/** A tutorial mishap being shown before the truck is put back: seconds left, and where it goes. */
+let mishapLeft = 0;
+let retrySpot: { pos: [number, number]; yaw: number } | null = null;
 
 /** Point the HUD arrow at the delivery bay, relative to the way the camera faces. */
 function navigate(): void {
-  const finish = level.finish;
-  if (!finish) return;
-  const dx = finish.pos[0] - truckMesh.root.position.x;
-  const dz = finish.pos[1] - truckMesh.root.position.z;
+  // In the tutorial, at what the lesson is about, when it has a place; at the bay otherwise.
+  const target = guide ? guide.goal(sim) ?? (guide.current?.done === 'delivered' ? level.finish?.pos : null) : level.finish?.pos;
+  hud.showNav(!!target);
+  if (!target) return;
+  const dx = target[0] - truckMesh.root.position.x;
+  const dz = target[1] - truckMesh.root.position.z;
   // Bearing to the bay, minus the camera's. +X is to the left of +Z, hence the sign.
   const angle = chase.viewYaw - Math.atan2(dx, dz);
   hud.navigate(angle, Math.hypot(dx, dz));
@@ -674,6 +773,23 @@ function footInput(first: boolean): FootInput {
   const moveX = Math.sin(yaw) * walk.forward - Math.cos(yaw) * walk.right;
   const moveZ = Math.cos(yaw) * walk.forward + Math.sin(yaw) * walk.right;
 
+  // With the controller, the right stick points the way to face, a few metres out.
+  if (input.usingPad) {
+    const stick = input.padAim();
+    const aim = stick && {
+      x: sim.driver.pos.x + (Math.sin(yaw) * stick.forward - Math.cos(yaw) * stick.right) * 5,
+      z: sim.driver.pos.z + (Math.cos(yaw) * stick.forward + Math.sin(yaw) * stick.right) * 5,
+    };
+    return {
+      moveX, moveZ, run: walk.run,
+      vehiclePressed: first && input.take('KeyC'),
+      grabPressed: first && input.take('KeyE'),
+      jumpPressed: first && input.take('Space'),
+      aim,
+      charging: input.charging(),
+      cancelPressed: first && input.takeRightClick(),
+    };
+  }
   // The point on the ground under the cursor, at the height of the driver's feet.
   pointer.set((input.mouseX / window.innerWidth) * 2 - 1, -(input.mouseY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(pointer, view.camera);
@@ -688,10 +804,13 @@ function footInput(first: boolean): FootInput {
     grabPressed: first && input.take('KeyE'),
     jumpPressed: first && input.take('Space'),
     aim: hit ? { x: hit.x, z: hit.z } : null,
-    charging: input.mouseDown,
+    charging: input.charging(),
     cancelPressed: first && input.takeRightClick(),
   };
 }
+
+/** A key's name in a hint: the keyboard's, or the controller's when that is what is being used. */
+const key = (keys: string, pad: string) => (input.usingPad ? pad : keys);
 
 /** The one-line hint about what the nearest action is. */
 function updatePrompt(): void {
@@ -706,16 +825,37 @@ function updatePrompt(): void {
       return hud.setPrompt(gravel ? '路面有砂石，小心打滑' : '路面有油，小心打滑', true);
     }
     const slow = Math.abs(truck.forwardSpeed()) < DRIVER.exitSpeed;
-    return hud.setPrompt(slow && sim.cargo.some((c) => c.fallen && c.body) ? '<b>C</b> 下車撿貨' : '');
+    // Something found lying along the way is only worth getting out for once it is close.
+    const t = truck.body.translation();
+    const toFetch = sim.cargo.some((c) => c.fallen && c.body && (!c.bonus || Math.hypot(c.body.translation().x - t.x, c.body.translation().z - t.z) < 20));
+    return hud.setPrompt(slow && toFetch ? `<b>${key('C', 'Y')}</b> 下車撿貨` : '');
   }
   if (driver.mode === 'down') return hud.setPrompt('被撞倒了…', true);
   if (driver.atLeash) return hud.setPrompt('離貨車太遠了', true);
   if (driver.tooHeavyLeft > 0) return hud.setPrompt('太重了，跳不起來', true);
-  if (driver.charge > 0) return hud.setPrompt('放開左鍵拋出　<b>右鍵</b> 取消');
-  if (driver.held) return hud.setPrompt('<b>按住左鍵</b> 蓄力拋出　<b>E</b> 放下');
-  if (driver.withinReach(truck, cargoSystem)) return hud.setPrompt('<b>E</b> 舉起');
-  if (driver.nearDoor(truck)) return hud.setPrompt('<b>C</b> 上車');
+  if (driver.charge > 0) return hud.setPrompt(`放開${key('左鍵', ' RT ')}拋出　<b>${key('右鍵', 'LT')}</b> 取消`);
+  if (driver.held) return hud.setPrompt(`<b>按住${key('左鍵', ' RT')}</b> 蓄力拋出　<b>${key('E', 'B')}</b> 放下`);
+  if (driver.withinReach(truck, cargoSystem)) return hud.setPrompt(`<b>${key('E', 'B')}</b> 舉起`);
+  if (driver.nearDoor(truck)) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車`);
   hud.setPrompt('');
+}
+
+/** Work the buttons of a page shown over the game with the controller. */
+function padMenu(page: HTMLElement, back?: () => void): void {
+  const { pad } = input;
+  if (!pad.connected) return;
+  const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled), input')].filter((b) => b.offsetParent !== null);
+  stepFocus(list, pad.takeStep());
+  const focused = document.activeElement as HTMLElement | null;
+  if (pad.take('a') && focused && list.includes(focused)) {
+    focused.click();
+    // What was pressed was a menu button, not the handbrake or a jump.
+    input.clearPresses();
+  }
+  if (pad.take('b') && back) {
+    back();
+    input.clearPresses();
+  }
 }
 
 function frame(now: number): void {
@@ -725,7 +865,11 @@ function frame(now: number): void {
   last = now;
   accumulator += dt;
 
+  input.poll();
   if (input.take('Escape') || input.take('KeyP')) setPaused(!paused);
+  // The controller in the pause menu and on the result page: the d-pad or stick moves along the buttons, A presses, B goes on.
+  if (paused) padMenu(document.getElementById('pause')!, () => setPaused(false));
+  else if (resultShown) padMenu(document.getElementById('result')!);
   if (paused && !retryAsked) {
     // Nothing moves; the picture stays as it was.
     accumulator = 0;
@@ -752,35 +896,33 @@ function frame(now: number): void {
 
   if (input.take('KeyR') || retryAsked) {
     retryAsked = false;
-    setPaused(false);
-    bannerUp = true;
-    bannerAge = 0;
-    closeBanner = false;
-    sim.reset();
-    levelView.snap();
-    ridersView.snap();
-    machinesView.snap();
-    rigsView.snap();
-    truckSync.snap();
-    hud.hideResult();
-    hud.showBanner();
-    resultShown = false;
-    cargoViews.rebuild(sim);
-    objectsView.refresh();
-    wreckage.clear();
-    geysers.length = 0;
-    crackles.length = 0;
-    arcs.length = 0;
-    truckMesh.wash();
-    truckSync.apply(1);
-    chase.snap(truckMesh.root.position, truckHeading());
-    smoke.clear();
-    engineSmoke.clear();
-    wreckSmoke.clear();
-    bursts.clear();
-    pendingLoss.clear();
-    hud.clearPopups();
-    accumulator = 0;
+    resetRun();
+    guide?.restart();
+  }
+
+  // The tutorial: a mishap puts the truck back to try that part again, after a moment to see what happened.
+  if (guide && !mishapLeft) {
+    const mishap = sim.takeMishap();
+    if (mishap) {
+      mishapLeft = mishap === 'train' ? 1.4 : 0.5;
+      retrySpot = guide.mishap();
+    }
+  } else if (guide && mishapLeft > 0) {
+    mishapLeft -= dt;
+    // Dark for the last moment before it is put back, and light again after.
+    if (mishapLeft < 0.45) document.getElementById('fade')!.classList.add('on');
+    if (mishapLeft <= 0) {
+      mishapLeft = 0;
+      resetRun();
+      if (retrySpot) {
+        sim.teleport(retrySpot.pos[0], retrySpot.pos[1], retrySpot.yaw);
+        truckSync.snap();
+        cargoViews.snap();
+        truckSync.apply(1);
+        chase.snap(truckMesh.root.position, truckHeading());
+      }
+      document.getElementById('fade')!.classList.remove('on');
+    }
   }
 
   bannerAge += dt;
@@ -968,9 +1110,12 @@ function frame(now: number): void {
   knockedWeight = -1;
   audio.update(dt, {
     speed, throttle: sim.result ? 0 : drive.throttle, boosting: sim.truck.boosting, driving: !onFoot,
-    skid: onFoot ? 0 : skidding(drive, speed), train: trainNearness(), bell: bellRinging(),
+    skid: onFoot ? 0 : skidding(drive, speed), train: trainNearness(), bell: bellRinging(), river: riverNearness(),
   });
-  chase.addZoom(input.takeWheel());
+  // On foot, the right stick aims rather than zooms or looks round; the right button cancels a throw.
+  chase.addZoom(input.takeWheel(!onFoot));
+  const lookDrag = input.takeLookDrag();
+  if (!onFoot) chase.lookAround(lookDrag, input.rightDown, input.pad.rightX);
   if (!debug.freeze) chase.update(dt, focus, onFoot ? null : truckHeading(), speed, sim.truck.boosting);
   if (!onFoot) {
     emitSmoke(dt, drive, speed);
@@ -984,9 +1129,13 @@ function frame(now: number): void {
   levelView.update(dt, view.camera, focus);
   aimSun(view, focus);
 
-  hud.setMode(onFoot);
-  hud.update(speed, sim.cargoOnTruck(), sim.cargo.length, sim.cargoValue(), sim.fullValue, sim.time);
+  hud.setMode(onFoot, input.usingPad);
+  // Something found along the way counts toward the load once it is aboard, not while it still lies where it was found.
+  hud.update(speed, sim.cargoOnTruck(), sim.cargo.filter((c) => !c.bonus || !c.fallen).length, sim.cargoValue(), sim.fullValue, sim.time);
   updatePrompt();
+  guide?.update(dt, sim, input.usingPad);
+  // The bay only takes the load once the last lesson, delivering, is the one being taught.
+  if (guide) sim.finishShut = !!guide.current && guide.current.done !== 'delivered';
   navigate();
   const fallen = sim.cargo.filter((c) => c.fallen && c.body && !c.held).map((c) => ({ x: c.lastPos.x, z: c.lastPos.z }));
   minimap.update(
@@ -1016,4 +1165,10 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
+// Every material the level uses made ready to draw before the first frame, not during the first seconds of driving.
+setStage(2, 0.8);
+await settle();
+view.renderer.compile(view.scene, view.camera);
+await finishLoading();
+last = performance.now();
 requestAnimationFrame(frame);

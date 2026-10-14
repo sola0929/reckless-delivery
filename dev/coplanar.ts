@@ -1,7 +1,8 @@
 // Level 3's scenery: boxes that share a face with another box over some area, which draw flickering against each other.
 // Only unturned boxes and boxes turned about Y alike. npx tsx dev/coplanar.ts
-import { quarry } from '../src/levels/quarry';
-const l = quarry();
+import { LEVELS } from '../src/levels';
+// Level 3 unless another is named: LEVEL=tutorial npx tsx ...
+const l = LEVELS[process.env.LEVEL ?? 'quarry']();
 type B = { p: number[]; h: number[]; yaw: number; i: number };
 const boxes: B[] = [];
 l.props.forEach((p, i) => {

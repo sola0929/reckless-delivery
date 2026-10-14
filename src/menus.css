@@ -532,6 +532,12 @@ body.in-menu #hud {
   translate: 0 -50%;
 }
 
+/* The tutorial's strip, above the deliveries. */
+.tutorial-strip { margin: 0 0 14px; }
+.level-thumb.tutorial { background: linear-gradient(160deg, #3f8f6a, #ffd166); }
+.level-thumb.tutorial span { font-size: 20px; letter-spacing: 2px; }
+.offer-note { margin: 0 0 18px; max-width: 420px; font-size: 15px; line-height: 1.7; opacity: 0.85; }
+
 /* The controls, as keys and what they do. Used on the menu and in the pause menu. */
 .keys {
   display: grid;
@@ -859,4 +865,313 @@ body.in-menu #hud {
   font-size: 13px;
   line-height: 1.6;
   opacity: 0.6;
+}
+
+/* ---------- On a phone or tablet: a note that the game wants a keyboard or a controller. ---------- */
+
+#phone-note {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 11, 17, 0.86);
+}
+#phone-note[hidden] { display: none; }
+.phone-card {
+  max-width: 360px;
+  padding: 22px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: #fff;
+  line-height: 1.6;
+}
+.phone-title {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 700;
+}
+.phone-card p { margin: 0 0 10px; font-size: 15px; }
+#phone-go {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+/* ---------- Loading a level: the truck drives from the warehouse to the bay as the game comes in. ---------- */
+
+#loading {
+  --progress: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  color: #fff;
+  background: radial-gradient(120% 80% at 50% 0%, #26364d 0%, #131a24 70%);
+  transition: opacity 0.4s ease;
+}
+#loading[hidden] { display: none; }
+#loading.out { opacity: 0; }
+
+/* The menu's skyline, at dusk, standing along the road across the whole width and sliding by while the truck drives. */
+.lt-city {
+  position: absolute;
+  left: 50%;
+  bottom: 54px;
+  width: 100vw;
+  height: 150px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.lt-city > div {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+}
+.lt-city .far { height: 100%; opacity: 0.22; background-size: 520px 100%; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 300' preserveAspectRatio='none'%3E%3Cg fill='%23566f8c'%3E%3Crect x='0' y='120' width='70' height='180'/%3E%3Crect x='80' y='60' width='55' height='240'/%3E%3Crect x='145' y='150' width='90' height='150'/%3E%3Crect x='245' y='30' width='60' height='270'/%3E%3Crect x='315' y='110' width='80' height='190'/%3E%3Crect x='405' y='170' width='70' height='130'/%3E%3Crect x='485' y='80' width='65' height='220'/%3E%3Crect x='560' y='140' width='85' height='160'/%3E%3Crect x='655' y='95' width='60' height='205'/%3E%3C/g%3E%3C/svg%3E"); animation: slide 60s linear infinite; }
+.lt-city .near { height: 70%; opacity: 0.38; background-size: 640px 100%; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 240' preserveAspectRatio='none'%3E%3Cg fill='%23324a63'%3E%3Crect x='0' y='90' width='110' height='150'/%3E%3Crect x='125' y='40' width='80' height='200'/%3E%3Crect x='220' y='120' width='130' height='120'/%3E%3Crect x='365' y='70' width='90' height='170'/%3E%3Crect x='470' y='130' width='120' height='110'/%3E%3Crect x='605' y='20' width='85' height='220'/%3E%3Crect x='705' y='100' width='110' height='140'/%3E%3Crect x='830' y='150' width='70' height='90'/%3E%3C/g%3E%3Cg fill='%23ffd98a' opacity='.7'%3E%3Crect x='140' y='60' width='10' height='14'/%3E%3Crect x='170' y='60' width='10' height='14'/%3E%3Crect x='140' y='100' width='10' height='14'/%3E%3Crect x='380' y='90' width='10' height='14'/%3E%3Crect x='420' y='130' width='10' height='14'/%3E%3Crect x='620' y='40' width='10' height='14'/%3E%3Crect x='650' y='80' width='10' height='14'/%3E%3Crect x='620' y='120' width='10' height='14'/%3E%3Crect x='30' y='110' width='10' height='14'/%3E%3Crect x='730' y='120' width='10' height='14'/%3E%3C/g%3E%3C/svg%3E"); animation: slide 26s linear infinite; }
+.lt-city .ground { height: 30px; bottom: -30px; background: linear-gradient(rgba(143, 150, 158, 0.18), transparent); }
+#loading:not(.moving) .lt-city > div { animation-play-state: paused; }
+
+.lt-column {
+  position: relative;
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.lt-logo {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  transform: skewX(-7deg);
+  text-shadow: 3px 3px 0 #d2452b;
+  opacity: 0.9;
+}
+.lt-logo span { color: var(--accent); }
+
+#loading-level {
+  min-height: 112px;
+  margin-top: 26px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+#loading-level.in { opacity: 1; transform: none; }
+#loading-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+#loading-name {
+  margin-top: 10px;
+  font-size: clamp(30px, 6vw, 46px);
+  font-weight: 900;
+  letter-spacing: 4px;
+}
+#loading-note {
+  margin-top: 6px;
+  font-size: 15px;
+  opacity: 0.7;
+}
+
+/* The road: the depot at one end, the bay at the other, the stages as posts beside it. */
+.lt-route {
+  position: relative;
+  width: 100%;
+  height: 170px;
+  margin-top: 18px;
+}
+.lt-depot {
+  position: absolute;
+  left: -6px;
+  bottom: 62px;
+  width: 58px;
+  opacity: 0.9;
+}
+.lt-bay {
+  position: absolute;
+  right: -4px;
+  bottom: 50px;
+  width: 54px;
+}
+.lt-bay-label {
+  position: absolute;
+  right: -10px;
+  bottom: 132px;
+  width: 66px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.lt-track {
+  position: absolute;
+  left: 40px;
+  right: 48px;
+  bottom: 50px;
+  height: 80px;
+}
+.lt-truck {
+  position: absolute;
+  bottom: -6px;
+  width: 152px;
+  left: calc(var(--progress) * (100% - 152px));
+  filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.4));
+}
+#loading.moving .lt-truck .body { animation: bounce 0.42s ease-in-out infinite alternate; }
+#loading.moving .lt-truck .wheel { transform-box: fill-box; transform-origin: center; animation: spin 0.5s linear infinite; }
+#loading.moving .lt-truck .load > * { transform-box: fill-box; transform-origin: 50% 100%; animation: jostle 0.42s ease-in-out infinite alternate; }
+#loading.moving .lt-truck .load > :nth-child(2n) { animation-delay: -0.2s; }
+#loading .lt-truck .body { animation: idle 0.18s ease-in-out infinite alternate; }
+
+@keyframes idle {
+  to { transform: translateY(1.5px); }
+}
+
+.lt-road {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+  height: 22px;
+  border-radius: 6px;
+  background: #3d434c;
+  border-top: 4px solid #8f969e;
+  overflow: hidden;
+}
+.lt-road::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, #f0f0ea 0 22px, transparent 22px 46px);
+  opacity: 0.8;
+}
+/* The way already come, lit. */
+.lt-done {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(40px + var(--progress) * (100% - 88px));
+  background: linear-gradient(90deg, rgba(255, 209, 102, 0.12), rgba(255, 209, 102, 0.45));
+}
+
+#loading-posts {
+  position: absolute;
+  left: 40px;
+  right: 48px;
+  bottom: 0;
+  height: 26px;
+}
+#loading-posts .post {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 12px;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.3s ease;
+}
+#loading-posts .post i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin: 0 auto 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.3s ease, transform 0.3s ease;
+}
+#loading-posts .post.passed { color: rgba(255, 255, 255, 0.75); }
+#loading-posts .post.passed i { background: var(--accent); }
+#loading-posts .post.current { color: var(--accent); font-weight: 700; }
+#loading-posts .post.current i { background: var(--accent); transform: scale(1.5); box-shadow: 0 0 0 4px rgba(255, 209, 102, 0.25); }
+
+.lt-status {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 18px;
+}
+.lt-status b {
+  font-size: 40px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.lt-status b small { font-size: 20px; margin-left: 2px; }
+#loading-stage { font-size: 17px; letter-spacing: 1px; opacity: 0.85; }
+
+.lt-tip {
+  width: min(560px, 100%);
+  margin-top: 22px;
+  padding: 14px 18px;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  text-align: left;
+}
+.lt-tip span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+.lt-tip p {
+  min-height: 3em;
+  margin: 6px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.lt-tip p.in { opacity: 0.9; }
+
+.lt-back {
+  margin-top: 18px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+}
+.lt-back:hover { color: #fff; }
+
+/* On a narrow screen the posts' names crowd: only the one now is named. */
+@media (max-width: 560px) {
+  #loading-posts .post span { display: none; }
+  #loading-posts .post.current span { display: inline; }
+  .lt-truck { width: 112px; left: calc(var(--progress) * (100% - 112px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #loading .lt-truck *, #loading .lt-truck .body, .lt-city > div { animation: none !important; }
 }

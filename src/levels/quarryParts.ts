@@ -285,7 +285,8 @@ export function dike(s: Site, C: number, z0: number, y: number): (dz: number, si
       s.object('sandbag', x, zz, Math.PI / 2 + yaw, top);
     }
   }
-  for (const dz of [26, 112]) s.object('pumpSet', eastAt(dz) + 1.2, z0 + dz, 0, top);
+  // Pumps standing ready on the dike's top, just inside its east edge (past it they would hang over the bank).
+  for (const dz of [26, 112]) s.object('pumpSet', eastAt(dz) - 0.9, z0 + dz, 0, top);
   return along;
 }
 

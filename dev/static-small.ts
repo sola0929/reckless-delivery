@@ -1,8 +1,9 @@
 // Level 3: small solid props near where the truck can get, that look like things to knock over but are fixed: the rule is
 // that what looks knockable is knockable. Lists solid props no bigger than a small machine within reach of the driven ways.
 // npx tsx dev/static-small.ts [minZ]
-import { quarry } from '../src/levels/quarry';
-const l = quarry();
+import { LEVELS } from '../src/levels';
+// Level 3 unless another is named: LEVEL=tutorial npx tsx ...
+const l = LEVELS[process.env.LEVEL ?? 'quarry']();
 const minZ = Number(process.argv[2] ?? -1e9);
 /** How far from the level's route a thing may be and still be met: 12 m, or as given. */
 const NEAR = Number(process.argv[3] ?? 12);

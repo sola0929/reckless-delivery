@@ -3,9 +3,10 @@
 // npx tsx dev/quarry-float.ts
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GROUP, groups } from '../src/config';
-import { quarry } from '../src/levels/quarry';
+import { LEVELS } from '../src/levels';
 import { Sim } from '../src/sim/sim';
-const l = quarry();
+// Level 3 unless another is named: LEVEL=tutorial npx tsx ...
+const l = LEVELS[process.env.LEVEL ?? 'quarry']();
 const sim = await Sim.create({ ...l, crowds: [], traffic: [] });
 sim.step({ throttle: 0, steer: 0, handbrake: true });
 /** The top of whatever fixed is under a place, from a little above the height given. */

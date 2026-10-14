@@ -55,6 +55,16 @@ export interface Tally {
 }
 
 /** How a delivery turned out. */
+/** What the run did on the way, besides to its own load. */
+export interface Trip {
+  /** People run down or knocked off their scooters. */
+  people: number;
+  /** Cars knocked out of the traffic. */
+  cars: number;
+  /** Loose things sent flying, of those set out along the way (not the ones that come rolling of themselves). */
+  things: number;
+}
+
 export interface Result {
   /** Value of the cargo still on the truck at the delivery bay. */
   value: number;
@@ -67,6 +77,7 @@ export interface Result {
   failure?: Failure;
   /** What became of each item of the load. */
   tally: Tally;
+  trip: Trip;
 }
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
@@ -160,6 +171,7 @@ export class Sim {
   started: boolean;
   /** How many times the truck has been set back on its wheels after overturning. */
   rightings = 0;
+  private mishap: Failure | 'train' | null = null;
   /**
    * How battered the truck is, 0 to 100. For show only: it drives the same however it looks.
    */
@@ -167,6 +179,8 @@ export class Sim {
   /** Set once the load has been delivered. */
   result: Result | null = null;
   private dwell = 0;
+  /** Set while the bay is not yet to be delivered to: in the tutorial, until what was found in the road is aboard. */
+  finishShut = false;
   private inPit = 0;
   private struck = 0;
   private readonly truckVel = { x: 0, y: 0, z: 0 };
@@ -290,7 +304,7 @@ export class Sim {
     this.flung -= PHYSICS.dt;
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
     this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.riders, this.trains, !this.result);
-    this.trains.update(PHYSICS.dt);
+    this.trains.update(PHYSICS.dt, this.truck.body.translation());
     this.struck -= PHYSICS.dt;
     const train = this.struck <= 0 ? this.trains.striking(this.truck) : null;
     if (train) this.strike(train);
@@ -466,7 +480,8 @@ export class Sim {
     const turn = facing.clone().multiply(new Quaternion(r.x, r.y, r.z, r.w).invert());
     const still = { x: 0, y: 0, z: 0 };
     for (const item of this.cargo) {
-      if (!item.body) continue;
+      // Only what is aboard goes with it: what lies along the way, or has fallen off, stays where it is.
+      if (!item.body || !this.truck.isOnBed(item.body.translation())) continue;
       const p = item.body.translation();
       const q = item.body.rotation();
       const at = new Vector3(p.x - from.x, p.y - from.y, p.z - from.z).applyQuaternion(turn).add(to);
@@ -570,6 +585,15 @@ export class Sim {
   }
 
   /** Count the load by the state each item is in right now. */
+  trip(): Trip {
+    const set = this.level.objects?.length ?? 0;
+    return {
+      people: this.pedestrians.hits + this.riders.hits,
+      cars: this.traffic.hits,
+      things: this.objects.objects.slice(0, set).filter((o) => o.knocked).length,
+    };
+  }
+
   tally(): Tally {
     const tally: Tally = { intact: 0, damaged: 0, destroyed: 0, lost: 0 };
     for (const c of this.cargo) {
@@ -617,6 +641,7 @@ export class Sim {
     this.cargoSystem.load(this.level.cargo, this.level.spawn, this.level.heading);
     this.driver.reset();
     this.trains.reset();
+    this.mishap = null;
     this.objects.reset();
     this.rollers.reset();
     this.pedestrians.reset();
@@ -725,6 +750,7 @@ export class Sim {
    * was nearer, with its load: no failure in itself, though what is left afterwards may be.
    */
   private strike(track: TrackDesc): void {
+    if (this.level.practice) this.mishap ??= 'train';
     const body = this.truck.body;
     const t = body.translation();
     const side = t.z < track.z ? -1 : 1;
@@ -900,14 +926,31 @@ export class Sim {
     return best;
   }
 
+  /**
+   * What went wrong, on a practice run, where nothing ends the run: the game puts the truck back to try again. Taken once.
+   */
+  takeMishap(): Failure | 'train' | null {
+    const m = this.mishap;
+    this.mishap = null;
+    return m;
+  }
+
   private fail(failure: Failure): void {
-    this.result ??= { value: 0, fraction: 0, stars: 0, seconds: this.time, failure, tally: this.tally() };
+    if (this.level.practice) {
+      this.mishap ??= failure;
+      this.inPit = 0;
+      return;
+    }
+    this.result ??= { value: 0, fraction: 0, stars: 0, seconds: this.time, failure, tally: this.tally(), trip: this.trip() };
   }
 
   private checkDelivery(): void {
     const finish = this.level.finish;
     // The driver has to be in the cab: parking in the bay and wandering off doesn't count.
-    if (!finish || this.driver.mode !== 'driving') return;
+    if (!finish || this.driver.mode !== 'driving' || this.finishShut) {
+      this.dwell = 0;
+      return;
+    }
     const t = this.truck.body.translation();
     const inside = Math.abs(t.x - finish.pos[0]) < finish.half[0] && Math.abs(t.z - finish.pos[1]) < finish.half[1] && (finish.above === undefined || t.y > finish.above);
     this.dwell = inside && Math.abs(this.truck.forwardSpeed()) < DELIVERY_SPEED ? this.dwell + PHYSICS.dt : 0;
@@ -921,6 +964,7 @@ export class Sim {
       stars: starsFor(this.level, fraction, this.time),
       seconds: this.time,
       tally: this.tally(),
+      trip: this.trip(),
     };
   }
 }

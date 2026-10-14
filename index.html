@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
     <title>胡鬧快遞</title>
+    <meta name="description" content="開著小貨車穿過城市、山城和砂石場，把一車貨送到卸貨區。保證送達，不保證完整。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="胡鬧快遞" />
+    <meta property="og:description" content="開著小貨車穿過城市、山城和砂石場，把一車貨送到卸貨區。保證送達，不保證完整。" />
+    <meta property="og:url" content="https://sola0929.github.io/reckless-delivery/" />
+    <meta property="og:image" content="https://sola0929.github.io/reckless-delivery/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="/src/styles.css" />
     <link rel="stylesheet" href="/src/menus.css" />
   </head>
@@ -33,6 +42,13 @@
         <div id="banner-list"></div>
         <div id="banner-foot"></div>
       </div>
+      <div id="lesson" hidden>
+        <div class="lesson-head"><span id="lesson-step"></span><span class="lesson-tag">新手上路</span><button id="lesson-skip" type="button">跳過教學 ›</button></div>
+        <div id="lesson-text"></div>
+        <div id="lesson-help" hidden></div>
+        <div class="lesson-tick">✓</div>
+      </div>
+      <div id="fade"></div>
       <canvas id="minimap"></canvas>
       <div id="popups"></div>
       <div class="panel" id="result" hidden>
@@ -102,6 +118,7 @@
             <kbd>Esc</kbd><span>暫停</span>
             <kbd>R</kbd><span>重來</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
             </div>
           </div>
         </div>
@@ -148,7 +165,15 @@
           <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
           <button class="menu-item" data-page="menu-settings" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
           <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
-          <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b>Enter</b> 確定</div>
+          <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b>Enter</b><span class="pad-only"> / <b>A</b></span> 確定</div>
+        </div>
+
+        <div class="menu-page" id="menu-offer" hidden>
+          <div class="page-title">第一次玩嗎？</div>
+          <p class="offer-note">先到「新手上路」練習開車、煞車、飛越斷橋和下車撿貨，大約兩分鐘。之後也可以從「關卡選擇」再進去。</p>
+          <button class="menu-item primary" id="offer-tutorial" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>先去新手上路</button>
+          <button class="menu-item" id="offer-skip" type="button"><svg viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zm8 0l8 7-8 7z"/></svg>直接開始第 1 關</button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
         </div>
 
         <div class="menu-page" id="menu-levels" hidden>
@@ -197,9 +222,53 @@
             <kbd>Esc</kbd><span>暫停</span>
             <kbd>R</kbd><span>重來</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            <h4 class="pad-only">手把</h4>
+            <kbd class="pad-only">RT / LT</kbd><span class="pad-only">油門／煞車、倒車</span>
+            <kbd class="pad-only">左搖桿</kbd><span class="pad-only">轉向；下車時移動</span>
+            <kbd class="pad-only">X</kbd><span class="pad-only">急加速；下車時奔跑</span>
+            <kbd class="pad-only">A</kbd><span class="pad-only">手煞車；下車時跳躍</span>
+            <kbd class="pad-only">LB</kbd><span class="pad-only">喇叭</span>
+            <kbd class="pad-only">Y</kbd><span class="pad-only">上下車</span>
+            <kbd class="pad-only">B</kbd><span class="pad-only">舉起、放下貨物</span>
+            <kbd class="pad-only">右搖桿</kbd><span class="pad-only">開車時左右轉視角、上下拉近拉遠；下車時瞄準</span>
+            <kbd class="pad-only">RT</kbd><span class="pad-only">下車時按住蓄力，放開拋出；LT 取消</span>
+            <kbd class="pad-only">Start / Back</kbd><span class="pad-only">暫停／重來</span>
           </div>
           <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
         </div>
+      </div>
+    </div>
+    <div id="loading" hidden>
+      <div class="lt-column">
+        <div class="lt-logo">胡鬧<span>快遞</span></div>
+        <div id="loading-level">
+          <span id="loading-badge"></span>
+          <div id="loading-name"></div>
+          <div id="loading-note"></div>
+        </div>
+        <div class="lt-route">
+          <div class="lt-city"><div class="far"></div><div class="near"></div><div class="ground"></div></div>
+          <svg class="lt-depot" viewBox="0 0 64 56" aria-hidden="true"><path d="M2 22 32 4l30 18v32H2z" fill="#324a63"/><path d="M2 22 32 4l30 18" fill="none" stroke="#8f969e" stroke-width="4" stroke-linejoin="round"/><rect x="14" y="28" width="36" height="26" fill="#5a616b"/><path d="M14 33h36M14 38h36M14 43h36M14 48h36" stroke="#3d434c" stroke-width="2"/></svg>
+          <svg class="lt-bay" viewBox="0 0 64 80" aria-hidden="true"><rect x="8" y="10" width="4" height="70" fill="#c8ccd0"/><rect x="52" y="10" width="4" height="70" fill="#c8ccd0"/><rect x="4" y="6" width="56" height="20" rx="3" fill="#ffd166"/><path d="M10 26 18 6h6l-8 20zm16 0 8-20h6l-8 20zm16 0 8-20h6l-8 20z" fill="#131a24" opacity=".85"/></svg>
+          <div class="lt-bay-label">卸貨區</div>
+          <div class="lt-track">
+            <svg class="lt-truck" viewBox="0 0 380 200" aria-hidden="true"><g class="body"><g class="load"><rect x="196" y="14" width="34" height="78" rx="3" fill="#e9ecee" stroke="#b9c0c6" stroke-width="2"/><rect x="152" y="22" width="40" height="70" rx="2" fill="#8a5a34" stroke="#6a4326" stroke-width="2"/><rect x="104" y="54" width="40" height="38" fill="#b98a55" stroke="#8a6238" stroke-width="3"/><rect x="70" y="62" width="30" height="30" fill="#d9b36c" stroke="#a8843f" stroke-width="3"/><circle cx="46" cy="78" r="14" fill="#3f8f45" stroke="#1f5a2a" stroke-width="3"/><rect x="112" y="24" width="26" height="28" fill="#d9b36c" stroke="#a8843f" stroke-width="3"/></g><rect x="22" y="92" width="222" height="30" rx="3" fill="#e2532f"/><rect x="22" y="92" width="222" height="7" fill="#b23f22"/><rect x="18" y="120" width="238" height="16" fill="#2a2f36"/><path d="M248 136V66q0-10 10-10h52q12 0 18 12l14 30q4 8 4 16v22z" fill="#e2532f"/><path d="M270 68h38q6 0 9 6l11 24h-58z" fill="#1b2a3a"/><rect x="248" y="50" width="62" height="8" rx="3" fill="#b23f22"/><rect x="336" y="126" width="22" height="12" rx="3" fill="#d0d4d8"/><rect x="338" y="108" width="10" height="9" rx="2" fill="#fff3c2"/><rect x="262" y="104" width="3" height="30" fill="#b23f22"/></g><g class="wheel"><circle cx="84" cy="150" r="26" fill="#17181a"/><circle cx="84" cy="150" r="11" fill="#c8ccd0"/><rect x="82" y="128" width="4" height="44" fill="#17181a"/></g><g class="wheel"><circle cx="296" cy="150" r="26" fill="#17181a"/><circle cx="296" cy="150" r="11" fill="#c8ccd0"/><rect x="294" y="128" width="4" height="44" fill="#17181a"/></g></svg>
+          </div>
+          <div class="lt-road"><div class="lt-done"></div></div>
+          <div id="loading-posts"></div>
+        </div>
+        <div class="lt-status"><b><span id="loading-percent">0</span><small>%</small></b><span id="loading-stage">下載貨單…</span></div>
+        <div class="lt-tip"><span>小提示</span><p id="loading-tip-text"></p></div>
+        <a class="lt-back" href="./">返回主選單</a>
+      </div>
+    </div>
+    <script>if (new URLSearchParams(location.search).get('level')) document.getElementById('loading').hidden = false;</script>
+    <div id="phone-note" hidden>
+      <div class="phone-card">
+        <div class="phone-title">請用電腦遊玩</div>
+        <p>這個遊戲要用鍵盤<span class="pad-only">或手把</span>操作，手機和平板目前沒有觸控按鍵，畫面也可能跑不順。</p>
+        <p>建議改用電腦開啟這個網址<span class="pad-only">；手機接上藍牙手把也可以玩</span>。</p>
+        <button type="button" id="phone-go">我知道了，仍要繼續</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

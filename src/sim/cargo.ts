@@ -10,6 +10,11 @@ export interface CargoPlacement {
   pos: Vec3;
   /** Turn about the vertical axis, radians. */
   rotY?: number;
+  /**
+   * Lying about somewhere along the way rather than loaded: `pos` is then where it lies in the world, and it is extra, not part
+   * of the load. Off the truck it counts for nothing; brought aboard, it adds its worth.
+   */
+  found?: boolean;
 }
 
 /** A loose piece that has come off an item. Worth nothing, but still gets in the way. */
@@ -182,10 +187,10 @@ export class CargoSystem {
 
     for (const place of placements) {
       const type: CargoType = CARGO_TYPES[place.type];
-      q.setFromEuler(e.set(0, heading + (place.rotY ?? 0), 0));
-      // Where it sits in the world, given which way the truck faces.
-      v.set(...place.pos).applyAxisAngle(UP, heading);
-      const at = { x: truckPos[0] + v.x, y: truckPos[1] + v.y, z: truckPos[2] + v.z };
+      q.setFromEuler(e.set(0, (place.found ? 0 : heading) + (place.rotY ?? 0), 0));
+      // Where it sits in the world, given which way the truck faces; or where it lies, found along the way.
+      v.set(...place.pos).applyAxisAngle(UP, place.found ? 0 : heading);
+      const at = place.found ? { x: v.x, y: v.y, z: v.z } : { x: truckPos[0] + v.x, y: truckPos[1] + v.y, z: truckPos[2] + v.z };
       // No CCD on cargo: riding a fast-moving bed, it stalls the items in world space
       // and they slide out through the tailgate.
       const body = this.world.createRigidBody(
@@ -195,6 +200,7 @@ export class CargoSystem {
       );
       const item = new CargoItem(type, body);
       item.lastPos.set(at.x, at.y, at.z);
+      if (place.found) item.bonus = item.fallen = true;
 
       const add = (desc: RAPIER.ColliderDesc, mass: number): RAPIER.Collider => {
         desc

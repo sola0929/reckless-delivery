@@ -572,7 +572,7 @@ export function quarry(): LevelDef {
   // Culverts stacked at the outside of the first bend, one rolled off; pipes left lying in the way past the loader.
   object('culvertStack', bend1[0] + 6, bend1[1] + 2, 0);
   object('culvert', bend1[0] + 3.5, bend1[1] + 5.5, 0.6);
-  for (const [dx, dz, yaw] of [[-9, 1.2, 0.2], [-13, -1.6, -0.3]] as const) object('pipe', work[0] + dx, work[1] + dz, yaw);
+  for (const [dx, dz, yaw] of [[-9, 1.2, 0.2], [-13, -1.6, -0.3]] as const) object('concretePipe', work[0] + dx, work[1] + dz, yaw);
   object('chevron', bend1[0] + 4.4, bend1[1] + 4.4, -Math.PI / 4);
   object('chevron', bend2[0] - 4.4, bend2[1] - 4.4, Math.PI * 0.75);
 

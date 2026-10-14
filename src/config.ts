@@ -162,4 +162,22 @@ export const CAMERA = {
   handoverFollow: 9,
   minZoom: 0.5,
   maxZoom: 2.2,
+  // Looking round while driving: radians per pixel dragged with the right button, the furthest round it goes
+  // (the controller's right stick, pushed all the way, goes that far), and how fast it swings back when let go.
+  lookPerPixel: 0.006,
+  lookMax: 2.7,
+  lookStickFollow: 6,
+  lookReturn: 3,
+  // A drop ahead (on levels with hills): looked for this far ahead, metres; counted from this deep; the camera
+  // rises so much per metre of it, up to a limit, and aims this share of the way down it; how fast it eases.
+  dropScan: [8, 14, 20, 26],
+  dropFrom: 1.5,
+  dropLift: 0.7,
+  dropLiftMax: 9,
+  dropAim: 0.5,
+  dropFollow: 2,
+  // A rise ahead: the camera aims this share of the way up it, so a slope climbed is seen to its top.
+  riseAim: 0.5,
+  // Steeper than this, rise over run, the ground ahead is a wall or an edge, not a slope.
+  slopeMost: 0.5,
 };
