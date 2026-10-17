@@ -3,7 +3,7 @@ import { plots, seat } from './plots';
 import { Relief, type Look, type RibbonPoint } from './relief';
 import { standardLoad } from './sandbox';
 import { heightAt } from './terrain';
-import type { DecalDesc, LevelDef, PropDesc, TrafficLane, Vec2 } from './types';
+import { type DecalDesc, type LevelDef, type PropDesc, type TrafficLane, type Vec2, STARS } from './types';
 
 // A proving ground for what a slope can be made into.
 //
@@ -166,7 +166,7 @@ export function slopes(): LevelDef {
     rollers: [{ from: [-HALF + 1, HEAD - 3], to: [HALF - 1, HEAD - 3], down: [0, -1], kinds: ['steelCoil'], every: 1.8, speed: 4, run: HEAD - FOOT }],
     rollback: true,
     finish: { pos: [TOWER[0], TOWER[1]], half: [7, 7] },
-    stars: [0, 0.6],
+    stars: STARS,
     par: 240,
   };
 }

@@ -358,15 +358,15 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
 function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
   const group = new THREE.Group();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
-  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : arrowTexture(kind) }));
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : arrowTexture(kind) }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
-    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight') {
+    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight' || sign.kind === 'canteen' || sign.kind === 'bento') {
       // Upright, its middle where it is put: over a gate, on a wall. A shop's is smaller than a school's, a shed's larger.
-      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : 6;
+      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : sign.kind === 'canteen' ? 4.4 : sign.kind === 'bento' ? 3 : 6;
       // One that fades has materials of its own.
       const [back, face] = sign.fadeZone ? [steel.clone(), faceOf(sign.kind).clone()] : [steel, faceOf(sign.kind)];
       const plate = new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);
@@ -521,7 +521,11 @@ function pavedMesh(props: PropDesc[]): THREE.Mesh {
 /** How far up a crossing gate's arm stands when it is open, radians, and how fast it swings. */
 const GATE_UP = 1.4;
 const GATE_RATE = 1.6;
-const gateMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+/** The save point's colour, and once it has been passed. */
+const SAVE_COLOR = 0x3fb8ff;
+const SAVE_PASSED = 0x8a929a;
+
+const gateMaterial =new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
 
 /** The arm of a crossing gate, hinged at the origin and reaching along +X: yellow and black by turns, with a weight behind the hinge. */
 function gateArm(length: number): THREE.Mesh {
@@ -604,6 +608,8 @@ export class LevelView {
   private readonly brakes: { car: Sim['traffic']['cars'][number]; mesh: THREE.Mesh }[] = [];
   private readonly faders: Fader[] = [];
   private readonly finishGlow: THREE.Mesh | null = null;
+  /** The save point's frame on the ground and posts at its corners: blue and pulsing until passed, grey after. */
+  private readonly saveMark: THREE.MeshBasicMaterial | null = null;
   /** One pair of materials per railway track: the lamps and the panels that show its signal. */
   private readonly signals: { lamp: THREE.MeshBasicMaterial; panel: THREE.MeshBasicMaterial }[] = [];
   private readonly gates: Gate[] = [];
@@ -780,6 +786,34 @@ export class LevelView {
       this.finishGlow.position.set(finish.pos[0], 2 + (finish.above !== undefined ? finish.above + 1 : heightAt(sim.level.terrain, finish.pos[0], finish.pos[1])), finish.pos[1]);
       scene.add(this.finishGlow);
     }
+
+    const save = sim.level.save;
+    if (save) {
+      // Not like the bay's glowing box: a dashed frame painted on the road, and a thin post at each corner.
+      this.saveMark = new THREE.MeshBasicMaterial({ color: SAVE_COLOR, transparent: true, opacity: 0.8, depthWrite: false });
+      const [x0, z0, x1, z1] = save.zone;
+      const ground = (x: number, z: number) => save.y ?? heightAt(sim.level.terrain, x, z);
+      const dash = new THREE.BoxGeometry(1.4, 0.08, 0.55);
+      const corners: [number, number][] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+      corners.forEach(([ax, az], k) => {
+        const [bx, bz] = corners[(k + 1) % 4];
+        const length = Math.hypot(bx - ax, bz - az);
+        const count = Math.max(1, Math.round(length / 2.2));
+        for (let i = 0; i < count; i++) {
+          const t = (i + 0.5) / count;
+          const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          const mesh = new THREE.Mesh(dash, this.saveMark!);
+          mesh.position.set(x, ground(x, z) + 0.08, z);
+          mesh.rotation.y = -Math.atan2(bz - az, bx - ax);
+          scene.add(mesh);
+        }
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6), this.saveMark!);
+        post.position.set(ax, ground(ax, az) + 1.6, az);
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), this.saveMark!);
+        lamp.position.set(ax, ground(ax, az) + 3.4, az);
+        scene.add(post, lamp);
+      });
+    }
   }
 
   /** Call after every physics step. */
@@ -844,6 +878,11 @@ export class LevelView {
     if (this.finishGlow) {
       this.finishGlow.visible = !this.sim.finishShut;
       (this.finishGlow.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(this.time * 3) * 0.07;
+    }
+    if (this.saveMark) {
+      const passed = this.sim.hasSave;
+      this.saveMark.color.set(passed ? SAVE_PASSED : SAVE_COLOR);
+      this.saveMark.opacity = passed ? 0.35 : 0.65 + Math.sin(this.time * 4) * 0.25;
     }
 
     // Signals: flashing red while a train is due, steady green otherwise.

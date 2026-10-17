@@ -20,6 +20,8 @@ const WHEEL_RAY_GROUPS = groups(GROUP.all, GROUP.ground);
 const TRUCK_GROUPS = groups(GROUP.truck, GROUP.all);
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** m/s: going the other way faster than this, the pedal for this way brakes first; slower, it drives. */
+const REVERSE_BRAKES = 2;
 
 export class Truck {
   readonly body: RAPIER.RigidBody;
@@ -102,13 +104,15 @@ export class Truck {
     this.boosting = false;
 
     if (input.throttle > 0) {
-      if (speed < -0.5) braking = true;
+      // Going backwards fast, forward is a brake first. Slower than that, it drives: on a slope the brakes alone can leave it
+      // creeping back just past the line, and forward would never take.
+      if (speed < -REVERSE_BRAKES) braking = true;
       else if (input.boost) {
         engine = input.throttle * pull(TRUCK.boostAccel, speed, TRUCK.boostMaxSpeed);
         this.boosting = true;
       } else engine = input.throttle * pull(TRUCK.accel, speed, TRUCK.maxSpeed);
     } else if (input.throttle < 0) {
-      if (speed > 0.5) braking = true;
+      if (speed > REVERSE_BRAKES) braking = true;
       else engine = input.throttle * pull(TRUCK.reverseAccel, -speed, TRUCK.maxReverseSpeed);
     }
 

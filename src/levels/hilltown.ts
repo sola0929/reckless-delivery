@@ -3,7 +3,7 @@ import { MAP } from './hilltown-map';
 import type { ObjectDesc, ObjectKindId } from './objects';
 import { mulberry32 } from './sandbox';
 import { heightAt, makeStepped, type Patch } from './terrain';
-import type { BuildingLook, CrowdDesc, DecalDesc, LevelDef, PropDesc, Vec2 } from './types';
+import { type BuildingLook, type CrowdDesc, type DecalDesc, type LevelDef, type PropDesc, type Vec2, STARS } from './types';
 
 // The second delivery: from a town at the foot of the mountain, out through the country.
 // Like the city, it is drawn as a map of characters (in hilltown-map.ts); here each is a
@@ -421,7 +421,7 @@ export function hilltown(): LevelDef {
     cargo: cityLoad(),
     traffic: [],
     finish: { pos: finish, half: [3.4, 6.4] },
-    stars: [0, 0.6],
+    stars: STARS,
     par: 270,
   };
 }

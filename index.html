@@ -23,7 +23,7 @@
     <div id="hud">
       <div class="panel" id="stats">
         <div class="stat"><span class="label">時速</span><span class="value" id="speed">0</span><span class="unit">km/h</span></div>
-        <div class="stat"><span class="label">貨物價值</span><span class="value" id="value">$0</span><span class="unit" id="value-full">/ $0</span><div id="value-bar"><div id="value-fill"></div><div id="value-goal"></div></div></div>
+        <div class="stat"><span class="label">貨物價值</span><span class="value" id="value">$0</span><span class="unit" id="value-full">/ $0</span><div id="value-bar"><div id="value-fill"></div><div id="value-goal"></div><div id="value-goal3"></div></div></div>
         <div class="stat"><span class="label">車上貨物</span><span class="value" id="cargo">0 / 0</span></div>
         <div class="stat" id="timer-stat"><span class="label">時間</span><span class="value" id="timer">0:00</span></div>
       </div>
@@ -48,6 +48,10 @@
         <div id="lesson-help" hidden></div>
         <div class="lesson-tick">✓</div>
       </div>
+      <div id="chat" hidden>
+        <div id="chat-notice"></div>
+        <div id="chat-window"><div id="chat-title"></div><div id="chat-body"></div></div>
+      </div>
       <div id="fade"></div>
       <canvas id="minimap"></canvas>
       <div id="popups"></div>
@@ -62,7 +66,9 @@
         <div id="result-goals"></div>
         <div id="result-record"></div>
         <div class="buttons">
-          <button id="result-retry" type="button">再玩一次 <b>R</b></button>
+          <button id="result-next" type="button" hidden>下一關</button>
+          <button id="result-save" type="button" hidden>從存檔點重來</button>
+          <button id="result-retry" type="button">再玩一次</button>
           <button id="result-menu" class="quiet" type="button">回到主選單</button>
         </div>
       </div>
@@ -80,7 +86,8 @@
             </div>
             <div id="pause-choices">
               <button id="pause-resume" class="menu-item primary" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>繼續<small>Esc</small></button>
-              <button id="pause-retry" class="menu-item" type="button"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 7.7 10h-2.6A5.5 5.5 0 1 1 12 6.5c1.5 0 2.9.6 3.9 1.6L13 11h8V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg>重新開始<small>R</small></button>
+              <button id="pause-save" class="menu-item" type="button" hidden><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 14h8v7H8z"/></svg>回到存檔點</button>
+              <button id="pause-retry" class="menu-item" type="button"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 7.7 10h-2.6A5.5 5.5 0 1 1 12 6.5c1.5 0 2.9.6 3.9 1.6L13 11h8V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg>重新開始</button>
               <button id="pause-menu" class="menu-item leave" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l10 9h-3v9h-5v-6h-4v6H5v-9H2z"/></svg>回到主選單</button>
             </div>
             <div class="pause-sound">
@@ -116,9 +123,9 @@
             <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
             <h4>其他</h4>
             <kbd>Esc</kbd><span>暫停</span>
-            <kbd>R</kbd><span>重來</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
             <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
+            <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
             </div>
           </div>
         </div>
@@ -156,12 +163,23 @@
           <g class="wheel"><circle cx="296" cy="150" r="26" fill="#17181a"/><circle cx="296" cy="150" r="11" fill="#c8ccd0"/><rect x="294" y="128" width="4" height="44" fill="#17181a"/></g>
         </svg>
       </div>
+      <!-- The level page's preview of the one chosen, in the room to the right of its cards. -->
+      <div id="level-preview">
+        <div class="preview-shots"><div class="preview-caption"></div><div class="preview-dots"></div></div>
+        <div class="preview-tag"></div>
+        <div class="preview-name"></div>
+        <div class="preview-note"></div>
+        <div class="preview-facts"></div>
+        <div class="preview-best"></div>
+        <button class="menu-item primary" id="preview-go" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>出發！<small>Enter</small></button>
+      </div>
       <div class="menu-side">
         <div class="logo">胡鬧<span>快遞</span></div>
         <div class="tagline">保證送達，不保證完整。</div>
 
         <div class="menu-page" id="menu-home">
           <button class="menu-item primary" id="menu-start" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>開始遊戲</button>
+          <div class="start-note" id="menu-start-note"></div>
           <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
           <button class="menu-item" data-page="menu-settings" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
           <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
@@ -173,7 +191,7 @@
           <p class="offer-note">先到「新手上路」練習開車、煞車、飛越斷橋和下車撿貨，大約兩分鐘。之後也可以從「關卡選擇」再進去。</p>
           <button class="menu-item primary" id="offer-tutorial" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>先去新手上路</button>
           <button class="menu-item" id="offer-skip" type="button"><svg viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zm8 0l8 7-8 7z"/></svg>直接開始第 1 關</button>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
         </div>
 
         <div class="menu-page" id="menu-levels" hidden>
@@ -183,7 +201,7 @@
           </div>
           <div id="menu-level-list"></div>
           <div id="menu-free"></div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
         </div>
 
         <div class="menu-page" id="menu-settings" hidden>
@@ -200,7 +218,7 @@
             </div></div>
             <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
           </div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
         </div>
 
         <div class="menu-page" id="menu-help" hidden>
@@ -220,8 +238,9 @@
             <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
             <h4>其他</h4>
             <kbd>Esc</kbd><span>暫停</span>
-            <kbd>R</kbd><span>重來</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
+            <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
             <h4 class="pad-only">手把</h4>
             <kbd class="pad-only">RT / LT</kbd><span class="pad-only">油門／煞車、倒車</span>
             <kbd class="pad-only">左搖桿</kbd><span class="pad-only">轉向；下車時移動</span>
@@ -232,9 +251,9 @@
             <kbd class="pad-only">B</kbd><span class="pad-only">舉起、放下貨物</span>
             <kbd class="pad-only">右搖桿</kbd><span class="pad-only">開車時左右轉視角、上下拉近拉遠；下車時瞄準</span>
             <kbd class="pad-only">RT</kbd><span class="pad-only">下車時按住蓄力，放開拋出；LT 取消</span>
-            <kbd class="pad-only">Start / Back</kbd><span class="pad-only">暫停／重來</span>
+            <kbd class="pad-only">Start</kbd><span class="pad-only">暫停</span>
           </div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回</button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
         </div>
       </div>
     </div>

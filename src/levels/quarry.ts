@@ -9,7 +9,7 @@ import { DROP, secondHalf, SITE_Y, SITE_YARD } from './quarryEnd';
 import { TRUCK } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
 import { heightAt } from './terrain';
-import type { BirdDesc, CrowdDesc, DecalDesc, DropperDesc, FordDesc, LevelDef, MachineDesc, PropDesc, RigDesc, SignDesc, SlickDesc, StillWaterDesc, TrafficLane, Vec2 } from './types';
+import { type BirdDesc, type CrowdDesc, type DecalDesc, type DropperDesc, type FordDesc, type LevelDef, type MachineDesc, type PropDesc, type RigDesc, type SignDesc, type SlickDesc, type StillWaterDesc, type TrafficLane, type Vec2, STARS, approach } from './types';
 
 // Level 3, its first half: from the quarry gate down through the quarry to the river. Drawn on 16 m squares as the other
 // levels are, every square something: the quarry's benches stepping up the hill to the west, the plant on its terrace to
@@ -809,6 +809,17 @@ export function quarry(): LevelDef {
       [A[0], yard.z0 + 12], [A[0], A[1]], [A[0], parkZ], [B[0], parkZ], [B[0], B[1] + LOADOUT_TO], bend1, bend2,
       [C[0], C[1] + DIKE_FROM], off, [D[0], D[1] + RIVER_IN], ...end.route,
     ],
+    // Saved on the track up through the melon field, past the river: put back there, facing on up it.
+    save: { zone: [D[0] - 5, field + 4, D[0] + 5, field + 16], pos: [D[0], field + 10], yaw: 0 },
+    // The customer is the foreman of the building site at the end; the boss has a word at the river.
+    chat: {
+      customer: 'foreman',
+      places: [
+        { zone: approach([B[0], B[1] + LOADOUT_FROM + 2], 0), talk: [['them', '前面是裝料區'], ['them', '上面輸送帶會掉石頭'], ['them', '工安提醒：石頭比你的車頂硬'], ['me', '車頂表示同意']] },
+        { zone: approach([C[0], C[1] + DIKE_FROM - 4], 0), talk: [['them', '堤道上的機具在工作'], ['them', '它們不會讓你'], ['me', '放心 我也不會讓它們']] },
+        { zone: approach([D[0], D[1] + RIVER_IN - 4], 0), from: 'boss', talk: [['them', '前面要過河？'], ['me', '車子防水嗎'], ['them', '我不確定'], ['them', '交給你測試了']] },
+      ],
+    },
     checkpoints: [
       { name: 'A 料堆', pos: [A[0], A[1] - 6], yaw: 0 },
       { name: '廠區大街', pos: [A[0], A[1] + YARD_TO - 10], yaw: 0 },
@@ -820,7 +831,7 @@ export function quarry(): LevelDef {
       ...end.checkpoints,
     ],
     finish: end.finish,
-    stars: [0, 0.6],
+    stars: STARS,
     par: 180,
   };
 }
@@ -1793,7 +1804,7 @@ function scenery(s: Site, w: Ways, groundOf: () => (x: number, z: number) => num
       {
         const px = west0 + 6, pz = zOf(44);
         props.push({ shape: 'box', size: [3, 0.3, 2], pos: [px, WATER + 0.2, pz], color: 0x9aa0a6, ghost: true });
-        for (const dx of [-2.6, 2.6]) props.push({ shape: 'box', size: [0.1, 0.25, 2], pos: [px + dx, WATER + 0.6, pz], color: YELLOW, ghost: true });
+        for (const dx of [-2.6, 2.6]) props.push({ shape: 'box', size: [0.1, 0.25, 1.97], pos: [px + dx, WATER + 0.6, pz], color: YELLOW, ghost: true });
         for (let i = 0; i < 6; i++) props.push({ shape: 'box', size: [0.45, 0.14, 0.24], pos: [px - 1.4 + (i % 3) * 0.95, WATER + 0.64 + Math.floor(i / 3) * 0.28, pz - 0.6], color: 0xb9a57a, ghost: true });
         for (const dz of [0.4, 1.1]) props.push({ shape: 'cylinder', size: [0.3, 0.45, 0], pos: [px + 1.6, WATER + 0.95, pz + dz], color: 0x2f5f9a, ghost: true });
         line([px + 3, WATER + 0.5, pz], [C[0] - 7, WATER + 2.4, pz + 1], 0.04, 0xd8c8a0);

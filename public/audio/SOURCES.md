@@ -40,6 +40,8 @@ there is no restriction on use. They are listed anyway, so that each can be trac
 | `rock-fall-1.wav` | Stones falling (cut to the fall itself) | "Stones Falling" by iwanPlays, https://freesound.org/people/iwanPlays/sounds/567251/ |
 | `tyre-hit-0.wav`, `-1.wav` | A tyre struck, two of the hits cut from one recording | "tire_thump.wav" by ChemiCatz, https://freesound.org/people/ChemiCatz/sounds/267921/ |
 | `river-loop.wav` | A river rushing (eleven and a half seconds, looped) | "Rushing River Loop" by ThanksForTheInspiration, https://freesound.org/people/ThanksForTheInspiration/sounds/523022/ |
+| `ui-notify.mp3` | Messages arriving: the notice before the window opens | "Message Notification 4" by AnthonyRox, https://freesound.org/people/AnthonyRox/sounds/740423/ |
+| `ui-message.mp3` | Each line of a message coming in | "Message Receive" by Froey_, https://freesound.org/people/Froey_/sounds/760369/ |
 | `ui-*.ogg` | Menu clicks and chimes | "Interface Sounds" by Kenney (`select_001`, `confirmation_001`, `confirmation_002`, `back_001`, `open_001`, `close_001`, `error_003`), https://kenney.nl/assets/interface-sounds |
 
 The Freesound files are the site's MP3 previews of the originals, some of them cut down and saved as WAV.

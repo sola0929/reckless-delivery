@@ -158,7 +158,7 @@ export function jiufen(): LevelDef {
     cargo: standardLoad(),
     traffic: [],
     finish: { pos: end.at, half: [7, 7] },
-    stars: [0.6, 0.8],
+    stars: [0.6, 0.8, 0.9],
     par: 330,
   };
 }

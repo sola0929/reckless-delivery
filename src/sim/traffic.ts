@@ -33,6 +33,15 @@ const SAME_WAY = 0.75;
 export const CAR_MASS = 1200;
 /** How long a car lies where it was knocked before returning to its lane. */
 const KNOCKED_SECONDS = 8;
+/**
+ * Seconds a car let loose because it was about to touch the truck has to actually touch it. If it never does, it was a near
+ * miss: it goes back to its lane at the speed it had, and nothing is counted, felt or said.
+ */
+const NEAR_MISS_SECONDS = 0.5;
+/** Metres apart that still count as touching. */
+const TOUCHING = 0.05;
+/** Metres across that a car and the truck must overlap, as they meet, for the load to feel the crash in full. */
+const FULL_OVERLAP = 1;
 /** It only returns once the truck is at least this far from its place in the lane. */
 const RETURN_CLEARANCE = 18;
 const TRUCK_HALF_WIDTH = TRUCK.frame.half[0];
@@ -86,6 +95,11 @@ export interface TrafficCar {
   dwell: number;
   next: number;
   held: boolean;
+  /** Let loose as it came up to the truck, and not yet seen to touch it: seconds left to; and the speed it was going. */
+  armed: number;
+  armedSpeed: number;
+  /** How far across it and the truck overlapped as it came up to it, metres: a brush or head on. */
+  overlap: number;
 }
 
 /** A driver leans on the horn when the truck is coming at them, or sitting across their lane, within this far ahead. */
@@ -139,7 +153,7 @@ export class Traffic {
   /** See LevelDef.quietBeyond. */
   quietBeyond = 0;
 
-  constructor(world: RAPIER.World, lanes: TrafficLane[], private readonly ground?: (x: number, z: number) => number) {
+  constructor(private readonly world: RAPIER.World, lanes: TrafficLane[], private readonly ground?: (x: number, z: number) => number) {
     let n = 0;
     const made: Lane[] = [];
     const shifts: number[] = [];
@@ -186,7 +200,7 @@ export class Traffic {
         }
         const cruise = desc.speed > 0 && spec.crawl ? spec.crawl : desc.speed;
         const bus = i === 0 && lane.stops.length > 0;
-        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise, hush: 0, home: lane, braking: false, dwell: 0, next: bus ? this.stopAfter(lane, s) : 0, held: i === 0 && lane.waitFor !== undefined };
+        const car: TrafficCar = { body, lane, s, startS: s, speed: cruise, color: CAR_COLORS[n % CAR_COLORS.length], knocked: 0, impact: 0, kind, spec, cruise, hush: 0, home: lane, braking: false, dwell: 0, next: bus ? this.stopAfter(lane, s) : 0, held: i === 0 && lane.waitFor !== undefined, armed: 0, armedSpeed: 0, overlap: 0 };
         this.place(car, true);
         this.cars.push(car);
         n++;
@@ -232,6 +246,17 @@ export class Traffic {
           if (!car.body.isSleeping()) car.body.sleep();
           continue;
         }
+      }
+      if (car.armed > 0) {
+        if (this.touches(car, truck)) this.struck(car);
+        else if ((car.armed -= dt) <= 0 || this.clearOf(car, t)) this.missed(car);
+        else {
+          // Its driver drives on meanwhile, as before: it is loose only so that, if it does touch, it does so with its weight.
+          const { dir } = car.lane;
+          car.body.setLinvel({ x: dir.x * car.armedSpeed, y: car.body.linvel().y, z: dir.z * car.armedSpeed }, true);
+          car.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        }
+        continue;
       }
       if (car.knocked > 0) {
         car.knocked -= dt;
@@ -345,13 +370,13 @@ export class Traffic {
         car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
         car.body.setLinvel({ x: lane.dir.x * car.speed, y: 0, z: lane.dir.z * car.speed }, true);
         car.knocked = KNOCKED_SECONDS;
-        this.hits++;
         car.impact = Math.hypot(lane.dir.x * car.speed - tv.x, lane.dir.z * car.speed - tv.z);
-        // Whoever was driving it has something to say, if they were driving it.
-        if (lane.cruise > 0) this.horns.push({ x: t.x, z: t.z, long: 1, car: this.cars.indexOf(car) });
-        car.hush = HORN_REST;
+        // Not a crash until it touches: until then, nothing is counted or felt.
+        car.armed = NEAR_MISS_SECONDS;
+        car.armedSpeed = car.speed;
+        car.overlap = reachAcross + half.width - across;
         car.speed = 0;
-        this.fresh.push(car);
+        if (this.touches(car, truck)) this.struck(car);
         continue;
       }
 
@@ -431,6 +456,70 @@ export class Traffic {
     this.pileups.push({ x: p.x, z: p.z, speed: Math.max(speed, 6), heavy: true });
   }
 
+  /** Whether any part of a car is up against the truck. */
+  private touches(car: TrafficCar, truck: Truck): boolean {
+    let touching = false;
+    for (let n = 0; n < car.body.numColliders() && !touching; n++) {
+      const own = car.body.collider(n);
+      this.world.contactPairsWith(own, (other) => {
+        if (touching || other.parent()?.handle !== truck.body.handle) return;
+        this.world.contactPair(own, other, (manifold) => {
+          for (let i = 0; i < manifold.numContacts(); i++) if (manifold.contactDist(i) < TOUCHING) touching = true;
+        });
+      });
+    }
+    return touching;
+  }
+
+  /** Whether a car has got past the truck: its middle further along from the truck's than the two of them are long. */
+  private clearOf(car: TrafficCar, t: { x: number; z: number }): boolean {
+    const p = car.body.translation();
+    const { dir } = car.lane;
+    const along = (p.x - t.x) * dir.x + (p.z - t.z) * dir.z;
+    return along > car.spec.half.length + TRUCK_HALF_LENGTH + 0.5;
+  }
+
+  /** It has touched the truck: a crash, counted, felt by the load, and with something said about it. */
+  private struck(car: TrafficCar): void {
+    car.armed = 0;
+    // A brush along the side is not a crash head on, however fast both were going: as much of it as the two overlapped,
+    // a metre's overlap or more counting in full.
+    car.impact *= Math.min(1, Math.max(0.1, car.overlap / FULL_OVERLAP));
+    this.hits++;
+    const at = car.body.translation();
+    // Whoever was driving it has something to say, if they were driving it.
+    if (car.lane.cruise > 0) this.horns.push({ x: at.x, z: at.z, long: 1, car: this.cars.indexOf(car) });
+    car.hush = HORN_REST;
+    this.fresh.push(car);
+  }
+
+  /** It went by without touching: back into its lane where it has got to, at the speed it was going, as if nothing had happened. */
+  private missed(car: TrafficCar): void {
+    car.armed = 0;
+    const p = car.body.translation();
+    const { lane } = car;
+    v.set(p.x - lane.from.x, 0, p.z - lane.from.z);
+    const across = Math.abs(v.x * lane.dir.z - v.z * lane.dir.x);
+    // Unless it has come to grief on its own meanwhile, against something else: then it stays a wreck where it is.
+    const r = car.body.rotation();
+    q.set(r.x, r.y, r.z, r.w);
+    const upright = new Vector3(0, 1, 0).applyQuaternion(q).y > 0.95;
+    if (across > 1 || !upright) {
+      this.hits++;
+      return;
+    }
+    const zero = { x: 0, y: 0, z: 0 };
+    car.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    car.body.setLinvel(zero, true);
+    car.body.setAngvel(zero, true);
+    car.body.setRotation(lane.facing, true);
+    car.knocked = 0;
+    car.impact = 0;
+    car.s = Math.min(lane.length, Math.max(0, v.dot(lane.dir)));
+    car.speed = car.armedSpeed;
+    this.place(car, true);
+  }
+
   /** The first stop at or beyond a place along a lane, by its place in the lane's list. */
   private stopAfter(lane: Lane, s: number): number {
     const n = lane.stops.findIndex((stop) => stop.at >= s - 0.5);
@@ -445,6 +534,7 @@ export class Traffic {
     car.body.setAngvel(zero, true);
     car.body.setRotation(car.lane.facing, true);
     car.knocked = 0;
+    car.armed = 0;
     car.speed = 0;
     // Knocked out of the traffic, it comes back in from out of sight; put back at the start of a run, it is where it began.
     if (car.lane.respawn && !back) {

@@ -6,6 +6,20 @@ import type { ObjectDesc, ObjectKindId } from './objects';
 
 // A level, as plain data shared by the physics and the renderer.
 
+/** The stars of the deliveries: arriving, three tenths of the load's worth, six tenths. */
+export const STARS: [number, number, number] = [0, 0.3, 0.6];
+
+/**
+ * The way up to a place, [x0, z0, x1, z1]: from `back` metres short of it, coming the way `yaw` faces, to `ahead` past it, and
+ * `half` to each side. For something to be said on the way in, and no longer once the truck is by.
+ */
+export function approach([x, z]: Vec2, yaw: number, back = 50, ahead = 6, half = 10): [number, number, number, number] {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const xs = [x - fx * back - fz * half, x - fx * back + fz * half, x + fx * ahead - fz * half, x + fx * ahead + fz * half];
+  const zs = [z - fz * back + fx * half, z - fz * back - fx * half, z + fz * ahead + fx * half, z + fz * ahead - fx * half];
+  return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)];
+}
+
 /** A point or extent on the ground: [x, z]. */
 export type Vec2 = [number, number];
 
@@ -41,6 +55,11 @@ export interface PropDesc {
   overhead?: boolean;
   /** Drawn but not solid: rooftops, foliage, awnings. */
   ghost?: boolean;
+  /**
+   * Felt only by the truck's wheels, a jolt as they go over it: a joint standing proud of a road. Whatever slides, rolls or
+   * falls on to it (a wreck, a load, someone on foot) goes over it as if it were not there, rather than catch on its edge.
+   */
+  wheelsOnly?: boolean;
   /** A storey of a building the truck drives up through: hidden while the truck is below it, so that it is seen from above. Implies `fade`. */
   cutaway?: boolean;
   /** A pavement: drawn laid in bricks rather than as a plain slab. Boxes only, unrotated. */
@@ -338,7 +357,7 @@ export interface SignDesc {
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
   /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road; the name over a quarry's loading shed. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight';
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight' | 'canteen' | 'bento';
   /** As a prop's: faded while the camera's line to the truck passes through this box. Upright name signs only. */
   fadeZone?: [Vec3, Vec3];
 }
@@ -539,6 +558,11 @@ export interface LevelDef {
   spreads?: { pos: Vec2; half: Vec2 }[];
   /** Traffic, scooters and people further than this from the truck, metres, stand still until it comes nearer: on a level too big to see across. */
   quietBeyond?: number;
+  /**
+   * The run's one save point: passing through `zone` [x0, z0, x1, z1] in the cab records the load as it stands, and after a
+   * failure the run can go back to it, the truck put down at `pos` facing `yaw` (on the floor at `y`, where that is not the ground).
+   */
+  save?: { zone: [number, number, number, number]; pos: Vec2; yaw: number; y?: number };
   /** For testing: places just before each part of the level, to put the truck down at, by number key. */
   checkpoints?: { name: string; pos: Vec2; yaw: number; /** The floor to put it down on, where that is not the ground: up a building. */ y?: number }[];
   battle?: BattleDesc;
@@ -553,9 +577,10 @@ export interface LevelDef {
   finish?: FinishZone;
   /** Multiplies all impact damage to cargo. Below 1 makes the level forgiving; defaults to 1. */
   damageScale?: number;
-  /** Share of the load's full value that must arrive to pass with one star (0: arriving at all is enough), and to earn two. */
-  stars: [number, number];
-  /** The third star: two stars' worth delivered within this many seconds. */
+  /** Share of the load's full value that must arrive for one star (0: arriving at all is enough), for two, and for three.
+   *  Time earns nothing: the stars are for the load alone. */
+  stars: [number, number, number];
+  /** About how long a good run takes, seconds: only for what the customer has to say about it. */
   par: number;
   /**
    * A practice run, the tutorial: nothing ends it but the delivery. Down a hole, in the water, over on its roof, hit by a train:
@@ -587,4 +612,19 @@ export interface LevelDef {
   rigs?: RigDesc[];
   /** Water to drive through. */
   fords?: FordDesc[];
+  /** Messages from the boss and this load's customer during the run. Without it nobody writes. */
+  chat?: ChatDesc;
+}
+
+/** A conversation: its lines in order, each said by the one writing in ('them') or by the driver ('me'). */
+export type Talk = ['them' | 'me', string][];
+
+export interface ChatDesc {
+  /** Whose load it is: picks the customer's face and what they have to say. */
+  customer: 'student' | 'canteen' | 'foreman';
+  /**
+   * Places that get a word as the truck comes up to them: said when it first comes into `zone` [x0, z0, x1, z1], from the
+   * customer unless said otherwise, and let go unsaid if it has left the zone before its turn came.
+   */
+  places?: { zone: [number, number, number, number]; from?: 'boss' | 'customer'; talk: Talk }[];
 }

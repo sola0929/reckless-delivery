@@ -5,11 +5,12 @@ import { Hud, money } from './hud';
 import { stepFocus } from './gamepad';
 import { Input } from './input';
 import { LessonGuide } from './lessons';
+import { Chat } from './chat';
 import { finishLoading, setStage, settle } from './loading';
 import { GameAudio, type Material } from './audio';
 import { saveBest } from './best';
 import { playMusic, uiSound } from './jukebox';
-import { FIRST_LEVEL, LEVELS } from './levels';
+import { FIRST_LEVEL, LEVEL_LIST, LEVELS } from './levels';
 import { Minimap } from './minimap';
 import { ChaseCamera } from './render/camera';
 import { BattleView } from './render/battleView';
@@ -105,6 +106,10 @@ if (guide) {
     location.search = '?level=hillcity';
   });
 }
+/** Messages from the boss and the customer on the way, on a level that has them. */
+const chat = level.chat ? new Chat(level.chat) : null;
+/** What has been written about already this run, and what is being watched for. */
+const said = { start: false, below60: false, below30: false, near: false, hits: 0, still: 0, places: new Set<number>() };
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
@@ -117,6 +122,7 @@ const cutaway = sim.level.props.some((p) => p.cutaway);
 const TESTING = import.meta.env.DEV;
 if (TESTING && sim.level.checkpoints?.length) {
   const list = document.createElement('div');
+  list.id = 'dev-jumps';
   list.style.cssText = 'position:fixed;left:12px;bottom:56px;padding:8px 12px;background:rgba(20,24,30,0.78);color:#e8eef4;font:13px/1.6 sans-serif;border-radius:8px;z-index:20;pointer-events:none';
   list.innerHTML = '<b>測試跳點</b><br>' + sim.level.checkpoints.slice(0, 10).map((spot, k) => `${(k + 1) % 10}　${spot.name}`).join('<br>');
   document.body.appendChild(list);
@@ -675,6 +681,59 @@ function showPopups(dt: number): void {
   }
 }
 
+/** Watching the run for what the boss and the customer would write about, and letting the window run. */
+function converse(dt: number, speed: number): void {
+  if (sim.result) return;
+  const c = chat!;
+  c.update(dt);
+  if (!sim.started || bannerUp) return;
+  if (!said.start) {
+    said.start = true;
+    c.cue('start');
+  }
+  const kept = sim.cargoValue() / sim.fullValue;
+  if (!said.below60 && kept < 0.6) {
+    said.below60 = true;
+    c.cue('below60');
+  } else if (!said.below30 && kept < 0.3) {
+    said.below30 = true;
+    c.cue('below30');
+  }
+  // Every so many people, scooters and cars run into.
+  const trip = sim.trip();
+  const hits = trip.people + trip.cars;
+  if (hits - said.hits >= 6) {
+    said.hits = hits;
+    c.cue('hits');
+  }
+  // Standing still in the cab a while, nowhere near the end.
+  if (sim.driver.mode === 'driving' && Math.abs(speed) < 0.5) said.still += dt;
+  else {
+    said.still = 0;
+    // Going again: asking why it has stopped would be beside the point now.
+    if (Math.abs(speed) > 1.5) c.drop('idle');
+  }
+  if (said.still > 20) {
+    said.still = -60;
+    c.cue('idle');
+  }
+  const away = sim.distanceToFinish();
+  if (!said.near && away !== null && away < 70) {
+    said.near = true;
+    c.cue('near');
+  }
+  const t = sim.truck.body.translation();
+  // Said on the way in to a place; let go unsaid once the truck is out of its way in, past it or turned off.
+  level.chat!.places?.forEach(({ zone: [x0, z0, x1, z1] }, k) => {
+    const inside = t.x >= x0 && t.x <= x1 && t.z >= z0 && t.z <= z1;
+    if (!inside) c.drop('place', k);
+    else if (!said.places.has(k)) {
+      said.places.add(k);
+      c.place(k);
+    }
+  });
+}
+
 let resultShown = false;
 // The banner with the manifest stays up until the run begins.
 let bannerUp = true;
@@ -696,10 +755,35 @@ hud.onMenu = () => {
   // The menu is the page without a level chosen.
   location.href = location.pathname;
 };
+// The keyboard in the pause menu and on the result page, as the controller does it: up and down move along the buttons, Enter presses.
+window.addEventListener('keydown', (e) => {
+  const page = paused ? document.getElementById('pause') : resultShown ? document.getElementById('result') : null;
+  const step = ['ArrowDown', 'KeyS'].includes(e.code) ? 1 : ['ArrowUp', 'KeyW'].includes(e.code) ? -1 : 0;
+  if (!page || !step) return;
+  // The pause menu's own choices, not the sound and picture settings beside them.
+  const list = [...page.querySelectorAll<HTMLElement>(paused ? '.menu-item:not(:disabled)' : 'button:not(:disabled)')].filter((b) => b.offsetParent !== null);
+  const at = list.indexOf(document.activeElement as HTMLElement);
+  list[at < 0 ? 0 : (at + step + list.length) % list.length]?.focus();
+});
+// F1 keeps the key list along the bottom up, or lets it go down to its tab again.
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'F1') return;
+  e.preventDefault();
+  hud.toggleHelp();
+});
 // Looking away pauses it.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && !sim.result) setPaused(true);
 });
+// On the result page of a delivery passed, the one after it.
+{
+  const at = LEVEL_LIST.findIndex((entry) => entry.id === levelId);
+  const next = at >= 0 ? LEVEL_LIST[at + 1] : undefined;
+  hud.nextLevel = next ? { id: next.id, name: `第 ${next.badge} 關　${next.name}` } : null;
+  hud.onNext = () => {
+    if (next) location.search = `?level=${next.id}`;
+  };
+}
 // The retry button on the result page does what R does.
 let retryAsked = false;
 hud.onRetry = () => {
@@ -708,20 +792,31 @@ hud.onRetry = () => {
   else retryAsked = true;
 };
 
-/** Put everything back as it was at the start of the run. */
-function resetRun(): void {
+// And the buttons that go back to the save point.
+let backAsked = false;
+hud.onBackToSave = () => {
+  backAsked = true;
+};
+
+/** Put everything back as it was at the start of the run; or, `toSave`, as it was at the save point. */
+function resetRun(toSave = false): void {
   setPaused(false);
-  bannerUp = true;
-  bannerAge = 0;
-  closeBanner = false;
-  sim.reset();
+  if (toSave) sim.backToSave();
+  else {
+    bannerUp = true;
+    bannerAge = 0;
+    closeBanner = false;
+    sim.reset();
+    hud.showHelp(15);
+  }
+  hud.saveAvailable = sim.hasSave;
   levelView.snap();
   ridersView.snap();
   machinesView.snap();
   rigsView.snap();
   truckSync.snap();
   hud.hideResult();
-  hud.showBanner();
+  if (!toSave) hud.showBanner();
   resultShown = false;
   cargoViews.rebuild(sim);
   objectsView.refresh();
@@ -738,6 +833,11 @@ function resetRun(): void {
   bursts.clear();
   pendingLoss.clear();
   hud.clearPopups();
+  if (!toSave) {
+    Object.assign(said, { start: false, below60: false, below30: false, near: false, hits: 0, still: 0 });
+    said.places.clear();
+  }
+  chat?.clear(!toSave);
   accumulator = 0;
 }
 /** A tutorial mishap being shown before the truck is put back: seconds left, and where it goes. */
@@ -866,11 +966,12 @@ function frame(now: number): void {
   accumulator += dt;
 
   input.poll();
-  if (input.take('Escape') || input.take('KeyP')) setPaused(!paused);
+  // Esc pauses and resumes; asked whether to leave, it goes back to the choices; over the result page, nothing.
+  if ((input.take('Escape') || input.take('KeyP')) && !resultShown && !(paused && hud.cancelLeave())) setPaused(!paused);
   // The controller in the pause menu and on the result page: the d-pad or stick moves along the buttons, A presses, B goes on.
   if (paused) padMenu(document.getElementById('pause')!, () => setPaused(false));
   else if (resultShown) padMenu(document.getElementById('result')!);
-  if (paused && !retryAsked) {
+  if (paused && !retryAsked && !backAsked) {
     // Nothing moves; the picture stays as it was.
     accumulator = 0;
     graphics.rest();
@@ -894,10 +995,26 @@ function frame(now: number): void {
     });
   }
 
-  if (input.take('KeyR') || retryAsked) {
+  // Starting over is only from the pause menu or the result page: no key for it, so that it is never pressed by mistake.
+  if (retryAsked) {
     retryAsked = false;
+    backAsked = false;
     resetRun();
     guide?.restart();
+  }
+  if (backAsked) {
+    backAsked = false;
+    if (sim.hasSave) {
+      resetRun(true);
+      chat?.cue('back');
+    }
+  }
+  // Through the save point: said so, once.
+  if (sim.takeSaved()) {
+    hud.saveAvailable = true;
+    hud.popup('已記錄存檔點', window.innerWidth / 2, window.innerHeight * 0.3, 'big');
+    uiSound('confirm');
+    chat?.cue('save');
   }
 
   // The tutorial: a mishap puts the truck back to try that part again, after a moment to see what happened.
@@ -945,6 +1062,8 @@ function frame(now: number): void {
     for (const event of sim.drainEvents()) {
       cargoViews.handle(event);
       noteEvent(event);
+      if (event.kind === 'fallen' && !event.item.bonus) chat?.cue('fallen');
+      else if (event.kind === 'destroyed') chat?.cue('destroyed', event.item.type.id);
       soundCargoEvent(event);
     }
     for (const knock of sim.drainKnocks()) showKnock(knock);
@@ -996,6 +1115,7 @@ function frame(now: number): void {
       bursts.emit(splashAt.set(strike.x, strike.y + 0.5, strike.z), 'sparks', 60, 9);
       const at = toScreen(strike, 2);
       if (at) hud.popup('被火車撞飛！', at.x, at.y, 'big');
+      chat?.cue('train');
     }
     for (const splash of sim.drainSplashes()) {
       // Something knocked into a settling pond far off by a machine, unseen: unheard too.
@@ -1130,14 +1250,17 @@ function frame(now: number): void {
   aimSun(view, focus);
 
   hud.setMode(onFoot, input.usingPad);
+  hud.tickHelp();
   // Something found along the way counts toward the load once it is aboard, not while it still lies where it was found.
   hud.update(speed, sim.cargoOnTruck(), sim.cargo.filter((c) => !c.bonus || !c.fallen).length, sim.cargoValue(), sim.fullValue, sim.time);
   updatePrompt();
   guide?.update(dt, sim, input.usingPad);
+  if (chat) converse(dt, speed);
   // The bay only takes the load once the last lesson, delivering, is the one being taught.
   if (guide) sim.finishShut = !!guide.current && guide.current.done !== 'delivered';
   navigate();
   const fallen = sim.cargo.filter((c) => c.fallen && c.body && !c.held).map((c) => ({ x: c.lastPos.x, z: c.lastPos.z }));
+  minimap.saved = sim.hasSave;
   minimap.update(
     dt, truckAt.x, truckAt.z, truckHeading(), chase.viewYaw, sim.traffic.cars, fallen,
     onFoot ? { x: driver.pos.x, z: driver.pos.z, leash: DRIVER.leash } : null,
@@ -1148,6 +1271,7 @@ function frame(now: number): void {
     const records = level.finish ? saveBest(levelId, sim.result) : undefined;
     uiSound(sim.result.failure || sim.result.stars === 0 ? 'fail' : 'win');
     hud.showResult(sim.result, sim.fullValue, records);
+    chat?.clear(false);
     resultShown = true;
   }
   showPopups(dt);

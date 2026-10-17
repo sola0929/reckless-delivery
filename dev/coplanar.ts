@@ -1,15 +1,16 @@
 // Level 3's scenery: boxes that share a face with another box over some area, which draw flickering against each other.
 // Only unturned boxes and boxes turned about Y alike. npx tsx dev/coplanar.ts
 import { LEVELS } from '../src/levels';
+import { heightAt } from '../src/levels/terrain';
 // Level 3 unless another is named: LEVEL=tutorial npx tsx ...
 const l = LEVELS[process.env.LEVEL ?? 'quarry']();
-type B = { p: number[]; h: number[]; yaw: number; i: number };
+type B = { p: number[]; h: number[]; yaw: number; i: number; color: number };
 const boxes: B[] = [];
 l.props.forEach((p, i) => {
   if (p.shape !== 'box') return;
   const [rx, ry, rz] = p.rot ?? [0, 0, 0];
   if (Math.abs(rx) > 1e-3 || Math.abs(rz) > 1e-3) return;
-  boxes.push({ p: p.pos, h: p.size, yaw: ry, i });
+  boxes.push({ p: p.pos, h: p.size, yaw: ry, i, color: p.color });
 });
 const cell = new Map<string, B[]>();
 const key = (x: number, z: number) => `${Math.floor(x / 4)},${Math.floor(z / 4)}`;
@@ -28,6 +29,9 @@ for (const a of boxes) {
       if (Math.abs(sa * a.h[ax] - (d[ax] + sb * b.h[ax])) > E) continue;
       // Faces on the same plane: do they overlap in the other two directions, and face the same way?
       if (sa !== sb) continue;
+      // Two of one colour show nothing; nor do two undersides lying on the ground.
+      if (a.color === b.color) continue;
+      if (ax === 1 && sa < 0 && Math.abs(a.p[1] - a.h[1] - (l.terrain ? heightAt(l.terrain, a.p[0], a.p[2]) : 0)) < 0.05) continue;
       const o = [0, 1, 2].filter((k) => k !== ax).map((k) => Math.min(a.h[k], d[k] + b.h[k]) - Math.max(-a.h[k], d[k] - b.h[k]));
       if (o[0] > 0.15 && o[1] > 0.15) { found++; if (found <= 40) console.log(`props ${a.i} & ${b.i} at ${a.p.map((v) => v.toFixed(1)).join(',')}: share a face ${o[0].toFixed(2)} x ${o[1].toFixed(2)}`); }
     }

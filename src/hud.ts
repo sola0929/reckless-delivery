@@ -1,5 +1,5 @@
 import type { RecordsSet } from './best';
-import { soundButtons } from './jukebox';
+import { soundButtons, uiSound } from './jukebox';
 import type { LevelDef } from './levels/types';
 import { soundSettings } from './sound-settings';
 import { verdict } from './verdict';
@@ -23,14 +23,14 @@ const FAILURES: Record<Failure, [string, string]> = {
 };
 
 const HELP_DRIVING =
-  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>R</b> 重來　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>右鍵拖曳</b> 轉視角';
+  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>右鍵拖曳</b> 轉視角';
 const HELP_ON_FOOT =
-  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>R</b> 重來　<b>Esc</b> 暫停';
+  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
 
 const PAD_DRIVING =
-  '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>A</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Back</b> 重來　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角、縮放';
+  '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>A</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角、縮放';
 const PAD_ON_FOOT =
-  '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 蓄力拋出　<b>LT</b> 取消　<b>Y</b> 上車　<b>Back</b> 重來　<b>Start</b> 暫停';
+  '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 蓄力拋出　<b>LT</b> 取消　<b>Y</b> 上車　<b>Start</b> 暫停';
 
 export class Hud {
   private readonly speedEl = el('speed');
@@ -49,11 +49,24 @@ export class Hud {
   private readonly prompt = el('prompt');
   private readonly help = el('help');
   private promptText = '';
+  /**
+   * The key list along the bottom goes down to a small tab a while after the run starts, and after each change between
+   * driving and on foot; F1 keeps it up, or lets it go again. The tutorial keeps it up throughout.
+   */
+  private helpUntil = performance.now() + 15000;
+  private helpPinned = false;
   /** Called when a retry button is clicked, on the result page or the pause menu. */
   onRetry: (() => void) | null = null;
+  /** Called by the buttons that go back to the save point, on the result page and in the pause menu. */
+  onBackToSave: (() => void) | null = null;
+  /** Whether the run has passed its save point, so that it can be gone back to. */
+  saveAvailable = false;
   /** Called by the pause menu's resume button, and by any button that goes back to the main menu. */
   onResume: (() => void) | null = null;
   onMenu: (() => void) | null = null;
+  /** The delivery after this one, offered first on the result page once this one is passed; null after the last. */
+  nextLevel: { id: string; name: string } | null = null;
+  onNext: (() => void) | null = null;
   /** Called by the pause button in the corner of the screen. */
   onPause: (() => void) | null = null;
   private onFoot: boolean | null = null;
@@ -65,11 +78,12 @@ export class Hud {
   private distanceText = '';
 
   constructor(private readonly level: LevelDef) {
-    const goal = el('value-goal');
+    const goal = el('value-goal'), goal3 = el('value-goal3');
     const freePlay = !level.finish;
-    goal.hidden = freePlay;
-    // The mark on the value bar is the second star: the first is for arriving at all.
+    goal.hidden = goal3.hidden = freePlay;
+    // The marks on the value bar are the second and third stars: the first is for arriving at all.
     goal.style.left = `${level.stars[1] * 100}%`;
+    goal3.style.left = `${level.stars[2] * 100}%`;
     el('timer-stat').hidden = freePlay;
     this.nav.hidden = freePlay;
     // The tutorial: no clock, no stars, nothing to measure the load against; the arrow points at the next thing to do.
@@ -82,6 +96,8 @@ export class Hud {
       el('result-retry').innerHTML = '開始第 1 關';
     }
     for (const id of ['result-retry', 'pause-retry']) el(id).addEventListener('click', () => this.onRetry?.());
+    el('result-next').addEventListener('click', () => this.onNext?.());
+    for (const id of ['result-save', 'pause-save']) el(id).addEventListener('click', () => this.onBackToSave?.());
     // Leaving from the result page loses nothing. Leaving mid-run does, so it asks first.
     for (const id of ['result-menu', 'pause-leave']) el(id).addEventListener('click', () => this.onMenu?.());
     el('pause-menu').addEventListener('click', () => this.askToLeave(true));
@@ -117,15 +133,19 @@ export class Hud {
     el('banner-title').textContent = this.level.name;
     el('banner-brief').textContent = this.level.brief;
     const scored = !!this.level.finish;
-    const [pass, two] = this.level.stars;
+    const [pass, two, three] = this.level.stars;
     const goals = [
       pass > 0 ? `送達 ${Math.round(pass * 100)}%` : '抵達卸貨區',
       `送達 ${Math.round(two * 100)}% 的價值`,
-      `並在 ${clock(this.level.par)} 內完成`,
+      `送達 ${Math.round(three * 100)}% 的價值`,
     ];
     el('banner-goals').innerHTML = scored ? goals.map((text, i) => `<div class="goal"><span>${'★'.repeat(i + 1)}</span>${text}</div>`).join('') : '';
     el('banner-list').innerHTML = scored ? this.manifest() : '';
-    el('banner-foot').innerHTML = scored ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時　·　按 Enter 關閉</em>` : '';
+    // Its way out is a button of its own, rather than a word in the corner; the clock starting is said beside it.
+    el('banner-foot').innerHTML = scored
+      ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd>Enter</kbd></button>`
+      : '';
+    el('banner-go')?.addEventListener('click', () => this.onBannerClose());
     this.banner.classList.toggle('plain', !scored);
     this.banner.classList.remove('leaving');
     this.banner.hidden = false;
@@ -139,6 +159,13 @@ export class Hud {
     this.banner.classList.add('leaving');
   }
 
+  /** Esc in the pause menu while it asks whether to leave: back to its choices, rather than out of it. False when it is not asking. */
+  cancelLeave(): boolean {
+    if (el('pause-confirm').hidden) return false;
+    this.askToLeave(false);
+    return true;
+  }
+
   /** Swap the pause menu's choices for the question of whether to really leave, or back again. */
   private askToLeave(asking: boolean): void {
     el('pause-choices').hidden = asking;
@@ -150,6 +177,7 @@ export class Hud {
   showPause(on: boolean, run?: { seconds: number; value: number; fullValue: number; onTruck: number; total: number }): void {
     el('pause').hidden = !on;
     this.askToLeave(false);
+    el('pause-save').hidden = !this.saveAvailable;
     if (!on || !run) return;
     el('pause-time').textContent = clock(run.seconds);
     el('pause-value').textContent = money(run.value);
@@ -192,15 +220,13 @@ export class Hud {
       this.valueFullEl.textContent = `/ ${money(fullValue)}`;
       const kept = fullValue > 0 ? value / fullValue : 0;
       this.valueFill.style.width = `${kept * 100}%`;
-      const [pass, two] = this.level.stars;
-      this.valueFill.style.backgroundColor = kept >= two ? '#6fd08c' : kept >= Math.max(pass, two / 2) ? '#ffd166' : '#ff6b5a';
+      const [, two, three] = this.level.stars;
+      this.valueFill.style.backgroundColor = kept >= three ? '#6fd08c' : kept >= two ? '#ffd166' : '#ff6b5a';
     }
 
     const time = clock(seconds);
     if (time !== this.timerText) {
       this.timerEl.textContent = this.timerText = time;
-      // Past the par time, the third star is gone.
-      this.timerEl.classList.toggle('lost', seconds > this.level.par && !!this.level.finish);
     }
   }
 
@@ -221,7 +247,26 @@ export class Hud {
     if (onFoot === this.onFoot && pad === this.pad) return;
     this.onFoot = onFoot;
     this.pad = pad;
-    this.help.innerHTML = pad ? (onFoot ? PAD_ON_FOOT : PAD_DRIVING) : onFoot ? HELP_ON_FOOT : HELP_DRIVING;
+    const keys = pad ? (onFoot ? PAD_ON_FOOT : PAD_DRIVING) : onFoot ? HELP_ON_FOOT : HELP_DRIVING;
+    this.help.innerHTML = `<span class="help-keys">${keys}</span><span class="help-tab">${pad ? '' : '<b>F1</b> '}操作說明</span>`;
+    this.showHelp(8);
+  }
+
+  /** Bring the key list up for this many seconds, at least. */
+  showHelp(seconds: number): void {
+    this.helpUntil = Math.max(this.helpUntil, performance.now() + seconds * 1000);
+  }
+
+  /** F1: keep the key list up, or let it go down again. */
+  toggleHelp(): void {
+    this.helpPinned = !this.helpPinned;
+    if (!this.helpPinned) this.helpUntil = 0;
+  }
+
+  /** Each frame: whether the key list is up or down to its tab. */
+  tickHelp(): void {
+    const up = this.level.practice || this.helpPinned || performance.now() < this.helpUntil;
+    this.help.classList.toggle('tucked', !up);
   }
 
   /** A one-line hint about what can be done right now. Empty hides it. May contain <b> for key names. */
@@ -250,11 +295,15 @@ export class Hud {
     el('result-reason').textContent = reason;
     el('result-verdict').textContent = this.level.finish ? `「${verdict(result, this.level)}」` : '';
 
-    const [pass, two] = this.level.stars;
+    const [pass, two, three] = this.level.stars;
     const percent = Math.floor(result.fraction * 100);
     el('result-value').innerHTML =
       `<div class="figure"><b>${money(result.value)}</b><span>/ ${money(fullValue)}</span><em>${percent}%</em></div>` +
-      `<div class="bar"><div class="fill${result.fraction >= two ? ' good' : ''}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div></div>`;
+      `<div class="bar"><div class="fill${result.fraction >= three ? ' good' : ''}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div><div class="mark" style="left:${three * 100}%"></div></div>`;
+
+    // The worth counts up from nothing as the bar fills, and each star chimes as it comes.
+    this.countUp(result.value, result.fraction);
+    for (let n = 0; n < result.stars; n++) window.setTimeout(() => uiSound('confirm'), (0.35 + n * 0.22) * 1000);
 
     // Two rows: what became of the load, then the time and what the run did on the way.
     const { intact, damaged, destroyed, lost } = result.tally;
@@ -265,17 +314,16 @@ export class Hud {
       tile('受損', String(damaged), damaged > 0 ? 'bad' : ''),
       tile('全毀', String(destroyed), destroyed > 0 ? 'bad' : ''),
       tile('遺失', String(lost), lost > 0 ? 'bad' : ''),
-      tile('用時', clock(result.seconds), !failed && result.seconds > this.level.par ? 'bad' : ''),
+      tile('用時', clock(result.seconds)),
       tile('撞倒的人', String(people), 'trip'),
       tile('撞翻車輛', String(cars), 'trip'),
       tile('撞飛物品', String(things), 'trip'),
     ].join('');
 
-    const enough = !failed && result.fraction >= two;
     const goals: [string, boolean][] = [
       [pass > 0 ? `送達價值 ${Math.round(pass * 100)}% 以上` : '抵達卸貨區', !failed && result.fraction >= pass],
-      [`送達價值 ${Math.round(two * 100)}% 以上`, enough],
-      [`並在 ${clock(this.level.par)} 內送達`, enough && result.seconds <= this.level.par],
+      [`送達價值 ${Math.round(two * 100)}% 以上`, !failed && result.fraction >= two],
+      [`送達價值 ${Math.round(three * 100)}% 以上`, !failed && result.fraction >= three],
     ];
     el('result-goals').innerHTML = goals
       .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}<i>${met ? '✓' : ''}</i></div>`)
@@ -289,11 +337,44 @@ export class Hud {
     const share = (fraction: number) => `${money(fraction * fullValue)}（${Math.floor(fraction * 100)}%）`;
     el('result-record').innerHTML = records && (before || records.value || records.time)
       ? line('最高價值', share(result.fraction), before ? share(before.fraction) : null, records.value) +
-        line('最短時間', clock(result.seconds), before ? clock(before.seconds) : null, records.time)
+        line('最短時間', clock(result.seconds), before?.seconds != null ? clock(before.seconds) : null, records.time)
       : '';
+    if (result.retries > 0) {
+      el('result-record').innerHTML += `<div class="record"><span>接關</span><b>${result.retries} 次</b><i>有接關，不列入最短時間</i></div>`;
+    }
+    // After a failure past the save point, going back to it comes first.
+    const back = failed && this.saveAvailable;
+    el('result-save').hidden = !back;
+    // Passed, and there is another after it: going on to that comes first.
+    const next = passed && this.nextLevel;
+    el('result-next').hidden = !next;
+    if (next) el('result-next').textContent = `下一關：${next.name}`;
+    el('result-retry').textContent = back ? '從頭開始' : '再玩一次';
+    el('result-retry').classList.toggle('quiet', back || !!next);
     // The card from the start has had its day, if it is somehow still up.
     this.banner.hidden = true;
     this.result.hidden = false;
+    // Something to press with Enter straight away: going back to the save point when there is one, else going again.
+    el(back ? 'result-save' : next ? 'result-next' : 'result-retry').focus();
+  }
+
+  /** The result page's worth, counted up from nothing over a second, and its bar filled alongside. */
+  private countUp(value: number, fraction: number): void {
+    const figure = el('result-value').querySelector('b')!;
+    const fill = el('result-value').querySelector<HTMLElement>('.fill')!;
+    const width = `${Math.min(100, fraction * 100)}%`;
+    fill.style.width = '0%';
+    const began = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - began) / 1000);
+      const eased = 1 - (1 - t) ** 3;
+      figure.textContent = money(value * eased);
+      if (t < 1 && !this.result.hidden) requestAnimationFrame(step);
+    };
+    requestAnimationFrame((now) => {
+      fill.style.width = width;
+      step(now);
+    });
   }
 
   /** The end of the tutorial: what has been learnt, and on to level 1. */

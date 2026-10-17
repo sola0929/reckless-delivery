@@ -3,7 +3,7 @@ import { BANK, COBBLE, CONCRETE, dike, GRAVEL, hash, HAUL, heapYard, loadOut, PO
 import { Relief, type Look } from './relief';
 import { standardLoad } from './sandbox';
 import { heightAt } from './terrain';
-import type { CrowdDesc, DecalDesc, DropperDesc, FordDesc, LevelDef, MachineDesc, PropDesc, RigDesc, TrafficLane } from './types';
+import { type CrowdDesc, type DecalDesc, type DropperDesc, type FordDesc, type LevelDef, type MachineDesc, type PropDesc, type RigDesc, type TrafficLane, STARS } from './types';
 
 // A proving ground for level 3, the way from the quarry to the building site, laid out on 16 m squares as the levels are:
 // solid ground everywhere, six metres up, and the roads cut down into it, so that each is as wide as it is drawn and not a
@@ -228,7 +228,7 @@ export function quarryLab(): LevelDef {
       { name: 'E 大樓', pos: [ENTRY, 96], yaw: 0 },
     ],
     finish: { pos: [E + 6, BZ1 - 8], half: [7, 6], above: FLOORS[3] - 1 },
-    stars: [0, 0.6],
+    stars: STARS,
     par: 600,
   };
 }

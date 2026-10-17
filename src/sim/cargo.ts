@@ -18,6 +18,21 @@ export interface CargoPlacement {
 }
 
 /** A loose piece that has come off an item. Worth nothing, but still gets in the way. */
+/**
+ * One item of the load as it stood when the run was saved, to put it back as it was: whether it was aboard; how hurt it
+ * was and what had come off it; for a wreck, which of its pieces were still aboard, out of how many; and for something
+ * picked up along the way, where on the bed it lay, in the truck's own frame.
+ */
+export interface SavedItem {
+  kept: boolean;
+  hp: number;
+  stage: Stage;
+  attached: boolean[];
+  pieces?: PartDesc[];
+  pieceTotal?: number;
+  place?: { pos: [number, number, number]; rot: [number, number, number, number] };
+}
+
 export interface Debris {
   desc: PartDesc;
   body: RAPIER.RigidBody;
@@ -138,6 +153,8 @@ export class CargoItem {
   readonly pieces: Debris[] = [];
   /** Once destroyed: the share of its pieces still on the truck, 0 to 1. */
   scrapShare = 0;
+  /** How many pieces it broke into, when fewer than that were put back with it from a save. 0: as many as it has. */
+  pieceTotal = 0;
   scrapCheck = 0;
 
   /**
@@ -519,15 +536,96 @@ export class CargoSystem {
     }
   }
 
-  /** Create a loose body for a piece, at the place it occupies on the item, flung outward a little. */
-  private spawnDebris(item: CargoItem, part: PartDesc): Debris {
+  /**
+   * The load as it is now, for a save: what is aboard and in what state. Items are in the order they were loaded, which
+   * is the order `restore` takes them back in.
+   */
+  snapshot(truck: Truck): SavedItem[] {
+    const t = truck.body.translation(), r = truck.body.rotation();
+    const inverse = new Quaternion(r.x, r.y, r.z, r.w).invert();
+    return this.items.map((item): SavedItem => {
+      const state = { hp: item.hp, stage: item.stage, attached: [...item.attached] };
+      if (item.stage === 3) {
+        const aboard = item.pieces.filter((piece) => truck.isOnBed(piece.body.translation())).map((piece) => piece.desc);
+        return { ...state, kept: aboard.length > 0, pieces: aboard, pieceTotal: item.pieceTotal || item.pieces.length };
+      }
+      const body = item.body;
+      const kept = !!body && !item.held && !item.fallen && truck.isOnBed(body.translation());
+      if (!kept || !item.bonus) return { ...state, kept };
+      // Picked up on the way, it has no place in the load's layout: it goes back where it lay.
+      const p = body!.translation(), q0 = body!.rotation();
+      v.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(inverse);
+      q2.set(q0.x, q0.y, q0.z, q0.w).premultiply(inverse);
+      return { ...state, kept, place: { pos: [v.x, v.y, v.z], rot: [q2.x, q2.y, q2.z, q2.w] } };
+    });
+  }
+
+  /**
+   * Back to a save, on a load just laid afresh on the truck where the save was made: what was not aboard then is gone,
+   * the rest is as hurt as it was then, and a wreck is its pieces that were aboard, dropped where the item lies.
+   */
+  restore(saved: SavedItem[], truck: Truck): void {
+    const t = truck.body.translation(), r = truck.body.rotation();
+    const facing = new Quaternion(r.x, r.y, r.z, r.w);
+    this.items.forEach((item, i) => {
+      const s = saved[i];
+      const body = item.body;
+      if (!s || !body) return;
+      // Something to be found along the way that had not been taken aboard yet lies where it always did.
+      if (!s.kept) {
+        if (!item.bonus) this.remove(item);
+        return;
+      }
+      if (s.place) {
+        v.set(...s.place.pos).applyQuaternion(facing);
+        q2.set(...s.place.rot).premultiply(facing);
+        body.setTranslation({ x: t.x + v.x, y: t.y + v.y + 0.05, z: t.z + v.z }, true);
+        body.setRotation({ x: q2.x, y: q2.y, z: q2.z, w: q2.w }, true);
+        item.fallen = false;
+      }
+      item.hp = s.hp;
+      item.stage = s.stage;
+      item.immune = LANDING_GRACE;
+      if (s.stage === 3) {
+        for (const desc of s.pieces ?? []) this.events.push({ kind: 'debris', item, debris: this.spawnDebris(item, desc, false) });
+        item.pieceTotal = s.pieceTotal ?? 0;
+        item.scrapShare = (s.pieces?.length ?? 0) / (item.pieceTotal || 1);
+        this.remove(item);
+        return;
+      }
+      // What had come off it by then is off it again: it is not to be had back by saving.
+      s.attached.forEach((on, k) => {
+        if (on || !item.attached[k]) return;
+        item.attached[k] = false;
+        const collider = item.partColliders[k];
+        if (collider) {
+          this.byCollider.delete(collider.handle);
+          this.world.removeCollider(collider, true);
+          item.partColliders[k] = null;
+        }
+      });
+    });
+  }
+
+  /** Take an item's body out of the world: lost, or broken up. */
+  private remove(item: CargoItem): void {
+    const body = item.body;
+    if (!body) return;
+    for (let i = 0; i < body.numColliders(); i++) this.byCollider.delete(body.collider(i).handle);
+    this.world.removeRigidBody(body);
+    item.body = null;
+    item.fallen = item.stage !== 3;
+  }
+
+  /** Create a loose body for a piece, at the place it occupies on the item, flung outward a little (or, put back from a save, set down still). */
+  private spawnDebris(item: CargoItem, part: PartDesc, flung = true): Debris {
     const body = item.body!;
     const t = body.translation();
     const r = body.rotation();
     const lv = body.linvel();
     q.set(r.x, r.y, r.z, r.w);
     v.set(...part.pos).applyQuaternion(q);
-    const kick = 1.2;
+    const kick = flung ? 1.2 : 0;
     const dir = v.lengthSq() > 1e-6 ? v.clone().normalize() : new Vector3(0, 1, 0);
     partRotation(part, q2).premultiply(q);
 
@@ -535,8 +633,8 @@ export class CargoSystem {
       RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(t.x + v.x, t.y + v.y, t.z + v.z)
         .setRotation({ x: q2.x, y: q2.y, z: q2.z, w: q2.w })
-        .setLinvel(lv.x + dir.x * kick, lv.y + dir.y * kick + 0.8, lv.z + dir.z * kick)
-        .setAngvel({ x: this.random() * 6 - 3, y: this.random() * 6 - 3, z: this.random() * 6 - 3 }),
+        .setLinvel(lv.x + dir.x * kick, lv.y + dir.y * kick + (flung ? 0.8 : 0), lv.z + dir.z * kick)
+        .setAngvel(flung ? { x: this.random() * 6 - 3, y: this.random() * 6 - 3, z: this.random() * 6 - 3 } : STILL),
     );
     this.world.createCollider(
       // A bottle, loose: the physics takes it as a capsule, far cheaper to work out against everything than a cylinder.
@@ -569,7 +667,7 @@ export class CargoSystem {
     item.lastPos.copy(v).divideScalar(item.pieces.length);
 
     const before = item.value;
-    item.scrapShare = aboard / item.pieces.length;
+    item.scrapShare = aboard / (item.pieceTotal || item.pieces.length);
     const change = item.value - before;
     if (change !== 0) this.events.push({ kind: 'scrap', item, change });
   }

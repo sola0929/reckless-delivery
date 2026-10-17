@@ -6,7 +6,7 @@ import { TRUCK } from '../config';
 import type { ObjectDesc, ObjectKindId } from './objects';
 import type { Look, Relief } from './relief';
 import { heightAt } from './terrain';
-import type { CrowdDesc, DecalDesc, LevelDef, MachineDesc, PropDesc, RiderLane, RollerDesc, SignDesc, TrafficLane, Vec2 } from './types';
+import { type CrowdDesc, type DecalDesc, type LevelDef, type MachineDesc, type PropDesc, type RiderLane, type RollerDesc, type SignDesc, type TrafficLane, type Vec2, STARS, approach } from './types';
 import type { Vec3 } from '../config';
 
 // Level 2: on north from the delivery bay where level 1 ends, out of the city on its hillside (hillcity.ts) and up.
@@ -1230,7 +1230,7 @@ export function uptown(): LevelDef {
         object('pallet', gx0 + 2, gate - 14 - k * 2.4);
         object(k % 2 ? 'riceSack' : 'box', gx0 + 2, gate - 14 - k * 2.4);
       }
-      object('farmTruck', gx0 + 3, gate + 16, Math.PI / 2);
+      object('farmTruck', gx0 + 3, gate + 40, Math.PI / 2);
       // Round where the load is put down, clear of it: cement on pallets, a bundle of rebar, drums, bricks, a mixer and a
       // barrow, and a line of cones down the yard's open side.
       const stack = (x: number, z: number) => {
@@ -1240,17 +1240,103 @@ export function uptown(): LevelDef {
       stack(gx0 + 2.2, gate - 3);
       stack(gx0 + 2.2, gate - 0.8);
       stack(gx0 + 2.2, gate + 1.4);
-      object('rebar', gx0 + 17, gate + 7, Math.PI / 2);
-      object('rebar', gx0 + 17.6, gate + 7.3, Math.PI / 2 + 0.05);
+      object('rebar', gx0 + 17, gate + 32, Math.PI / 2);
+      object('rebar', gx0 + 17.6, gate + 32.3, Math.PI / 2 + 0.05);
       for (const [dx, dz] of [[0, 0], [0.75, 0.2], [0.3, 0.8]] as const) object('barrel', gx1 - 5 + dx, gate + 4 + dz);
       object('bricks', gx1 - 4, gate - 7);
       object('bricks', gx1 - 4, gate - 8.6);
-      object('mixer', gx0 + 20, gate + 13, 0.6);
-      object('wheelbarrow', gx0 + 18.4, gate + 11.6, -0.4);
+      object('mixer', gx0 + 20, gate + 38, 0.6);
+      object('wheelbarrow', gx0 + 18.4, gate + 36.6, -0.4);
       for (let z = gz0 + 28; z <= gate - 12; z += 3.5) object('cone', gx1 - 4, z);
       for (const dz of [-8, 8]) object('cone', gx0 + 10, gate + dz);
       decals.push({ pos: [gx0 + 10, gate - 4], size: [9, 12], color: 0xf2c12e, base: y, y: 0.03 });
       decals.push({ pos: [gx0 + 10, gate - 4], size: [8.4, 11.4], color: 0x8a8378, base: y, y: 0.05 });
+
+      // The customer's place, where the load is for: a canteen for the quarry's men, a shed of corrugated iron against the wall
+      // just past the bay. Its front is open, a hot counter of dishes across it under a striped awning and the shutter rolled
+      // up over it; its name above, and on its end towards the bay a board of what there is today. Plastic tables and stools
+      // out in the open yard in front, where a truck that comes into the bay too fast ends up, with men in hard hats about them.
+      // Its owner at the wok inside; gas round the side.
+      const [sx0, sx1, sz0, sz1] = [gx0 + 0.3, gx0 + 8, gate + 8, gate + 22];
+      const [smx, smz] = [(sx0 + sx1) / 2, (sz0 + sz1) / 2];
+      const tin = 0xb8c2c8, rib = 0x9aa5ad, frame = 0x5a6068, red = 0xc8372d, white = 0xf2efe6;
+      props.push({ shape: 'box', size: [0.1, 1.6, (sz1 - sz0) / 2], pos: [sx0, y + 1.6, smz], color: tin });
+      for (const z of [sz0, sz1]) {
+        props.push({ shape: 'box', size: [(sx1 - sx0) / 2, 1.6, 0.1], pos: [smx, y + 1.6, z], color: tin });
+        // The iron's ribs down its ends, and a band of rust along the foot.
+        const out = z === sz0 ? -0.12 : 0.12;
+        for (let x = sx0 + 0.3; x < sx1 - 0.1; x += 0.45) props.push({ shape: 'box', size: [0.03, 1.58, 0.025], pos: [x, y + 1.6, z + out], color: rib, ghost: true });
+        props.push({ shape: 'box', size: [(sx1 - sx0) / 2, 0.12, 0.03], pos: [smx, y + 0.12, z + out * 1.3], color: 0x8a5a3a, ghost: true });
+      }
+      // The front: posts at the ends and in the middle, the shutter rolled up in its box under the sign.
+      for (const z of [sz0 + 0.15, smz, sz1 - 0.15]) props.push({ shape: 'box', size: [0.12, 1.6, 0.12], pos: [sx1, y + 1.6, z], color: frame });
+      props.push({ shape: 'box', size: [0.2, 0.22, (sz1 - sz0) / 2], pos: [sx1, y + 3.0, smz], color: 0x8a949c });
+      props.push({ shape: 'box', size: [0.08, 0.32, (sz1 - sz0) / 2], pos: [sx1, y + 2.5, smz], color: 0x9aa4ac });
+      for (let k = 0; k < 2; k++) props.push({ shape: 'box', size: [0.02, 0.02, (sz1 - sz0) / 2], pos: [sx1 + 0.09, y + 2.38 + k * 0.24, smz], color: 0x7a848c, ghost: true });
+      // The roof, ribbed, sloping back to the wall, a gutter along its front.
+      const roofRot: Vec3 = [0, 0, 0.06];
+      const roofHalf = (sx1 - sx0) / 2 + 0.5;
+      props.push({ shape: 'box', size: [roofHalf, 0.08, (sz1 - sz0) / 2 + 0.3], pos: [smx + 0.5, y + 3.3, smz], rot: roofRot, color: 0x6f8ea6 });
+      for (let z = sz0 - 0.1; z <= sz1 + 0.1; z += 0.55) props.push({ shape: 'box', size: [roofHalf, 0.03, 0.04], pos: [smx + 0.5, y + 3.4, z], rot: roofRot, color: 0x5f7e96, ghost: true });
+      props.push({ shape: 'box', size: [0.09, 0.07, (sz1 - sz0) / 2 + 0.3], pos: [smx + 0.5 + roofHalf, y + 3.52, smz], color: 0x8a929a, ghost: true });
+      // The name stood up on the roof's front edge, clear of the iron, on two struts back to it.
+      signs.push({ pos: [smx + 0.5 + roofHalf + 0.16, y + 4.02, smz], rotY: Math.PI / 2, kind: 'canteen' });
+      for (const dz of [-1.5, 1.5]) props.push({ shape: 'box', size: [0.3, 0.04, 0.04], pos: [smx + 0.5 + roofHalf - 0.2, y + 3.75, smz + dz], rot: [0, 0, -0.6], color: frame, ghost: true });
+      // The end towards the bay: the board of what there is, and today's dishes chalked up beneath it.
+      signs.push({ pos: [smx - 0.6, y + 2.55, sz0 - 0.18], rotY: Math.PI, kind: 'bento' });
+      props.push({ shape: 'box', size: [1.1, 0.6, 0.03], pos: [smx - 0.6, y + 1.35, sz0 - 0.17], color: 0x8a6a3a, ghost: true });
+      props.push({ shape: 'box', size: [1.0, 0.5, 0.03], pos: [smx - 0.6, y + 1.35, sz0 - 0.2], color: 0x2a4a3a, ghost: true });
+      [0.75, 0.55, 0.85, 0.6, 0.7].forEach((w, k) => props.push({ shape: 'box', size: [w * 0.9, 0.025, 0.01], pos: [smx - 0.6 + 0.8 - w * 0.9, y + 1.7 - k * 0.17, sz0 - 0.235], color: k === 0 ? 0xf2c12e : 0xe8e8e2, ghost: true }));
+      // The awning, red and white canvas out over the counter, its scalloped edge hung with bulbs.
+      const [ax0, ax1] = [sx1 + 1.0, sx1 + 3.1];
+      const strip = 0.5;
+      for (let z = sz0 + strip / 2, k = 0; z < sz1; z += strip, k++) {
+        const color = k % 2 ? white : red;
+        props.push({ shape: 'box', size: [(ax1 - ax0) / 2, 0.02, strip / 2], pos: [(ax0 + ax1) / 2, y + 2.85, z], rot: [0, 0, -0.14], color, ghost: true });
+        props.push({ shape: 'box', size: [0.02, 0.14, strip / 2], pos: [ax1, y + 2.56, z], color, ghost: true });
+      }
+      for (const z of [sz0 + 0.3, smz, sz1 - 0.3]) props.push({ shape: 'cylinder', size: [0.05, 1.3, 0], pos: [ax1 - 0.05, y + 1.3, z], color: frame });
+      for (let z = sz0 + 1; z < sz1; z += 1.5) props.push({ shape: 'sphere', size: [0.08, 0.08, 0.08], pos: [ax1 + 0.02, y + 2.32, z], color: 0xfff2b0, ghost: true });
+      // Across the front, inside: the hot counter, steel, a glass guard over two rows of dishes in their trays.
+      const [kx, kz, kh] = [sx1 - 0.8, smz - 1.4, 2.8];
+      props.push({ shape: 'box', size: [0.45, 0.45, kh], pos: [kx, y + 0.45, kz], color: 0xc8ccd0 });
+      props.push({ shape: 'box', size: [0.48, 0.03, kh + 0.04], pos: [kx, y + 0.92, kz], color: 0x8c9096, ghost: true });
+      const dishes = [0xc8862a, 0x5a8a3a, 0xa83a2a, 0xe0c060, 0x6a4a2a, 0x3a7a3a, 0xd8a050, 0x8a3a2a, 0x4a8a4a, 0xe8d8a0];
+      for (let k = 0; k < 18; k++) {
+        const z = kz - kh + 0.3 + (k % 9) * ((kh * 2 - 0.6) / 8);
+        const x = kx + (k < 9 ? -0.2 : 0.2);
+        props.push({ shape: 'box', size: [0.16, 0.03, 0.26], pos: [x, y + 0.97, z], color: 0xd8dce0, ghost: true });
+        props.push({ shape: 'box', size: [0.13, 0.03, 0.22], pos: [x, y + 1.0, z], color: dishes[(k * 7) % dishes.length], ghost: true });
+      }
+      props.push({ shape: 'box', size: [0.02, 0.2, kh], pos: [kx + 0.32, y + 1.2, kz], rot: [0, 0, 0.35], color: 0xcfe8f2, ghost: true });
+      props.push({ shape: 'box', size: [0.26, 0.012, kh], pos: [kx, y + 1.4, kz], color: 0xcfe8f2, ghost: true });
+      // Beyond it, the rice in two big cookers.
+      props.push({ shape: 'box', size: [0.45, 0.45, 0.8], pos: [kx, y + 0.45, kz + kh + 0.75], color: 0xc8ccd0 });
+      for (const dz of [0.45, 1.05]) {
+        props.push({ shape: 'cylinder', size: [0.24, 0.2, 0], pos: [kx, y + 1.13, kz + kh + dz], color: 0xe8e8e2 });
+        props.push({ shape: 'cylinder', size: [0.25, 0.04, 0], pos: [kx, y + 0.97, kz + kh + dz], color: red, ghost: true });
+      }
+      // At the back: the wok, the soups in their pots on a bench, tubes of light under the roof, the drinks.
+      object('wokStand', sx0 + 1.2, sz1 - 2, Math.PI / 2);
+      props.push({ shape: 'box', size: [0.45, 0.45, 2], pos: [sx0 + 0.6, y + 0.45, smz - 1], color: 0xd8d4c8 });
+      for (let k = 0; k < 3; k++) props.push({ shape: 'cylinder', size: [0.22, 0.24, 0], pos: [sx0 + 0.6, y + 1.14, smz - 2.4 + k * 0.7], color: 0x9aa0a6 });
+      for (const dz of [-3, 0, 3]) props.push({ shape: 'box', size: [0.6, 0.03, 0.05], pos: [smx, y + 3.0, smz + dz], color: 0xf8f8f0, ghost: true });
+      object('fridge', sx1 - 0.6, sz0 + 0.7, -Math.PI / 2);
+      object('fridge', sx1 - 0.6, sz0 + 1.5, -Math.PI / 2);
+      // Gas for the wok round the side, out of the way.
+      object('gasCylinder', sx0 + 1, sz1 + 0.6);
+      object('gasCylinder', sx0 + 1.6, sz1 + 0.6);
+      // Out in the open yard in front: round tables in two rows with stools about them, lunch boxes to go, a bin of scraps.
+      for (const tx of [ax1 + 1.8, ax1 + 4.4]) {
+        for (const tz of [sz0 + 2.4, smz, sz1 - 2.4]) {
+          object('table', tx, tz);
+          for (let k = 0; k < 4; k++) object('stool', tx + Math.cos(k * Math.PI / 2 + 0.4) * 0.8, tz + Math.sin(k * Math.PI / 2 + 0.4) * 0.8);
+        }
+      }
+      for (let k = 0; k < 3; k++) object('paperBox', sx1 + 0.6, sz0 - 0.6 - k * 0.5);
+      object('waterDrum', ax1 + 0.4, sz1 + 0.8);
+      crowds.push({ area: [ax1 + 1, sz0 + 1, ax1 + 5.4, sz1 - 1], count: 7, y, workers: true, fenced: true });
+      crowds.push({ area: [sx0 + 0.6, sz1 - 2.6, sx0 + 0.9, sz1 - 1.4], count: 1, y, motion: 'cook', clothes: [0xd85a7a], fenced: true });
     }
 
     // The quarry: a fence round it, the office in two containers at its far end, where the load goes; the machines.
@@ -1334,7 +1420,7 @@ export function uptown(): LevelDef {
     ...lifted,
     id: 'uptown',
     name: '第 2 關　山城快遞',
-    brief: '從卸貨區出發穿過山城：跟公車搶道、走樓梯、繞廟埕、鑽小巷，衝上鋼捲大坡，再沿髮夾彎下山，送到山腳的砂石場',
+    brief: '從卸貨區出發穿過山城：跟公車搶道、走樓梯、繞廟埕、鑽小巷，衝上鋼捲大坡，再沿髮夾彎下山，送到山腳砂石場門口的工人餐廳',
     ground: { center: [-100, north / 2], half: [400, north / 2 + 20], style: 'asphalt' },
     spawn: [xOf(12), BAY + 0.9, zOf(45) - 6],
     heading: 0,
@@ -1351,6 +1437,18 @@ export function uptown(): LevelDef {
     // Level 1's whole city comes with it, its traffic and all, and most of that is far out of sight.
     quietBeyond: 250,
     // For testing: just before each part, on the way.
+    // Saved coming out of the lane on to the road the school is on; put back at the corner, facing east along the road.
+    save: { zone: [xOf(21) - 6, zOf(51) + 6, xOf(21) + 6, zOf(52) + 2], pos: [xOf(21) + 2, zOf(51) + 1], yaw: -Math.PI / 2 },
+    // The customer is the owner of the canteen at the quarry's gate, where the load goes; the boss has a word at the coil slope.
+    chat: {
+      customer: 'canteen',
+      places: [
+        { zone: /* up the climb to the corner the stairs go off from */ approach([xOf(13) + 14, zOf(59) - 2], 0, 50, 8, 12), talk: [['them', '到樓梯了嗎'], ['them', '那條是捷徑'], ['me', '樓梯不是給車走的'], ['them', '所以才叫捷徑']] },
+        { zone: approach([xOf(17), zOf(56) + 4], 0), talk: [['them', '經過廟口幫我拜一下'], ['them', '保佑今天便當賣完'], ['me', '開車怎麼拜'], ['them', '……不然按個喇叭？']] },
+        { zone: approach([xOf(31) - 3.5, zOf(52) + 4], 0), from: 'boss', talk: [['them', '前面那個坡會有鋼捲滾下來'], ['them', '聽說有事故'], ['me', '那我可以明天再送嗎？'], ['them', '不可以']] },
+        { zone: approach([EAST_EDGE + 10, zOf(65)], -Math.PI / 2), talk: [['them', '下山那段彎很急'], ['them', '慢慢開'], ['me', '相信我的壓車過彎'], ['them', '…真的可以嗎？'], ['them', '……還活著嗎？']] },
+      ],
+    },
     checkpoints: [
       { name: '起點・公車街', pos: [busX - 2.2, zOf(46)], yaw: 0 },
       { name: '樓梯頂', pos: [xOf(13) + 2, zOf(59) - 2], yaw: -Math.PI / 2 },
@@ -1378,7 +1476,7 @@ export function uptown(): LevelDef {
     ],
     finish: { pos: [GATE_YARD[0] + 10, (GATE_YARD[1] + GATE_YARD[3]) / 2 - 4], half: [4.5, 6] },
     damageScale: undefined,
-    stars: [0, 0.6],
+    stars: STARS,
     par: 180,
   };
 }

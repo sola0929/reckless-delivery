@@ -1,6 +1,6 @@
 import { city, cityCell } from './city';
 import { Heights, heightOf, lift, type Profile } from './lift';
-import type { LevelDef } from './types';
+import { approach, type LevelDef } from './types';
 
 // The city of the first level, as it is, on a hillside: the same streets, blocks and obstacles,
 // with the ground climbing and falling between them. A trial of putting height into a map drawn
@@ -54,7 +54,19 @@ export function hillcity(): LevelDef {
   return {
     ...lift(city(), heights, CITY_LOOKS),
     id: 'hillcity',
+    // Saved at the crossing before the lifting bridge, past the dug-up road; put back in the dead end beside it, where no
+    // traffic comes, facing the crossing.
+    save: { zone: [cityCell(20, 23)[0] - 8, cityCell(20, 23)[1] - 6, cityCell(20, 23)[0] + 8, cityCell(20, 23)[1] + 6], pos: [cityCell(18, 23)[0] - 6, cityCell(18, 23)[1]], yaw: -Math.PI / 2 },
     // Level 1 now: the same city as ever, on its hillside. Named as level 1 always was.
+    // The customer is a student moving house; the boss has a word at the railway.
+    chat: {
+      customer: 'student',
+      places: [
+        { zone: approach(cityCell(27, 15), 0), talk: [['them', '你要經過市場了吧'], ['them', '那邊有間小吃攤還不錯，我挺喜歡的'], ['me', '等我開過去後以後可能就沒有了']] },
+        // Along the busy street coming up to the corner, and round it to the crossing.
+        { zone: [cityCell(29, 31)[0] - 10, cityCell(29, 31)[1] - 8, cityCell(29, 31)[0] + 60, cityCell(29, 33)[1] + 6], from: 'boss', talk: [['them', '前面平交道'], ['them', '柵欄放下來就停，不要跟火車比誰硬'], ['me', '我試過了 火車比較硬']] },
+      ],
+    },
     name: '第 1 關　城市配送',
     brief: '穿過市區，把貨物送到綠色卸貨區',
   };

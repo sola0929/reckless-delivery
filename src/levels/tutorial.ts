@@ -4,7 +4,7 @@ import { containerModel } from './city';
 import { TRUCK } from '../config';
 import type { CargoPlacement } from '../sim/cargo';
 import { heightAt } from './terrain';
-import type { CrowdDesc, DecalDesc, GateDesc, LessonDesc, LevelDef, PropDesc, SignalDesc, SignDesc, TrackDesc, Vec2 } from './types';
+import { type CrowdDesc, type DecalDesc, type GateDesc, type LessonDesc, type LevelDef, type PropDesc, type SignalDesc, type SignDesc, type TrackDesc, type Vec2, STARS } from './types';
 
 // The tutorial, 新手上路: one road through the back of a freight company's yard to the warehouse next door, each stretch
 // of it there to teach one thing, in this order:
@@ -361,7 +361,7 @@ export function tutorial(): LevelDef {
     finish: { pos: [RX, BAY_Z], half: BAY_HALF },
     practice: true,
     lessons: lessons(),
-    stars: [0, 0.6],
+    stars: STARS,
     par: 600,
   };
 }

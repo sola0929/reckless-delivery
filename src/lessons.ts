@@ -171,7 +171,7 @@ export class LessonGuide {
   private fetching(sim: Sim, pad: boolean): string {
     const crate = sim.cargo.find((c) => c.bonus);
     const k = (keys: string, controller: string) => `<b>${pad ? controller : keys}</b>`;
-    if (!crate?.body) return '貨摔壞了，按 ' + k('R', 'Back') + ' 重來';
+    if (!crate?.body) return '貨摔壞了，按 ' + k('Esc', 'Start') + ' 暫停，選「重新開始」';
     if (sim.driver.mode === 'driving') {
       return Math.abs(sim.truck.forwardSpeed()) > 1.5 ? '前面路邊有一個保險箱：在它旁邊停車' : `按 ${k('C', 'Y')} 下車`;
     }

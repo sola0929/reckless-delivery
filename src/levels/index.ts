@@ -31,18 +31,22 @@ export interface LevelEntry {
   note: string;
   /** Whether it has been built yet. One that hasn't is shown as coming. */
   ready: boolean;
+  /** What the level page's preview shows: a caption to each picture, public/previews/<id>-<n>.jpg, made by dev/preview-picks.mjs. */
+  previews?: string[];
+  /** Its load, as the preview tells it: how many things, and their worth all told. */
+  load?: [number, number];
 }
 
 /** The deliveries, in order; all of them can be played from the start. */
 export const LEVEL_LIST: LevelEntry[] = [
   // Level 1 is the city on its hillside; the flat city it was first built as is kept only as what the others are made from.
-  { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true },
-  { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true },
-  { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true },
+  { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true, previews: ['市場小路', '機車車陣', '平交道', '路邊辦桌'], load: [18, 4000] },
+  { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500] },
+  { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000] },
 ];
 
 /** The tutorial: before the deliveries, never in the way of them. */
-export const TUTORIAL: LevelEntry = { id: 'tutorial', name: '新手上路', badge: '新手', note: '學開車、看到火車煞車、加速飛越斷橋、下車撿貨，大約兩分鐘', ready: true };
+export const TUTORIAL: LevelEntry = { id: 'tutorial', name: '新手上路', badge: '新手', note: '學開車、看到火車煞車、加速飛越斷橋、下車撿貨，大約兩分鐘', ready: true, previews: ['油門與轉彎', '看到火車就煞車', '加速飛越斷橋', '下車撿貨'], load: [7, 1100] };
 
 /** Places to drive about with nothing at stake. Always open, and they keep no record. */
 export const FREE_PLAY: LevelEntry[] = !DEV ? [] : [

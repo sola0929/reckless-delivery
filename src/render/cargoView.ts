@@ -206,22 +206,26 @@ export class CargoViews {
 
     for (const item of sim.cargo) {
       const group = new THREE.Group();
-      const meshes = item.type.parts.map((part) => {
+      // Put back from a save, an item may have lost parts already, or be no more than its pieces (drawn as they come).
+      const meshes = item.type.parts.map((part, i) => {
+        if (!item.attached[i]) return null;
         const mesh = partMesh(part, 0);
         if (item.type.id === 'skeleton' && part.shape === 'sphere') addFace(mesh, part.size[0]);
         group.add(mesh);
         return mesh;
       });
-      this.scene.add(group);
+      if (item.body) this.scene.add(group);
       const marker = new THREE.Mesh(MARKER_SHAPE, MARKER_MATERIAL);
       marker.visible = false;
       marker.renderOrder = 9;
       this.scene.add(marker);
-      this.views.set(item, {
+      const view: ItemView = {
         item, group, meshes, marker,
-        sync: new BodySync(item.body!, group),
+        sync: item.body ? new BodySync(item.body, group) : null,
         flash: 0, leakLeft: 0, leakTimer: 0,
-      });
+      };
+      this.views.set(item, view);
+      if (item.stage > 0 && item.body) this.restyle(view);
     }
   }
 

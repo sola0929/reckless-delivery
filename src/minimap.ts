@@ -19,6 +19,8 @@ export class Minimap {
   private readonly maxX: number;
   private readonly maxZ: number;
   private time = 0;
+  /** Whether the run has passed its save point: its flag then goes grey and is no longer pinned to the rim. */
+  saved = false;
 
   constructor(canvas: HTMLCanvasElement, private readonly level: LevelDef) {
     const ratio = Math.min(window.devicePixelRatio, 2);
@@ -173,6 +175,34 @@ export class Minimap {
       ctx.arc(dx, dy, 3.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    }
+
+    // The save point, as a small flag: pinned to the rim like the bay until passed, then grey where it is.
+    const save = this.level.save;
+    if (save) {
+      let [sx, sy] = place((save.zone[0] + save.zone[2]) / 2, (save.zone[1] + save.zone[3]) / 2);
+      const far = Math.hypot(sx, sy);
+      const rim = half - 9;
+      if (far > rim && !this.saved) {
+        sx *= rim / far;
+        sy *= rim / far;
+      }
+      if (far <= rim || !this.saved) {
+        ctx.strokeStyle = '#0d1a24';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(sx - 3, sy + 6);
+        ctx.lineTo(sx - 3, sy - 7);
+        ctx.stroke();
+        ctx.fillStyle = this.saved ? '#8a929a' : '#3fb8ff';
+        ctx.beginPath();
+        ctx.moveTo(sx - 3, sy - 7);
+        ctx.lineTo(sx + 6, sy - 4);
+        ctx.lineTo(sx - 3, sy - 1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
     }
 
     const finish = this.level.finish;

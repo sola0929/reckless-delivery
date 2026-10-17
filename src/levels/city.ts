@@ -5,7 +5,7 @@ import type { CargoPlacement } from '../sim/cargo';
 import { buildingMarks } from '../render/buildings';
 import { mulberry32 } from './sandbox';
 import { tilesAround, type Tile } from './ground';
-import type { BuildingLook, CrowdDesc, DecalDesc, GateDesc, LevelDef, PitDesc, PropDesc, RiderLane, SignDesc, SignalDesc, SlickDesc, TrackDesc, TrafficLane, Vec2 } from './types';
+import { type BuildingLook, type CrowdDesc, type DecalDesc, type GateDesc, type LevelDef, type PitDesc, type PropDesc, type RiderLane, type SignDesc, type SignalDesc, type SlickDesc, type TrackDesc, type TrafficLane, type Vec2, STARS } from './types';
 
 // Level 1: a delivery run across a city, drawn as a map of characters. Each one is a 16 m
 // square; north is at the top. To add a road, change the map.
@@ -1098,7 +1098,8 @@ function barrier(b: Builder, x: number, z: number, length: number, turned = fals
   b.props.push({ shape: 'box', size: turned ? [0.35, 0.45, long] : [long, 0.45, 0.35], pos: [x, 0.45, z], color: 0xc9c5bc, mapColor: MAP_BARRIER });
   for (let d = -long + 0.5; d < long; d += 2) {
     b.props.push({
-      shape: 'box', size: turned ? [0.37, 0.14, 0.5] : [0.5, 0.14, 0.37],
+      // A little short of a full metre, so that the end stripes don't finish flush with the barrier's ends and flicker.
+      shape: 'box', size: turned ? [0.37, 0.14, 0.48] : [0.48, 0.14, 0.37],
       pos: [x + (turned ? 0 : d), 0.62, z + (turned ? d : 0)], color: 0xd03a2a, ghost: true,
     });
   }
@@ -1236,7 +1237,8 @@ function furnishSite(b: Builder, west: number, east: number, south: number, nort
   show([0.7, 0.6, 0.7], [cx + 0.2, 25.2, cz], 0xf2efe6);
   show([9.5, 0.25, 0.3], [cx - 8, 26, cz], yellow);
   show([3, 0.25, 0.3], [cx + 4.5, 26, cz], yellow);
-  show([1, 0.6, 0.5], [cx + 6.5, 25.4, cz], 0x4a4f57);
+  // The counterweight, a little past the jib's end: the two ends flush would flicker.
+  show([1, 0.6, 0.5], [cx + 6.55, 25.4, cz], 0x4a4f57);
   show([0.3, 1.6, 0.3], [cx, 27.4, cz], yellow);
   show([5, 0.04, 0.04], [cx - 4.8, 27.6, cz], 0x2a2e34, [0, 0, -0.3]);
   show([0.03, 5.5, 0.03], [cx - 11, 20.3, cz], 0x2a2e34);
@@ -1542,7 +1544,7 @@ function buildGateway(b: Builder): void {
     const middle = z + (side * (inner + reach)) / 2;
     // The wall: brick on a stone footing, a coping along the top, and battlements on that.
     b.props.push({ shape: 'box', size: [0.45, 1.1, length], pos: [x, 1.1, middle], color: brick, mapColor: MAP_BARRIER });
-    b.props.push({ shape: 'box', size: [0.5, 0.18, length], pos: [x, 0.18, middle], color: 0x8b8f92, ghost: true });
+    b.props.push({ shape: 'box', size: [0.5, 0.18, length - 0.02], pos: [x, 0.18, middle], color: 0x8b8f92, ghost: true });
     b.props.push({ shape: 'box', size: [0.52, 0.07, length], pos: [x, 2.27, middle], color: coping, ghost: true });
     for (let d = -length + 0.5; d < length; d += 1.1) b.props.push({ shape: 'box', size: [0.4, 0.22, 0.3], pos: [x, 2.56, middle + d], color: brick, ghost: true });
     // The gatepost: tall, banded in stone, with a tiled cap and a lantern hung on the inner face.
@@ -1901,7 +1903,7 @@ export function city(): LevelDef {
     finish: { pos: finish, half: [3.4, 6.4] },
     // The first level: mistakes cost less here than they will later.
     damageScale: 0.8,
-    stars: [0, 0.6],
+    stars: STARS,
     par: 150,
   };
 }

@@ -301,8 +301,9 @@ function box(props: PropDesc[], size: [number, number, number], pos: [number, nu
 function bridge(s: Site, signs: SignDesc[]): void {
   const { props, decals } = s;
   const top = DECK_Y, half = DECK_WIDE / 2;
-  // Joints between the plates, standing a little proud: a jolt each at speed.
-  for (let z = DECK_FROM + 6; z < DECK_TO - 2; z += 12) box(props, [half - 0.25, 0.05, 0.14], [ROAD_X, top + 0.05, z], 0x4a4f55);
+  // Joints between the plates, standing a little proud: a jolt each at speed. Only under the truck's wheels: a lorry knocked
+  // loose and sliding would catch its edge on one and be thrown over.
+  for (let z = DECK_FROM + 6; z < DECK_TO - 2; z += 12) box(props, [half - 0.25, 0.05, 0.14], [ROAD_X, top + 0.05, z], 0x4a4f55, { wheelsOnly: true });
   for (let z = DECK_FROM + 3; z < DECK_TO; z += 6) decals.push({ pos: [ROAD_X, z], size: [DECK_WIDE - 0.6, 0.05], color: 0x555b61, base: top, y: 0.02 });
   decals.push({ pos: [ROAD_X, (DECK_FROM + DECK_TO) / 2], size: [0.14, DECK_TO - DECK_FROM - 2], color: 0xe8b81e, base: top, y: 0.025 });
   // The kerbs: low, steel, yellow; one bent and torn away on the west a little past the middle, its piece lying askew.
@@ -654,7 +655,8 @@ function buildings(s: Site, signs: SignDesc[]): void {
     for (let y = Y + 2; y < Y + 30; y += 2) box2([0.75, 0.04, 0.75], [cx, y, cz], DARK, { ghost: true });
     box2([14, 0.3, 0.35], [cx + 10, Y + 31, cz], 0xe0a020, { ghost: true, fade: true });
     box2([4, 0.3, 0.35], [cx - 6, Y + 31, cz], 0xe0a020, { ghost: true, fade: true });
-    box2([1, 0.7, 0.9], [cx - 9, Y + 30.4, cz], 0x4a4f57, { ghost: true, fade: true });
+    // The counterweight, standing a little past the jib's end so that the two end faces don't meet in one plane.
+    box2([1, 0.7, 0.9], [cx - 9.05, Y + 30.4, cz], 0x4a4f57, { ghost: true, fade: true });
     box2([0.02, 6, 0.02], [cx + 18, Y + 25, cz], DARK, { ghost: true, fade: true });
     box2([1.2, 0.3, 0.6], [cx + 18, Y + 18.8, cz], 0x6a4a32, { ghost: true, fade: true });
   }

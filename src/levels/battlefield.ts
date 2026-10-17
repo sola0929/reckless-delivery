@@ -1,7 +1,7 @@
 import { cityLoad } from './city';
 import type { ObjectDesc, ObjectKindId } from './objects';
 import { mulberry32 } from './sandbox';
-import type { BattleDesc, CrowdDesc, DecalDesc, LevelDef, PitDesc, PropDesc, Vec2 } from './types';
+import { type BattleDesc, type CrowdDesc, type DecalDesc, type LevelDef, type PitDesc, type PropDesc, type Vec2, STARS } from './types';
 
 // The second delivery: out of a camp and through the middle of a battle between two armies.
 // Not one road but a string of places, each its own, with its own edges, its own things
@@ -450,7 +450,7 @@ export function battlefield(): LevelDef {
     cargo: cityLoad(),
     traffic: [],
     finish: { pos: finish, half: [3.4, 6.4] },
-    stars: [0, 0.6],
+    stars: STARS,
     par: 180,
   };
 }

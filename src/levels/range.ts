@@ -102,7 +102,7 @@ export function range(): LevelDef {
     battle,
     cargo: standardLoad(),
     traffic: [],
-    stars: [0.6, 0.8],
+    stars: [0.6, 0.8, 0.9],
     par: 180,
   };
 }

@@ -13,7 +13,7 @@ import { groundTiles } from '../levels/ground';
 import { heightAt, terrainMesh } from '../levels/terrain';
 import type { LevelDef, PitDesc, PropDesc, TrackDesc } from '../levels/types';
 import { Battle, type BattleSound } from './battle';
-import { CargoSystem, type CargoEvent, type CargoItem } from './cargo';
+import { CargoSystem, type CargoEvent, type CargoItem, type SavedItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
 import { BLAST_RADIUS, ObjectSystem, type Blast, type KnockEvent, type LandEvent } from './objects';
 import { Rollers } from './rollers';
@@ -78,6 +78,8 @@ export interface Result {
   /** What became of each item of the load. */
   tally: Tally;
   trip: Trip;
+  /** How many times the run went back to its save point. */
+  retries: number;
 }
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
@@ -131,11 +133,8 @@ const WATER_PUSH = 0.85;
 const PARKED: DriveInput = { throttle: 0, steer: 0, handbrake: true };
 
 /** One star for passing, a second for delivering most of the load, a third for doing that inside the par time. */
-export function starsFor(level: LevelDef, fraction: number, seconds: number): number {
-  const [pass, two] = level.stars;
-  if (fraction < pass) return 0;
-  if (fraction < two) return 1;
-  return seconds <= level.par ? 3 : 2;
+export function starsFor(level: LevelDef, fraction: number): number {
+  return level.stars.filter((share) => fraction >= share).length;
 }
 
 /** The whole physics world for one level. Has no rendering dependencies, so it also runs headless. */
@@ -172,6 +171,14 @@ export class Sim {
   /** How many times the truck has been set back on its wheels after overturning. */
   rightings = 0;
   private mishap: Failure | 'train' | null = null;
+  /** The run as it stood when it passed the level's save point: the load, the clock, what had been run into by then. */
+  private saved: { items: SavedItem[]; time: number; trip: Trip } | null = null;
+  /** Set on the step the save point is passed, until taken. */
+  private savedNow = false;
+  /** What had been run into before the save point, when the run has gone back to it: added to what is run into after. */
+  private tripBefore: Trip | null = null;
+  /** How many times the run has gone back to its save point. */
+  retries = 0;
   /**
    * How battered the truck is, 0 to 100. For show only: it drives the same however it looks.
    */
@@ -252,7 +259,8 @@ export class Sim {
         : desc.shape === 'cylinder' ? RAPIER.ColliderDesc.cylinder(b, a)
         : desc.shape === 'sphere' ? RAPIER.ColliderDesc.ball(a)
         : RAPIER.ColliderDesc.cone(b, a);
-      shape.setFriction(desc.friction ?? 0.8).setCollisionGroups(groups(dynamic ? GROUP.prop : GROUP.ground, GROUP.all));
+      // Felt by the wheels, which look for the ground, and by nothing else: only the truck's own body could touch it, and that rides high above.
+      shape.setFriction(desc.friction ?? 0.8).setCollisionGroups(groups(dynamic ? GROUP.prop : GROUP.ground, desc.wheelsOnly ? GROUP.truck : GROUP.all));
       // A slippery one is slippery whatever rests on it, however much grip that has of its own.
       if (desc.friction !== undefined) shape.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
       if (dynamic) shape.setMass(desc.mass!);
@@ -392,7 +400,49 @@ export class Sim {
     if (!this.result) {
       if (this.started) this.time += PHYSICS.dt;
       this.checkDelivery();
+      this.checkSave();
     }
+  }
+
+  /** Through the save point in the cab, the first time: the load is recorded as it stands. */
+  private checkSave(): void {
+    const save = this.level.save;
+    if (!save || this.saved || this.driver.mode !== 'driving') return;
+    const t = this.truck.body.translation();
+    const [x0, z0, x1, z1] = save.zone;
+    if (t.x < x0 || t.x > x1 || t.z < z0 || t.z > z1) return;
+    this.saved = { items: this.cargoSystem.snapshot(this.truck), time: this.time, trip: this.trip() };
+    this.savedNow = true;
+  }
+
+  /** Whether the save point has just been passed; once. */
+  takeSaved(): boolean {
+    const now = this.savedNow;
+    this.savedNow = false;
+    return now;
+  }
+
+  /** Whether there is a save point to go back to. */
+  get hasSave(): boolean {
+    return this.saved !== null;
+  }
+
+  /**
+   * Back to the save point: everything along the way as it was at the start, the truck where the save was made with what
+   * was aboard it then, as hurt as it was then; the clock as it read. Cargo bodies are rebuilt, so views must be too.
+   */
+  backToSave(): void {
+    const saved = this.saved, save = this.level.save;
+    if (!saved || !save) return;
+    const retries = this.retries + 1;
+    this.reset();
+    this.saved = saved;
+    this.retries = retries;
+    this.tripBefore = saved.trip;
+    this.teleport(save.pos[0], save.pos[1], save.yaw, save.y);
+    this.cargoSystem.restore(saved.items, this.truck);
+    this.time = saved.time;
+    this.started = true;
   }
 
   /** Cargo events since the last call: damage, parts coming off, items lost. */
@@ -587,10 +637,11 @@ export class Sim {
   /** Count the load by the state each item is in right now. */
   trip(): Trip {
     const set = this.level.objects?.length ?? 0;
+    const before = this.tripBefore;
     return {
-      people: this.pedestrians.hits + this.riders.hits,
-      cars: this.traffic.hits,
-      things: this.objects.objects.slice(0, set).filter((o) => o.knocked).length,
+      people: this.pedestrians.hits + this.riders.hits + (before?.people ?? 0),
+      cars: this.traffic.hits + (before?.cars ?? 0),
+      things: this.objects.objects.slice(0, set).filter((o) => o.knocked).length + (before?.things ?? 0),
     };
   }
 
@@ -642,6 +693,10 @@ export class Sim {
     this.driver.reset();
     this.trains.reset();
     this.mishap = null;
+    this.saved = null;
+    this.savedNow = false;
+    this.tripBefore = null;
+    this.retries = 0;
     this.objects.reset();
     this.rollers.reset();
     this.pedestrians.reset();
@@ -941,7 +996,7 @@ export class Sim {
       this.inPit = 0;
       return;
     }
-    this.result ??= { value: 0, fraction: 0, stars: 0, seconds: this.time, failure, tally: this.tally(), trip: this.trip() };
+    this.result ??= { value: 0, fraction: 0, stars: 0, seconds: this.time, failure, tally: this.tally(), trip: this.trip(), retries: this.retries };
   }
 
   private checkDelivery(): void {
@@ -961,10 +1016,11 @@ export class Sim {
     this.result = {
       value,
       fraction,
-      stars: starsFor(this.level, fraction, this.time),
+      stars: starsFor(this.level, fraction),
       seconds: this.time,
       tally: this.tally(),
       trip: this.trip(),
+      retries: this.retries,
     };
   }
 }

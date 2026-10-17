@@ -113,21 +113,35 @@ function showMenu(): void {
   };
   const open = (id: string) => {
     for (const page of pages) page.hidden = page.id !== id;
-    choices()[0]?.focus();
+    // The level page opens on what "Start" would play, its row under the keys.
+    if (id === 'menu-levels') (rows.get(next) ?? choices()[0])?.focus();
+    else choices()[0]?.focus();
   };
 
-  // A card for each delivery: where it stands, and the best run of it so far.
+  // A card for each delivery: where it stands, and the best run of it so far; the tutorial as a strip above them. Choosing one
+  // shows it in the preview to the right of them; going is the preview's own button, Enter, or a second click. With no room
+  // for the preview, a card goes straight in, as it used to.
   const list = document.getElementById('menu-level-list')!;
   const LABEL = { done: '已完成', open: '可挑戰', locked: '未解鎖', soon: '待更新' };
   const LOCK = '<svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3h2v11H5V10zm2 0h6V7a3 3 0 0 0-6 0z"/></svg>';
-  // The tutorial first, as a strip: done or not, never anything to unlock.
+  const rows = new Map<string, HTMLButtonElement>();
+  const entries = [TUTORIAL, ...LEVEL_LIST];
+  const stateOf = (id: string) => (id === TUTORIAL.id ? (loadBest(id) ? 'done' : 'open') : states[LEVEL_LIST.findIndex((level) => level.id === id)]);
+  const previewing = () => document.getElementById('level-preview')!.offsetParent !== null;
+  const hook = (id: string, button: HTMLButtonElement) => {
+    // Focus chooses it, from the keys as from the mouse; a click not from the mouse (Enter, the controller's A) goes.
+    button.addEventListener('focus', () => choose(id));
+    button.addEventListener('click', (e) => (e.detail === 0 || !previewing() ? play(id) : choose(id)));
+    button.addEventListener('dblclick', () => play(id));
+    rows.set(id, button);
+  };
   {
     const done = loadBest(TUTORIAL.id) !== null;
     const strip = document.createElement('button');
     strip.type = 'button';
     strip.className = 'level-free tutorial-strip';
     strip.innerHTML = `<div class="level-thumb tutorial"><span>${TUTORIAL.badge}</span></div><div><div class="level-name">${TUTORIAL.name}</div><div class="level-note">${TUTORIAL.note}</div></div><div class="level-state${done ? ' done' : ''}">${done ? '已完成' : '教學'}</div>`;
-    strip.addEventListener('click', () => play(TUTORIAL.id));
+    hook(TUTORIAL.id, strip);
     list.before(strip);
   }
   let earned = 0;
@@ -137,7 +151,7 @@ function showMenu(): void {
     earned += best?.stars ?? 0;
     const stars = [0, 1, 2].map((n) => `<span${best && n < best.stars ? ' class="on"' : ''}>★</span>`).join('');
     const record =
-      state === 'done' ? `最高送達 ${Math.floor(best!.fraction * 100)}%　最快 ${clock(best!.seconds)}`
+      state === 'done' ? `最高送達 ${Math.floor(best!.fraction * 100)}%　最快 ${best!.seconds != null ? clock(best!.seconds) : '－'}`
       : state === 'open' ? '還沒有紀錄'
       : state === 'locked' ? '完成上一關後開放'
       : '製作中，敬請期待';
@@ -150,10 +164,11 @@ function showMenu(): void {
       `<div class="level-state">${LABEL[state]}</div>` +
       `<div class="level-name">${name}</div><div class="level-note">${note}</div>` +
       `<div class="level-stars">${stars}</div><div class="level-best">${record}</div>`;
-    card.addEventListener('click', () => play(id));
+    hook(id, card);
     list.append(card);
   });
   document.getElementById('menu-level-stars')!.textContent = `${earned} / ${LEVEL_LIST.length * 3}`;
+  // Free play, in development only, goes straight in: there is nothing to preview.
   const free = document.getElementById('menu-free')!;
   for (const { id, name, badge, note } of FREE_PLAY) {
     const strip = document.createElement('button');
@@ -164,8 +179,84 @@ function showMenu(): void {
     free.append(strip);
   }
 
+  // The preview: its pictures in turn, each fading into the next, with dots to go to any; what it is; and the way in.
+  const preview = document.getElementById('level-preview')!;
+  const shots = preview.querySelector<HTMLElement>('.preview-shots')!;
+  const caption = preview.querySelector<HTMLElement>('.preview-caption')!;
+  const dots = preview.querySelector<HTMLElement>('.preview-dots')!;
+  const go = document.getElementById('preview-go') as HTMLButtonElement;
+  let chosenId = '';
+  let shown = 0;
+  let turn = 0;
+  const show = (n: number) => {
+    const pictures = [...shots.querySelectorAll('img')];
+    if (!pictures.length) return;
+    shown = (n + pictures.length) % pictures.length;
+    pictures.forEach((img, k) => img.classList.toggle('on', k === shown));
+    [...dots.children].forEach((dot, k) => dot.classList.toggle('on', k === shown));
+    caption.textContent = pictures[shown].alt;
+  };
+  const rotate = () => {
+    window.clearInterval(turn);
+    turn = window.setInterval(() => show(shown + 1), 3200);
+  };
+  function choose(id: string): void {
+    if (id === chosenId) return;
+    chosenId = id;
+    const entry = entries.find((level) => level.id === id)!;
+    const state = stateOf(id);
+    const tutorial = entry === TUTORIAL;
+    for (const [rowId, row] of rows) row.classList.toggle('chosen', rowId === id);
+    for (const img of shots.querySelectorAll('img')) img.remove();
+    dots.replaceChildren();
+    (entry.previews ?? []).forEach((text, k) => {
+      const img = document.createElement('img');
+      img.src = `previews/${id}-${k}.jpg`;
+      img.alt = text;
+      img.addEventListener('error', () => img.remove());
+      caption.before(img);
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.tabIndex = -1;
+      dot.setAttribute('aria-label', text);
+      dot.addEventListener('click', () => {
+        show(k);
+        rotate();
+      });
+      dots.append(dot);
+    });
+    show(0);
+    rotate();
+    const delivery = LEVEL_LIST.find((level) => level.id === id);
+    preview.querySelector('.preview-tag')!.textContent = delivery ? `第 ${delivery.badge} 關` : '教學';
+    preview.querySelector('.preview-name')!.textContent = entry.name;
+    preview.querySelector('.preview-note')!.textContent = entry.note;
+    const [count, worth] = entry.load ?? [0, 0];
+    preview.querySelector('.preview-facts')!.innerHTML =
+      (count ? `<span>貨物 <b>${count}</b> 件　價值 <b>$${worth.toLocaleString()}</b></span>` : '') +
+      (tutorial ? '<span>不計分，隨時可以跳過</span>' : '<span><i>★</i> 抵達　<i>★★</i> 送達 30%　<i>★★★</i> 送達 60%</span>');
+    const best = state === 'done' ? loadBest(id) : null;
+    preview.querySelector('.preview-best')!.textContent = tutorial ? '' :
+      best ? `最佳紀錄：送達 ${Math.floor(best.fraction * 100)}%　最快 ${best.seconds != null ? clock(best.seconds) : '－'}`
+      : state === 'locked' ? '完成上一關後開放'
+      : state === 'soon' ? '製作中，敬請期待'
+      : '還沒有紀錄';
+    go.disabled = state === 'locked' || state === 'soon';
+  }
+  go.addEventListener('click', () => play(chosenId));
+
   // "Start" goes to the first delivery not yet passed, or the first one when all are.
   const next = LEVEL_LIST.find((_, i) => states[i] === 'open')?.id ?? FIRST_LEVEL;
+  // Said under it: where that is, and the stars so far.
+  {
+    const entry = LEVEL_LIST.find((level) => level.id === next)!;
+    const played = states.some((state) => state === 'done');
+    const all = states.every((state) => state === 'done');
+    const where = `第 ${entry.badge} 關　${entry.name}`;
+    document.getElementById('menu-start-note')!.innerHTML =
+      (all ? `全部送達！從第 ${entry.badge} 關再跑一次` : played ? `繼續：${where}` : `從${where}開始`) +
+      (played ? `<span>★ ${earned} / ${LEVEL_LIST.length * 3}</span>` : '');
+  }
   // Settings: the volumes and the picture quality, the same ones the pause menu has.
   const sfx = document.getElementById('set-sfx') as HTMLInputElement;
   const music = document.getElementById('set-music') as HTMLInputElement;

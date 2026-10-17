@@ -12,7 +12,11 @@ const UI = {
   close: 'ui-close.ogg',
   win: 'ui-win.ogg',
   fail: 'ui-fail.ogg',
+  notify: 'ui-notify.mp3',
+  message: 'ui-message.mp3',
 };
+/** How loud each is beside the sound effects' setting: a message has to be heard over the engine, the menu's clicks don't. */
+const UI_LEVEL: Partial<Record<keyof typeof UI, number>> = { notify: 1, message: 1 };
 // One tune for now, in the menu and on the road.
 const TRACKS = { menu: 'music-level.mp3', level: 'music-level.mp3' };
 /** Music sits well under everything else even at full. */
@@ -31,7 +35,7 @@ export function uiSound(name: keyof typeof UI): void {
   }
   // A copy each time, so that moving quickly down a list doesn't cut each sound off with the next.
   const voice = sample.cloneNode() as HTMLAudioElement;
-  voice.volume = Math.min(1, sfx * 0.7);
+  voice.volume = Math.min(1, sfx * (UI_LEVEL[name] ?? 0.7));
   void voice.play().catch(() => {
     // Not allowed to make a sound yet: the page hasn't been clicked.
   });
