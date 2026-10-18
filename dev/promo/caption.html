@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- A screenshot with one line under it for posting: ?img=export/shots/shot-1.png&text=… . Photographed by dev/promo-compose.mjs. -->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --u: 1vw; --accent: #ffd166; --red: #d2452b; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #141c2b; }
+  body { font-family: "Microsoft JhengHei", "Segoe UI", sans-serif; color: #fff; position: relative; }
+  .shot { position: absolute; inset: 0; background: center / cover no-repeat; }
+  .band { position: absolute; left: 0; right: 0; bottom: 0; height: 26vh;
+    background: linear-gradient(0deg, rgba(14, 22, 38, 0.9) 0%, rgba(14, 22, 38, 0.6) 55%, rgba(14, 22, 38, 0) 100%); }
+  .line { position: absolute; left: 4.2vw; bottom: 5.2vh; font-size: calc(var(--u) * 3.1); font-weight: 900; letter-spacing: 0.2vw;
+    text-shadow: 0 0.2vw 0.6vw rgba(0, 0, 0, 0.6); }
+  .line b { color: var(--accent); }
+  .logo { position: absolute; right: 3.4vw; bottom: 5.2vh; white-space: nowrap; font-size: calc(var(--u) * 2.6); font-weight: 900; line-height: 1;
+    letter-spacing: 0.15vw; transform: skewX(-7deg); text-shadow: 0.22vw 0.22vw 0 var(--red), 0.4vw 0.4vw 0 rgba(0, 0, 0, 0.35); }
+  .logo span { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="shot"></div>
+  <div class="band"></div>
+  <div class="line"></div>
+  <div class="logo">胡鬧<span>快遞</span></div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    document.querySelector('.shot').style.backgroundImage = `url(${q.get('img')})`;
+    // Words between ** are picked out in yellow.
+    document.querySelector('.line').innerHTML = (q.get('text') ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  </script>
+</body>
+</html>

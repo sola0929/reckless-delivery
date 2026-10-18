@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- The key visual: a picture from the game with the title, the line under it, and the parcel's own paperwork over it.
+     Photographed by dev/promo-compose.mjs at whatever size the page is opened. -->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --u: max(1vw, 1.25vh); --accent: #ffd166; --red: #d2452b; --navy: #141c2b; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--navy); }
+  body { font-family: "Microsoft JhengHei", "Segoe UI", sans-serif; color: #fff; position: relative; }
+  .scene { position: absolute; inset: 0; background: url(keyart-scene.png) 50% 50% / cover no-repeat; filter: saturate(1.18) contrast(1.06);  }
+  /* Darker towards the words, so they stand off the sky and the shops. */
+  .shade { position: absolute; inset: 0; background:
+      linear-gradient(170deg, rgba(14, 22, 38, 0.78) 0%, rgba(14, 22, 38, 0.35) 28%, rgba(14, 22, 38, 0) 45%),
+      linear-gradient(0deg, rgba(14, 22, 38, 0.55) 0%, rgba(14, 22, 38, 0) 22%); }
+  .title { position: absolute; left: calc(var(--u) * 5.2); top: 9vh; }
+  .logo { white-space: nowrap; font-size: calc(var(--u) * 10.4); font-weight: 900; line-height: 1; letter-spacing: calc(var(--u) * 0.4); transform: skewX(-7deg);
+    text-shadow: calc(var(--u) * 0.55) calc(var(--u) * 0.55) 0 var(--red), calc(var(--u) * 0.95) calc(var(--u) * 0.95) 0 rgba(0, 0, 0, 0.35); }
+  .logo span { color: var(--accent); }
+  .tagline { margin: calc(var(--u) * 2.4) 0 0 calc(var(--u) * 0.4); font-size: calc(var(--u) * 2.3); font-weight: 700; letter-spacing: calc(var(--u) * 0.35); text-shadow: 0 calc(var(--u) * 0.15) calc(var(--u) * 0.5) rgba(0, 0, 0, 0.6); }
+  /* The waybill, stuck on slightly askew: what was sent, and how it went. */
+  .waybill { position: absolute; left: calc(var(--u) * 4); bottom: 6vh; width: calc(var(--u) * 23); padding: calc(var(--u) * 1.1) calc(var(--u) * 1.3) calc(var(--u) * 1.2); background: #fbf6e9; color: #2a2a2a;
+    transform: rotate(-3deg); box-shadow: 0 calc(var(--u) * 0.6) calc(var(--u) * 1.6) rgba(0, 0, 0, 0.45); border-radius: calc(var(--u) * 0.3); font-size: calc(var(--u) * 1.25); }
+  .waybill::before { content: ''; position: absolute; left: 50%; top: calc(var(--u) * -0.9); width: calc(var(--u) * 7); height: calc(var(--u) * 1.8); transform: translateX(-50%) rotate(2deg);
+    background: rgba(255, 238, 190, 0.75); box-shadow: 0 calc(var(--u) * 0.1) calc(var(--u) * 0.3) rgba(0, 0, 0, 0.15); }
+  .wb-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: calc(var(--u) * 0.18) solid #2a2a2a; padding-bottom: calc(var(--u) * 0.45); margin-bottom: calc(var(--u) * 0.6); }
+  .wb-head b { font-size: calc(var(--u) * 1.45); letter-spacing: calc(var(--u) * 0.15); }
+  .wb-head span { font-family: Consolas, monospace; font-size: calc(var(--u) * 0.95); color: #666; }
+  .wb-row { display: flex; gap: calc(var(--u) * 0.8); padding: calc(var(--u) * 0.25) 0; border-bottom: calc(var(--u) * 0.08) dashed #bbb; }
+  .wb-row i { font-style: normal; color: #888; width: calc(var(--u) * 4.8); flex: none; white-space: nowrap; }
+  .wb-row s { text-decoration-thickness: calc(var(--u) * 0.12); color: #999; }
+  .wb-bars { margin-top: calc(var(--u) * 0.7); height: calc(var(--u) * 2.2); background: repeating-linear-gradient(90deg, #2a2a2a 0 calc(var(--u) * 0.18), transparent calc(var(--u) * 0.18) calc(var(--u) * 0.32), #2a2a2a calc(var(--u) * 0.32) calc(var(--u) * 0.62), transparent calc(var(--u) * 0.62) calc(var(--u) * 0.8), #2a2a2a calc(var(--u) * 0.8) calc(var(--u) * 0.9), transparent calc(var(--u) * 0.9) calc(var(--u) * 1.2)); }
+  .stamp { position: absolute; right: calc(var(--u) * -3.4); bottom: calc(var(--u) * -0.6); padding: calc(var(--u) * 0.5) calc(var(--u) * 1); border: calc(var(--u) * 0.32) solid #c8322a; border-radius: calc(var(--u) * 0.6); color: #c8322a;
+    font-size: calc(var(--u) * 2); font-weight: 900; letter-spacing: calc(var(--u) * 0.2); transform: rotate(-14deg); background: rgba(251, 246, 233, 0.92); line-height: 1.1; text-align: center; }
+  .stamp small { display: block; font-size: calc(var(--u) * 1); letter-spacing: calc(var(--u) * 0.1); }
+  /* Fragile tape across the top corner. */
+  .tape { position: absolute; right: calc(var(--u) * -7); top: 5vh; width: calc(var(--u) * 34); height: calc(var(--u) * 4.4); background: var(--red); transform: rotate(9deg);
+    display: flex; align-items: center; justify-content: space-around; color: #fff; font-weight: 900; font-size: calc(var(--u) * 1.6); letter-spacing: calc(var(--u) * 0.25);
+    box-shadow: 0 calc(var(--u) * 0.4) calc(var(--u) * 1) rgba(0, 0, 0, 0.35); border-top: calc(var(--u) * 0.25) solid rgba(255, 255, 255, 0.85); border-bottom: calc(var(--u) * 0.25) solid rgba(255, 255, 255, 0.85); }
+  .tape em { font-style: normal; font-size: calc(var(--u) * 1.1); letter-spacing: calc(var(--u) * 0.15); opacity: 0.9; }
+  .free { position: absolute; right: calc(var(--u) * 3.4); bottom: 5.5vh; font-size: calc(var(--u) * 1.25); font-weight: 700; letter-spacing: calc(var(--u) * 0.15); padding: calc(var(--u) * 0.55) calc(var(--u) * 1.1); border-radius: 999px;
+    background: rgba(14, 22, 38, 0.72); border: calc(var(--u) * 0.1) solid rgba(255, 255, 255, 0.25); }
+  .free b { color: var(--accent); }
+  .lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .lines[hidden] { display: none; }
+  /* Narrower than the wide picture: the truck kept in, and the waybill left off where it would be too small to read. */
+  @media (max-aspect-ratio: 4/3) { :root { --u: 1.45vw; } .scene { background-position: 30% 50%; } .title { top: 6vh; } .waybill { display: none; } }
+  @media (max-width: 700px) { .waybill { display: none; } }
+</style>
+</head>
+<body>
+  <div class="scene"></div>
+  <div class="shade"></div>
+  <div class="tape"><span>易碎品</span><em>FRAGILE</em><span>小心輕放</span><em>FRAGILE</em><span>易碎品</span></div>
+  <div class="title">
+    <div class="logo">胡鬧<span>快遞</span></div>
+    <div class="tagline">保證送達，不保證完整。</div>
+  </div>
+  <div class="waybill">
+    <div class="wb-head"><b>託運單</b><span>No. 0009-4417</span></div>
+    <div class="wb-row"><i>品名</i><span>冰箱、西瓜、保險箱</span></div>
+    <div class="wb-row"><i>備註</i><span><s>請小心輕放</s></span></div>
+    <div class="wb-row"><i>完整度</i><span>？？？</span></div>
+    <div class="wb-bars"></div>
+    <div class="stamp">已送達<small>（大部分）</small></div>
+  </div>
+  
+  <!-- Speed lines behind the truck, the way it came: only with ?lines. -->
+  <svg class="lines" viewBox="0 0 1920 1080" preserveAspectRatio="none" hidden>
+    <g fill="#fff">
+      <path d="M1210 600 L1560 548 L1562 556 Z" opacity="0.55"/>
+      <path d="M1220 660 L1640 610 L1641 620 Z" opacity="0.5"/>
+      <path d="M1200 720 L1520 684 L1521 692 Z" opacity="0.45"/>
+      <path d="M1190 790 L1600 752 L1601 762 Z" opacity="0.5"/>
+      <path d="M1170 850 L1450 826 L1451 833 Z" opacity="0.4"/>
+      <path d="M1240 530 L1480 494 L1481 501 Z" opacity="0.4"/>
+    </g>
+  </svg>
+  <script>
+    const q = new URLSearchParams(location.search);
+    if (q.get('scene')) document.querySelector('.scene').style.backgroundImage = 'url(' + q.get('scene') + ')';
+    if (q.has('lines')) document.querySelector('.lines').removeAttribute('hidden');
+  </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- The X profile header, 1500x500: the key visual's picture, the title and the line under it on the left, kept clear of the
+     bottom left where the profile picture sits over it. Photographed by dev/promo-compose.mjs header 1500 500. -->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --accent: #ffd166; --red: #d2452b; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #141c2b; }
+  body { font-family: "Microsoft JhengHei", "Segoe UI", sans-serif; color: #fff; position: relative; }
+  .scene { position: absolute; top: 0; bottom: 0; right: 0; left: 24vw; background: url(keyart-scene.png) 22% 64% / 100% auto no-repeat; filter: saturate(1.12) contrast(1.05); }
+  .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(20, 28, 43, 1) 0%, rgba(20, 28, 43, 1) 24%, rgba(20, 28, 43, 0) 42%); }
+  .title { position: absolute; left: 5vw; top: 15vh; }
+  .logo { white-space: nowrap; font-size: 6.2vw; font-weight: 900; line-height: 1; letter-spacing: 0.3vw; transform: skewX(-7deg);
+    text-shadow: 0.36vw 0.36vw 0 var(--red), 0.62vw 0.62vw 0 rgba(0, 0, 0, 0.35); }
+  .logo span { color: var(--accent); }
+  .tagline { margin: 1.6vw 0 0 0.3vw; font-size: 1.75vw; font-weight: 700; letter-spacing: 0.25vw; text-shadow: 0 0.12vw 0.4vw rgba(0, 0, 0, 0.6); }
+  .tagline small { display: block; margin-top: 0.9vw; font-size: 1.2vw; font-weight: 400; opacity: 0.85; letter-spacing: 0.12vw; }
+</style>
+</head>
+<body>
+  <div class="scene"></div>
+  <div class="shade"></div>
+  <div class="title">
+    <div class="logo">胡鬧<span>快遞</span></div>
+    <div class="tagline">保證送達，不保證完整。<small>免費網頁遊戲・鍵盤／手把</small></div>
+  </div>
+</body>
+</html>

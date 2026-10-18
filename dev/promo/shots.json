@@ -1,0 +1,358 @@
+{
+ "coils": {
+  "level": "uptown",
+  "start": {
+   "spot": "鋼捲大坡"
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1200,
+   7000,
+   400
+  ],
+  "cam": [
+   10,
+   -4,
+   3.2,
+   8
+  ]
+ },
+ "dike": {
+  "level": "quarry",
+  "start": {
+   "spot": "C 堤道"
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ],
+   [
+    2500,
+    "up",
+    "KeyW"
+   ],
+   [
+    3200,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1500,
+   9000,
+   400
+  ],
+  "cam": [
+   10,
+   -4,
+   3.5,
+   8
+  ]
+ },
+ "banquet": {
+  "level": "hillcity",
+  "start": {
+   "route": 82
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1500,
+   6500,
+   300
+  ],
+  "cam": [
+   10,
+   4,
+   3.2,
+   8
+  ]
+ },
+ "scooters": {
+  "level": "hillcity",
+  "start": {
+   "route": 9
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1500,
+   8000,
+   350
+  ],
+  "cam": [
+   10,
+   5,
+   3,
+   8
+  ]
+ },
+ "banquet2": {
+  "level": "hillcity",
+  "start": {
+   "route": 86,
+   "near": "gasCylinder",
+   "back": 24
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1500,
+   5500,
+   200
+  ],
+  "cam": [
+   11,
+   -5,
+   3.4,
+   6
+  ]
+ },
+ "banquet3": {
+  "level": "hillcity",
+  "start": {
+   "at": [
+    -112,
+    648,
+    1.57
+   ]
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1800,
+   5200,
+   180
+  ],
+  "cam": [
+   9,
+   -6,
+   3.2,
+   6
+  ]
+ },
+ "banquet4": {
+  "level": "hillcity",
+  "start": {
+   "at": [
+    -108,
+    652,
+    1.57
+   ]
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1800,
+   5600,
+   180
+  ],
+  "cam": [
+   9,
+   6,
+   3.4,
+   6
+  ]
+ },
+ "banquet5": {
+  "level": "hillcity",
+  "start": {
+   "at": [
+    -108,
+    658,
+    1.57
+   ]
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   2000,
+   5600,
+   150
+  ],
+  "cam": [
+   -13,
+   6,
+   2.6,
+   -3
+  ]
+ },
+ "scooters2": {
+  "level": "hillcity",
+  "start": {
+   "route": 89
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1200,
+   7000,
+   350
+  ],
+  "cam": [
+   10,
+   -5,
+   3,
+   8
+  ]
+ },
+ "coils2": {
+  "level": "uptown",
+  "start": {
+   "spot": "鋼捲大坡"
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   1500,
+   7500,
+   150
+  ],
+  "cam": [
+   -11,
+   4.5,
+   1.8,
+   -2
+  ]
+ },
+ "coils3": {
+  "level": "uptown",
+  "start": {
+   "spot": "鋼捲大坡"
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "launch": {
+   "at": 2400,
+   "kind": "steelCoil",
+   "ahead": 16,
+   "speed": 10
+  },
+  "burst": [
+   2600,
+   4100,
+   70
+  ],
+  "cam": [
+   -6.5,
+   8.5,
+   2,
+   1
+  ]
+ },
+ "banquet6": {
+  "level": "hillcity",
+  "start": {
+   "at": [
+    -108,
+    658,
+    1.57
+   ]
+  },
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   3300,
+   4500,
+   60
+  ],
+  "cam": [
+   -13,
+   6,
+   2.6,
+   -3
+  ],
+  "calm": true,
+  "fling": 1.45
+ },
+ "row": {
+  "level": "hillcity",
+  "start": {
+   "at": [
+    29,
+    647.2,
+    1.5707963267948966
+   ]
+  },
+  "v": 15,
+  "calm": true,
+  "keys": [
+   [
+    0,
+    "down",
+    "KeyW"
+   ]
+  ],
+  "burst": [
+   350,
+   1100,
+   30
+  ],
+  "fixed": [
+   45.5,
+   18,
+   654.5,
+   40.5,
+   16.9,
+   647
+  ]
+ }
+}
