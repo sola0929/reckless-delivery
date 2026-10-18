@@ -2,14 +2,15 @@ import { Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import { DRIVER, PHYSICS } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
-import { stepFocus } from './gamepad';
+import { bumpControls } from './controls';
+import { padNavigate, padText } from './gamepad';
 import { Input } from './input';
 import { LessonGuide } from './lessons';
 import { Chat } from './chat';
 import { finishLoading, setStage, settle } from './loading';
 import { GameAudio, type Material } from './audio';
 import { saveBest } from './best';
-import { playMusic, uiSound } from './jukebox';
+import { playMusic, uiSound, wakeMusic } from './jukebox';
 import { FIRST_LEVEL, LEVEL_LIST, LEVELS } from './levels';
 import { Minimap } from './minimap';
 import { ChaseCamera } from './render/camera';
@@ -160,7 +161,7 @@ playMusic('level');
 let knockedWeight = -1;
 /** Where each frame's time goes, added up until a script reads and clears it: physics, everything else, drawing. */
 const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0 };
-const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing };
+const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
 let last = performance.now();
@@ -759,7 +760,7 @@ function setPaused(on: boolean): void {
   if (on !== paused) uiSound(on ? 'open' : 'close');
   paused = on;
   audio.setPaused(on);
-  hud.showPause(on, { seconds: sim.time, value: sim.cargoValue(), fullValue: sim.fullValue, onTruck: sim.cargoOnTruck(), total: sim.cargo.filter((c) => !c.bonus || !c.fallen).length });
+  hud.showPause(on, { seconds: sim.time, value: sim.cargoValue(), fullValue: sim.fullValue, onTruck: sim.cargoOnTruck(), total: sim.cargo.filter((c) => !c.bonus || !c.fallen).length, hidden: hiddenTotal && !level.practice ? { found: sim.cargo.filter((c) => c.bonus && c.aboardOnce).length, total: hiddenTotal, items: sim.cargo.filter((c) => c.bonus && c.aboardOnce).map((c) => c.type.id) } : undefined }, input.usingPad);
   if (!on) input.clearPresses();
 }
 hud.onResume = () => setPaused(false);
@@ -923,7 +924,7 @@ function footInput(first: boolean): FootInput {
 }
 
 /** A key's name in a hint: the keyboard's, or the controller's when that is what is being used. */
-const key = (keys: string, pad: string) => (input.usingPad ? pad : keys);
+const key = (keys: string, pad: string) => (input.usingPad ? padText(pad) : keys);
 
 /** The one-line hint about what the nearest action is. */
 function updatePrompt(): void {
@@ -953,12 +954,16 @@ function updatePrompt(): void {
   hud.setPrompt('');
 }
 
+/** Whether the driver was down last frame, to feel them go down once. */
+let wasDown = false;
+
 /** Work the buttons of a page shown over the game with the controller. */
 function padMenu(page: HTMLElement, back?: () => void): void {
   const { pad } = input;
   if (!pad.connected) return;
   const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled), input')].filter((b) => b.offsetParent !== null);
-  stepFocus(list, pad.takeStep());
+  bumpControls(page, pad.take('lb'), pad.take('rb'));
+  padNavigate(pad, list);
   const focused = document.activeElement as HTMLElement | null;
   if (pad.take('a') && focused && list.includes(focused)) {
     focused.click();
@@ -979,11 +984,32 @@ function frame(now: number): void {
   accumulator += dt;
 
   input.poll();
+  // A key or a click starts the sound; the controller's buttons do too.
+  if (input.pad.anyPress) {
+    audio.unlock();
+    wakeMusic();
+  }
+  // The controller in use gone, flat or out of reach: the run waits for it, paused, and says why.
+  if (input.pad.lost) {
+    input.pad.lost = false;
+    if (input.usingPad && !resultShown) {
+      if (!paused) setPaused(true);
+      hud.padLost(true);
+    }
+  }
+  if (input.pad.connected) hud.padLost(false);
+  // The controller's View: the key list along the bottom kept up, or let go, as F1 does.
+  if (input.pad.take('back')) hud.toggleHelp();
   // Esc pauses and resumes; asked whether to leave, it goes back to the choices; over the result page, nothing.
   if ((input.take('Escape') || input.take('KeyP')) && !resultShown && !(paused && hud.cancelLeave())) setPaused(!paused);
   // The controller in the pause menu and on the result page: the d-pad or stick moves along the buttons, A presses, B goes on.
   if (paused) padMenu(document.getElementById('pause')!, () => setPaused(false));
-  else if (resultShown) padMenu(document.getElementById('result')!);
+  else if (resultShown) {
+    // On the result page, besides A for the one chosen: X goes again, B to the menu, as said on them.
+    const retry = document.getElementById('result-retry')!;
+    if (input.pad.connected && input.pad.take('x') && retry.querySelector('[data-pad="X"]')) retry.click();
+    padMenu(document.getElementById('result')!, () => document.getElementById('result-menu')!.click());
+  }
   if (paused && !retryAsked && !backAsked) {
     // Nothing moves; the picture stays as it was.
     accumulator = 0;
@@ -1080,6 +1106,7 @@ function frame(now: number): void {
       noteEvent(event);
       if (event.kind === 'fallen' && !event.item.bonus) chat?.cue('fallen');
       else if (event.kind === 'destroyed') chat?.cue('destroyed', event.item.type.id);
+      if (event.kind === 'destroyed' && input.usingPad) input.pad.rumble(0.45, 160);
       else if (event.kind === 'found') chat?.cue('found', event.item.type.id);
       soundCargoEvent(event);
     }
@@ -1243,6 +1270,10 @@ function frame(now: number): void {
   // Hitting a tree is a crash like hitting a wall, bent metal and all, with the tree's own
   // noise on top. Hitting a cone is mostly the cone.
   soundKnocks(dt);
+  // Felt through the controller: the truck's knocks by how hard, the hardest crashes hardest.
+  if (sim.driver.mode === 'down' && !wasDown && input.usingPad) input.pad.rumble(0.8, 350);
+  wasDown = sim.driver.mode === 'down';
+  if (hardestBump > 0 && input.usingPad) input.pad.rumble(Math.min(1, hardestBump / 14), 120 + Math.min(1, hardestBump / 14) * 180);
   if (hardestBump > 0) audio.bump(knockedWeight < 0 ? hardestBump : hardestBump * (0.45 + 0.55 * knockedWeight));
   knockedWeight = -1;
   audio.update(dt, {
@@ -1254,8 +1285,8 @@ function frame(now: number): void {
   const lookDrag = input.takeLookDrag();
   // On foot the right button still turns the view, unless a throw is being wound up, when it cancels it; the stick aims.
   // Q and E turn the view as the stick does: held round while driving, turned for good on foot.
-  chase.lookAround(onFoot && driver.charge > 0 ? 0 : lookDrag, input.rightDown && !(onFoot && driver.charge > 0), onFoot ? 0 : input.pad.rightX || input.turnKeys());
-  chase.turnOnFoot(onFoot && driver.charge === 0 ? input.turnKeys() : 0);
+  chase.lookAround(onFoot && driver.charge > 0 ? 0 : lookDrag, input.rightDown && !(onFoot && driver.charge > 0), onFoot ? 0 : input.pad.rightX || input.turnKeys(), !onFoot && !!input.pad.rightX);
+  chase.turnOnFoot(onFoot && driver.charge === 0 ? input.footTurn(!!driver.held) : 0);
   if (!debug.freeze) chase.update(dt, focus, onFoot ? null : truckHeading(), speed, sim.truck.boosting);
   if (!onFoot) {
     emitSmoke(dt, drive, speed);

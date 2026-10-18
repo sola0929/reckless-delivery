@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import type { LessonDesc, Vec2 } from './levels/types';
+import { padText } from './gamepad';
 import type { Sim } from './sim/sim';
 
 /** Seconds at one lesson before the fuller help is said as well. */
@@ -113,7 +114,7 @@ export class LessonGuide {
       return;
     }
     this.age += dt;
-    const task = lesson.done === 'found' ? this.fetching(sim, pad) : pad ? lesson.pad : lesson.keys;
+    const task = lesson.done === 'found' ? this.fetching(sim, pad) : pad ? padText(lesson.pad) : lesson.keys;
     this.show(task, this.tries > 0 || this.age > HELP_AFTER ? lesson.help : '');
     const goal = this.goal(sim);
     this.ring.visible = !!goal;
@@ -170,12 +171,12 @@ export class LessonGuide {
   /** Fetching what was found in the road, in its parts: out, over to it, up with it, back to the bed, back in. */
   private fetching(sim: Sim, pad: boolean): string {
     const crate = sim.cargo.find((c) => c.bonus);
-    const k = (keys: string, controller: string) => `<b>${pad ? controller : keys}</b>`;
+    const k = (keys: string, controller: string) => `<b>${pad ? padText(controller) : keys}</b>`;
     if (!crate?.body) return '貨摔壞了，按 ' + k('Esc', 'Start') + ' 暫停，選「重新開始」';
     if (sim.driver.mode === 'driving') {
       return Math.abs(sim.truck.forwardSpeed()) > 1.5 ? '前面路邊有一個保險箱：在它旁邊停車' : `按 ${k('C', 'Y')} 下車`;
     }
-    if (crate.held) return pad ? '走到車尾，用<b>右搖桿</b>對準車斗，按住 <b>RT</b> 蓄力、放開拋上去' : '走到車尾，滑鼠對準車斗，<b>按住左鍵</b>蓄力、放開拋上去';
+    if (crate.held) return pad ? padText('走到車尾，用<b>右搖桿</b>對準車斗，按住 <b>RT</b> 蓄力、放開拋上去') : '走到車尾，滑鼠對準車斗，<b>按住左鍵</b>蓄力、放開拋上去';
     if (crate.fallen) return `走到保險箱旁邊，按 ${k('F', 'B')} 舉起`;
     return `保險箱上車了！回到駕駛座，按 ${k('C', 'Y')} 上車`;
   }

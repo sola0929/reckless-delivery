@@ -10,6 +10,8 @@ export interface Best {
   fraction: number;
   /** The most of the things hidden along the way brought in on one run. */
   found?: number;
+  /** Which of them have been brought in, on any run: their cargo types. */
+  items?: string[];
 }
 
 /** Which records a run set, and what stood before it. */
@@ -47,7 +49,7 @@ export function loadBest(levelId: string): Best | null {
  * Take a finished run into the record: whichever of the most delivered and the quickest
  * time it has beaten. A run that failed, or delivered too little to pass, sets nothing.
  */
-export function saveBest(levelId: string, result: { stars: number; seconds: number; fraction: number; failure?: string; retries?: number; hidden?: { found: number } }): RecordsSet {
+export function saveBest(levelId: string, result: { stars: number; seconds: number; fraction: number; failure?: string; retries?: number; hidden?: { found: number; items?: string[] } }): RecordsSet {
   const before = loadBest(levelId);
   if (result.failure || result.stars === 0) return { value: false, time: false, before };
   // A hair's difference is no record.
@@ -56,13 +58,15 @@ export function saveBest(levelId: string, result: { stars: number; seconds: numb
   const time = !result.retries && (before?.seconds == null || result.seconds < before.seconds - 0.05);
   const stars = Math.max(before?.stars ?? 0, result.stars);
   const found = Math.max(before?.found ?? 0, result.hidden?.found ?? 0);
-  if (value || time || stars !== before?.stars || found !== (before?.found ?? 0)) {
+  const items = [...new Set([...(before?.items ?? []), ...(result.hidden?.items ?? [])])];
+  if (value || time || stars !== before?.stars || found !== (before?.found ?? 0) || items.length !== (before?.items?.length ?? 0)) {
     try {
       localStorage.setItem(key(levelId), JSON.stringify({
         stars,
         seconds: time ? result.seconds : before?.seconds ?? null,
         fraction: value ? result.fraction : before!.fraction,
         ...(found ? { found } : {}),
+        ...(items.length ? { items } : {}),
       }));
     } catch {
       // No storage, no record: the game goes on without one.

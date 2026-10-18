@@ -288,6 +288,33 @@ body.in-menu #hud {
   opacity: 0.85;
 }
 
+/* Keys named for the keyboard, or for the controller once it is in hand: one or the other shown. */
+.key-p {
+  display: none;
+}
+
+body.using-pad .key-p {
+  display: inline;
+}
+
+body.using-pad .key-k {
+  display: none;
+}
+
+/* At the foot of the pause menu's choices, with the controller: its buttons for choosing and going back. */
+body.using-pad .pause-foot {
+  display: block;
+  margin: auto 30px 0;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.pause-foot b {
+  padding: 1px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+
 .menu-foot {
   margin-top: auto;
   padding-left: 22px;
@@ -488,47 +515,66 @@ body.in-menu #hud {
   text-shadow: 0 0 12px rgba(255, 209, 102, 0.5);
 }
 
-/* The things hidden along the way: a slot each, lit as brought in, and a stamp when they all have been on one run. */
+/* The stars, and beside them the things hidden along the way: a crate in the game's blue for them, and how many have
+   been brought in; grey till one has, gold once a run has brought them all. */
+.level-marks {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.level-marks .level-stars {
+  margin-top: 0;
+}
+
 .level-hidden {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
-  padding: 0 4px;
+  gap: 4px;
+  padding: 2px 8px 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
 }
 
-.level-hidden span {
-  width: 14px;
-  height: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.35);
-  border-radius: 3px;
+.crate {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
-.level-hidden span.on {
-  border: 0;
-  background: linear-gradient(#e2b066, #b98a55);
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+.level-hidden.some {
+  border-color: rgba(94, 200, 255, 0.6);
+  color: #5ec8ff;
 }
 
-.level-hidden em {
-  margin-left: 6px;
-  padding: 0 8px;
-  border: 2px solid #ff8a5a;
-  border-radius: 4px;
-  color: #ff8a5a;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 900;
+.level-hidden.all {
+  border-color: var(--accent);
+  background: rgba(255, 209, 102, 0.14);
+  color: var(--accent);
   letter-spacing: 2px;
-  transform: rotate(-8deg);
 }
 
 .level-best {
   margin-top: 2px;
   padding: 0 4px;
   font-size: 13px;
-  opacity: 0.75;
+  color: rgba(255, 255, 255, 0.6);
   font-variant-numeric: tabular-nums;
+}
+
+.level-best b {
+  color: #fff;
+}
+
+.level-best span {
+  display: inline-block;
+  margin-right: 12px;
+  white-space: nowrap;
 }
 
 /* Shut until the one before it is passed: greyed, with a padlock over the picture. */
@@ -723,6 +769,97 @@ body.in-menu #hud {
   opacity: 0.8;
 }
 
+/* The stars won so far, beside the name. */
+.preview-stars {
+  margin-left: 14px;
+  font-size: 22px;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.18);
+  vertical-align: 3px;
+}
+
+.preview-stars .on {
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.5);
+}
+
+/* The things hidden along the way: a slot each, named once brought in. What they are is said on pointing at it. */
+.preview-hidden {
+  position: relative;
+  width: 100%;
+}
+
+.ph-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #5ec8ff;
+  font-weight: 700;
+}
+
+.ph-head b {
+  color: #fff;
+}
+
+.ph-head em {
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #1a1d24;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+.ph-hint {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.92);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 400;
+  font-size: 13px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.preview-hidden:hover .ph-hint {
+  opacity: 1;
+}
+
+.ph-slots {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ph-slots span {
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 4px 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+}
+
+.ph-slots span.on {
+  border: 1px solid rgba(94, 200, 255, 0.7);
+  background: rgba(94, 200, 255, 0.14);
+  color: #fff;
+}
+
+.preview-hidden.all .ph-slots span.on {
+  border-color: var(--accent);
+  background: rgba(255, 209, 102, 0.14);
+}
+
 .preview-facts {
   display: flex;
   flex-wrap: wrap;
@@ -742,15 +879,122 @@ body.in-menu #hud {
   color: var(--accent);
 }
 
-.preview-best {
-  margin-top: 4px;
-  font-size: 14px;
-  opacity: 0.7;
+/* Under the pictures: what the level is and the way in on the left, the record on the right. */
+.preview-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+}
+
+.preview-main {
+  flex: 1 0 340px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-record {
+  flex: 0 1 500px;
+  min-width: 240px;
+  margin-bottom: 4px;
+  padding: 14px 18px 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(13, 19, 28, 0.6);
+}
+
+.preview-record:empty {
+  display: none;
+}
+
+.pr-title {
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+.pr-stats {
+  display: flex;
+  gap: 48px;
+  margin-top: 6px;
+}
+
+.pr-stats span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.pr-stats b {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+}
+
+.pr-none {
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+/* How far the most delivered is along: marks at each star's share, gold past the whole load. */
+.pr-bar {
+  position: relative;
+  height: 8px;
+  margin-top: 12px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pr-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: #5ec8ff;
+}
+
+.pr-bar.over i {
+  background: linear-gradient(90deg, #ffd166, #ffb347);
+}
+
+.pr-bar s {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.35);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pr-bar s em u {
+  text-decoration: none;
+}
+
+.pr-bar s em {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  translate: -50% 0;
+  font-style: normal;
+  white-space: nowrap;
+  letter-spacing: 1px;
+}
+
+.pr-bar s.on {
+  background: var(--accent);
+}
+
+.pr-bar s.on em {
+  color: var(--accent);
 }
 
 #preview-go {
   align-self: flex-start;
+  white-space: nowrap;
   width: auto;
   margin-top: 12px;
   padding-right: 26px;
@@ -770,6 +1014,74 @@ body.in-menu #hud {
 }
 
 /* No room beside the cards for it: no preview, and a card goes straight in, as it used to. */
+/* Narrow: one column, the record just above the way in, smaller. */
+#level-preview {
+  container-type: inline-size;
+}
+
+@container (max-width: 600px) {
+  .preview-body,
+  .preview-main {
+    display: contents;
+  }
+  .preview-hidden {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ph-head {
+    white-space: nowrap;
+  }
+  .ph-slots {
+    margin-top: 0;
+    gap: 6px;
+  }
+  .ph-slots span {
+    min-width: 0;
+    padding: 3px 8px;
+  }
+  .pr-bar s em u {
+    display: none;
+  }
+  .preview-record {
+    flex: none;
+    min-width: 0;
+    order: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 10px;
+    padding: 8px 14px 18px;
+  }
+  #preview-go {
+    order: 2;
+  }
+  .pr-title {
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .pr-stats {
+    gap: 14px;
+    margin-top: 0;
+  }
+  .pr-stats div {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+  .pr-stats b {
+    font-size: 20px;
+  }
+  .pr-bar {
+    flex: 1;
+    margin-top: 0;
+  }
+  .pr-none {
+    margin-top: 0;
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 1000px) {
   .menu-side:has(#menu-levels:not([hidden])) {
     width: 100vw;
@@ -818,7 +1130,8 @@ body.in-menu #hud {
   white-space: nowrap;
 }
 
-#menu-help .keys {
+/* The controls on the main menu, on a panel of their own beside the page's title. */
+#menu-controls {
   flex: 0 1 auto;
   min-height: 0;
   margin-left: 22px;
@@ -827,6 +1140,224 @@ body.in-menu #hud {
   border-radius: 12px;
   background: var(--panel);
   overflow: auto;
+}
+
+/* The controls, wherever they are shown: keyboard and mouse or the controller to choose between, and each group's keys
+   two to a row, a key and what it does, a word more under it in small. */
+.controls {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.control-tabs {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
+
+.segments.control-tabs button {
+  padding: 7px 22px;
+  font-size: 14px;
+}
+
+.control-set[hidden] {
+  display: none;
+}
+
+.controls h4 {
+  margin: 10px 0 5px;
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+.control-set section:first-child h4 {
+  margin-top: 0;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+/* On the main menu, wide, over the picture beside it: the groups side by side, each one key to a row. */
+#menu-controls {
+  width: min(880px, calc(100vw - 260px));
+  background: rgba(17, 23, 33, 0.94);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+#menu-controls .control-set {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 18px;
+}
+
+#menu-controls .control-set[hidden] {
+  display: none;
+}
+
+#menu-controls .control-set h4 {
+  margin-top: 0;
+}
+
+#menu-controls .control-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (max-height: 820px) {
+  #menu-controls {
+    padding: 12px 18px;
+  }
+  #menu-controls .control-tabs {
+    margin-bottom: 8px;
+  }
+  #menu-controls .control-grid {
+    gap: 4px;
+  }
+  #menu-controls .control {
+    padding: 3px 10px;
+  }
+}
+
+/* In the pause menu, the choice of keyboard or controller up beside the page's title. */
+#pause-help {
+  position: relative;
+}
+
+#pause-controls .control-tabs {
+  position: absolute;
+  top: -8px;
+  right: 0;
+  margin: 0;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.control kbd {
+  flex: none;
+  min-width: 26px;
+  padding: 1px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The controller: a drawing of it, a line from each button to what it does, driving or on foot as chosen above it. */
+.pad-set {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+
+#menu-controls .pad-set {
+  display: flex;
+}
+
+.pad-set[hidden],
+#menu-controls .pad-set[hidden] {
+  display: none;
+}
+
+.pad-modes {
+  align-self: flex-start;
+  margin-bottom: 6px;
+}
+
+/* In the pause menu's panel, the drawing in the middle of the room under the choice. */
+#pause-controls {
+  flex: 1;
+}
+
+#pause-controls .pad-set {
+  flex: 1;
+}
+
+#pause-controls .pad-art {
+  display: flex;
+  flex: 1;
+  align-items: center;
+}
+
+/* Driving or on foot: tabs, a line under the one shown, rather than a second switch like the one above. */
+.pad-modes button {
+  padding: 4px 2px 6px;
+  margin-right: 22px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  cursor: pointer;
+}
+
+.pad-modes button:hover,
+.pad-modes button:focus-visible {
+  outline: none;
+  color: #fff;
+}
+
+.pad-modes kbd {
+  display: none;
+  margin: 0 8px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  vertical-align: 2px;
+  opacity: 0.8;
+}
+
+/* The bumpers that turn them, said beside them where the controller is the thing in hand. */
+body.using-pad .pad-modes kbd {
+  display: inline-block;
+}
+
+.pad-modes button.on {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.pad-art {
+  width: 100%;
+  min-height: 0;
+}
+
+.pad-drawing {
+  display: block;
+  width: 100%;
+  max-height: 100%;
+  font-family: inherit;
+}
+
+.control small {
+  display: block;
+  font-size: 11.5px;
+  opacity: 0.55;
 }
 
 /* ---------- The pause button on the HUD. ---------- */
@@ -899,10 +1430,12 @@ body.in-menu #hud {
 
 #pause-card {
   display: grid;
-  grid-template-columns: 300px auto;
+  grid-template-columns: 320px min(660px, calc(94vw - 320px));
+  /* One height whichever page is open, so that it does not jump about as they are changed. */
+  height: min(580px, calc(100vh - 40px));
   border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(17, 23, 33, 0.94);
+  border-radius: 18px;
+  background: rgba(17, 23, 33, 0.95);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   animation: card-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -912,18 +1445,35 @@ body.in-menu #hud {
   from { transform: translateY(14px) scale(0.96); }
 }
 
-.pause-main {
-  padding: 26px 0 22px;
+/* On the left, what can be done. */
+.pause-side {
+  display: flex;
+  flex-direction: column;
+  padding: 30px 0 24px;
 }
 
 .pause-head {
-  padding: 0 28px 16px;
+  padding: 0 30px 22px;
 }
 
 #pause-title {
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 900;
   letter-spacing: 8px;
+}
+
+#pause-pad-lost {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 107, 90, 0.18);
+  color: #ff9a8a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#pause-pad-lost[hidden] {
+  display: none;
 }
 
 #pause-level {
@@ -933,27 +1483,226 @@ body.in-menu #hud {
   color: var(--accent);
 }
 
-/* How the run stands: the time, what the load is worth, how much of it is aboard. */
-.pause-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin: 0 0 12px;
-  padding: 12px 28px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+/* The panel's pages, a group of their own between going on and leaving. */
+#pause-info-open {
+  margin-top: 12px;
 }
 
-.pause-stats span {
+/* The choice whose page is open on the right: marked as the one in force. */
+#pause .menu-item.open {
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, rgba(255, 209, 102, 0.14), rgba(255, 209, 102, 0));
+  color: var(--accent);
+}
+
+/* On the right, a panel of its own: how the run stands, the controls or the settings. */
+.pause-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 30px 34px 26px;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.pause-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.pause-page[hidden] {
+  display: none;
+}
+
+.pause-page-title {
+  margin-bottom: 18px;
+  font-size: 14px;
+  letter-spacing: 6px;
+  color: var(--accent);
+}
+
+#pause .pause-page .menu-item.back {
+  margin-top: auto;
+  padding-left: 0;
+  padding-right: 0;
+  border-left: 0;
+}
+
+/* How the run stands: the time and how much is aboard, large; what it is worth, with each star's share on a bar. */
+.pause-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.pause-stats > div,
+.pause-worth,
+.pause-hidden {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pause-stats span,
+.pw-figure span {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 2px;
   opacity: 0.6;
 }
 
 .pause-stats b {
-  font-size: 18px;
+  font-size: 30px;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
+}
+
+.pause-worth {
+  margin-top: 12px;
+  padding-bottom: 30px;
+}
+
+.pw-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.pw-figure span {
+  width: 100%;
+}
+
+.pw-figure b {
+  font-size: 30px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-figure small {
+  font-size: 14px;
+  opacity: 0.55;
+}
+
+.pw-figure em {
+  margin-left: auto;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.pw-bar {
+  position: relative;
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pw-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: #ff8a5a;
+}
+
+.pw-bar.good i {
+  background: #6fd08c;
+}
+
+.pw-bar.over i {
+  background: linear-gradient(90deg, #6fd08c, #ffd166);
+}
+
+.pw-bar s {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.pw-bar s.on {
+  background: var(--accent);
+}
+
+.pw-bar s em {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  translate: -50% 0;
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.pw-bar s.on em {
+  color: var(--accent);
+}
+
+.pause-hidden {
+  margin-top: 12px;
+}
+
+.pause-hidden[hidden] {
+  display: none;
+}
+
+.pause-hidden .ph-slots span {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+/* The page filled top to bottom: its blocks share out the height, each with what is in it in the middle. */
+#pause-info .pause-stats,
+#pause-info .pause-worth,
+#pause-info .pause-hidden,
+#pause-settings .pause-group {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#pause-info .pause-stats > div,
+#pause-info .pause-worth,
+#pause-info .pause-hidden {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+#pause-settings .pause-group {
+  align-content: center;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#pause-settings .pause-group + .pause-group {
+  margin-top: 12px;
+}
+
+.pause-group-title {
+  font-size: 12px;
+  letter-spacing: 3px;
+  opacity: 0.6;
+}
+
+.pause-best {
+  margin-top: auto;
+  padding-top: 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-best b {
+  color: #fff;
 }
 
 #pause .menu-item {
@@ -977,14 +1726,11 @@ body.in-menu #hud {
   color: #ff8a7a;
 }
 
-/* Volume: two sliders and a mute, under the choices. */
+/* Volume, mute and picture quality: the settings page of the panel. */
 .pause-sound {
   display: grid;
-  gap: 8px;
-  margin: 14px 28px 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
+  gap: 12px;
+  font-size: 15px;
 }
 
 .pause-sound label {
@@ -1005,43 +1751,72 @@ body.in-menu #hud {
   cursor: pointer;
 }
 
-/* Mute as a switch, like the rest of the controls, rather than the browser's own box. */
+/* Sound on or off: a chip in the same frame as the picture quality's choices, a speaker on it, lit when muted. */
+.pause-sound .mute {
+  grid-template-columns: 3em 1fr;
+  width: auto;
+}
+
 .pause-sound .mute input {
-  appearance: none;
-  position: relative;
-  width: 40px;
-  height: 22px;
-  margin: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.pause-sound .mute input::after {
-  content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.15s;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.pause-sound .mute input:checked {
+.mute-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 700;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mute:hover .mute-chip,
+.mute input:focus-visible + .mute-chip {
+  color: var(--accent);
+}
+
+.mute input:checked + .mute-chip {
+  border-color: var(--accent);
   background: var(--accent);
+  color: var(--ink);
 }
 
-.pause-sound .mute input:checked::after {
-  transform: translateX(18px);
-  background: var(--ink);
+.mute-icon {
+  width: 18px;
+  height: 18px;
 }
 
-.pause-sound .mute input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.mute-icon .body {
+  fill: currentColor;
+}
+
+.mute-icon .waves,
+.mute-icon .cross {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.mute-chip .off,
+.mute-icon .cross,
+.mute input:checked + .mute-chip .on,
+.mute input:checked + .mute-chip .waves {
+  display: none;
+}
+
+.mute input:checked + .mute-chip .off,
+.mute input:checked + .mute-chip .cross {
+  display: inline;
 }
 
 #pause-confirm:not([hidden]) ~ .pause-sound,
@@ -1057,35 +1832,6 @@ body.in-menu #hud {
 
 #pause-confirm .menu-item.leave {
   margin-top: 0;
-}
-
-.pause-keys {
-  padding: 26px 28px;
-  border-left: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-/* The keys are there to look up, not to look at: quieter than the choices beside them. */
-.pause-keys .keys {
-  gap: 5px 12px;
-  font-size: 12.5px;
-  opacity: 0.72;
-}
-
-.pause-keys .keys kbd {
-  padding: 1px 7px;
-  font-size: 12px;
-  border-bottom-width: 2px;
-}
-
-@media (max-width: 760px) {
-  #pause-card {
-    grid-template-columns: 300px;
-  }
-
-  .pause-keys {
-    display: none;
-  }
 }
 
 /* The picture quality, under the volume: four choices side by side, the one in force lit. */

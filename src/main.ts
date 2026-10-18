@@ -1,16 +1,33 @@
-import { levelStates, loadBest } from './best';
-import { Pad, stepFocus } from './gamepad';
+import { levelStates, loadBest, type Best } from './best';
+import { CARGO_TYPES } from './sim/cargo-types';
+import { bumpControls, drawControls } from './controls';
+import { STARS } from './levels/types';
+import { namePadKeys, Pad, padNavigate, stepFocus } from './gamepad';
 import { setStage, startLoading } from './loading';
 import { loadChoice, saveChoice, type QualityChoice } from './graphics-choice';
-import { playMusic, soundButtons, uiSound } from './jukebox';
+import { playMusic, soundButtons, uiSound, wakeMusic } from './jukebox';
 import { soundSettings } from './sound-settings';
 import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST, TUTORIAL } from './levels';
+
+/** Turn the level page's preview on by a picture, or back; set once the page is built. */
+// Declared before the menu is shown below, which uses it.
+let showPicture: (step: number) => void = () => {};
+
+/** A crate, in the blue the game marks hidden things with. */
+const CRATE = '<svg class="crate" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zm2 1.6v7.1l6 2.7v-7.1zm14 0l-6 2.7v7.1l6-2.7zM12 5.2L6.4 7.7 12 10.2l5.6-2.5z"/></svg>';
+
+/** How a level's hidden things stand in its record: how many there are, how many have been brought in, and whether one run brought them all. */
+function hiddenTally(types: readonly string[] | undefined, best: Best | null): { total: number; got: number; all: boolean } | null {
+  if (!types?.length) return null;
+  const got = Math.max(types.filter((type) => best?.items?.includes(type)).length, Math.min(types.length, best?.found ?? 0));
+  return { total: types.length, got, all: (best?.found ?? 0) >= types.length };
+}
+
+const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 // The page is the main menu until a level is named in its address, and the game after that.
 // Going back to the menu is going back to the bare address.
 const chosen = new URLSearchParams(location.search).get('level');
-// The controller is only switched on in development for now (see gamepad.ts): nothing is said of it elsewhere.
-if (!import.meta.env.DEV) for (const el of document.querySelectorAll('.pad-only')) el.remove();
 // Level 1 was the flat city until it went onto its hillside: whoever passed it then keeps that, and level 2 stays open.
 try {
   const old = localStorage.getItem('cargo-best:city');
@@ -117,6 +134,7 @@ function showMenu(): void {
     if (id === 'menu-levels') (rows.get(next) ?? choices()[0])?.focus();
     else choices()[0]?.focus();
   };
+  drawControls(document.getElementById('menu-controls')!, true);
 
   // A card for each delivery: where it stands, and the best run of it so far; the tutorial as a strip above them. Choosing one
   // shows it in the preview to the right of them; going is the preview's own button, Enter, or a second click. With no room
@@ -151,15 +169,15 @@ function showMenu(): void {
     earned += best?.stars ?? 0;
     const stars = [0, 1, 2].map((n) => `<span${best && n < best.stars ? ' class="on"' : ''}>★</span>`).join('');
     const record =
-      state === 'done' ? `最高送達 ${Math.floor(best!.fraction * 100)}%　最快 ${best!.seconds != null ? clock(best!.seconds) : '－'}`
+      state === 'done' ? `<span>最高送達 <b>${Math.floor(best!.fraction * 100)}%</b></span><span>最快 <b>${best!.seconds != null ? clock(best!.seconds) : '－'}</b></span>`
       : state === 'open' ? '還沒有紀錄'
       : state === 'locked' ? '完成上一關後開放'
       : '製作中，敬請期待';
-    // The things hidden along the way: a slot for each, lit for as many as one run has brought in, stamped when that was all.
-    const total = LEVEL_LIST[i].hidden ?? 0;
-    const found = Math.min(total, best?.found ?? 0);
-    const slots = total
-      ? `<div class="level-hidden" title="隱藏貨物 ${found} / ${total}">${Array.from({ length: total }, (_, k) => `<span${k < found ? ' class="on"' : ''}></span>`).join('')}${found === total ? '<em>全收</em>' : ''}</div>`
+    // Beside the stars, the things hidden along the way: a blue crate and how many have been brought in, gold when one run
+    // brought them all.
+    const hidden = hiddenTally(LEVEL_LIST[i].hidden, best);
+    const slots = hidden
+      ? `<div class="level-hidden${hidden.all ? ' all' : hidden.got ? ' some' : ''}" title="隱藏貨物 ${hidden.got} / ${hidden.total}">${CRATE}${hidden.all ? '全收' : `${hidden.got}/${hidden.total}`}</div>`
       : '';
     const card = document.createElement('button');
     card.type = 'button';
@@ -169,7 +187,7 @@ function showMenu(): void {
       `<div class="level-thumb ${id}"><span>${badge}</span>${state === 'locked' ? LOCK : ''}</div>` +
       `<div class="level-state">${LABEL[state]}</div>` +
       `<div class="level-name">${name}</div><div class="level-note">${note}</div>` +
-      `<div class="level-stars">${stars}</div>${slots}<div class="level-best">${record}</div>`;
+      `<div class="level-marks"><div class="level-stars">${stars}</div>${slots}</div><div class="level-best">${record}</div>`;
     hook(id, card);
     list.append(card);
   });
@@ -206,6 +224,10 @@ function showMenu(): void {
     window.clearInterval(turn);
     turn = window.setInterval(() => show(shown + 1), 3200);
   };
+  showPicture = (step: number) => {
+    show(shown + step);
+    rotate();
+  };
   function choose(id: string): void {
     if (id === chosenId) return;
     chosenId = id;
@@ -235,19 +257,27 @@ function showMenu(): void {
     rotate();
     const delivery = LEVEL_LIST.find((level) => level.id === id);
     preview.querySelector('.preview-tag')!.textContent = delivery ? `第 ${delivery.badge} 關` : '教學';
-    preview.querySelector('.preview-name')!.textContent = entry.name;
-    preview.querySelector('.preview-note')!.textContent = entry.note;
-    const [count, worth] = entry.load ?? [0, 0];
-    preview.querySelector('.preview-facts')!.innerHTML =
-      (count ? `<span>貨物 <b>${count}</b> 件　價值 <b>$${worth.toLocaleString()}</b></span>` : '') +
-      (tutorial ? '<span>不計分，隨時可以跳過</span>' : '<span><i>★</i> 抵達　<i>★★</i> 送達 30%　<i>★★★</i> 送達 60%</span>');
     const best = state === 'done' ? loadBest(id) : null;
-    if (entry.hidden) preview.querySelector('.preview-facts')!.innerHTML += `<span>隱藏貨物 <b>${Math.min(entry.hidden, best?.found ?? 0)} / ${entry.hidden}</b></span>`;
-    preview.querySelector('.preview-best')!.textContent = tutorial ? '' :
-      best ? `最佳紀錄：送達 ${Math.floor(best.fraction * 100)}%　最快 ${best.seconds != null ? clock(best.seconds) : '－'}`
-      : state === 'locked' ? '完成上一關後開放'
-      : state === 'soon' ? '製作中，敬請期待'
-      : '還沒有紀錄';
+    // The name, and beside it the stars won so far.
+    const won = best?.stars ?? 0;
+    preview.querySelector('.preview-name')!.innerHTML =
+      escape(entry.name) + (tutorial ? '' : `<span class="preview-stars">${[0, 1, 2].map((n) => `<span${n < won ? ' class="on"' : ''}>★</span>`).join('')}</span>`);
+    preview.querySelector('.preview-note')!.textContent = entry.note;
+    // The things hidden along the way: one slot each, named once brought in, a question mark till then.
+    const hidden = hiddenTally(entry.hidden, best);
+    preview.querySelector('.preview-facts')!.innerHTML = tutorial ? '<span>不計分，隨時可以跳過</span>'
+      : hidden ? `<div class="preview-hidden${hidden.all ? ' all' : ''}"><div class="ph-head">${CRATE}隱藏貨物 <b>${hidden.got} / ${hidden.total}</b>${hidden.all ? '<em>全收</em>' : ''}<span class="ph-hint">藏在路線以外的地方，看到藍色箭頭就是了</span></div>` +
+        `<div class="ph-slots">${entry.hidden!.map((type) => (best?.items ?? []).includes(type) ? `<span class="on">${CARGO_TYPES[type].name}</span>` : '<span>？</span>').join('')}</div></div>`
+      : '';
+    // Beside it, the record: the most delivered and the quickest, large; under them how far the most delivered is along
+    // the way to each star, gold past all of the load.
+    const share = best ? Math.floor(best.fraction * 100) : 0;
+    preview.querySelector('.preview-record')!.innerHTML = tutorial ? ''
+      : state === 'locked' || state === 'soon' ? `<div class="pr-title">最佳紀錄</div><div class="pr-none">${state === 'locked' ? '完成上一關後開放' : '製作中，敬請期待'}</div>`
+      : `<div class="pr-title">最佳紀錄</div>` +
+        `<div class="pr-stats"><div><span>送達</span><b>${best ? `${share}%` : '－'}</b></div><div><span>最快</span><b>${best?.seconds != null ? clock(best.seconds) : '－'}</b></div></div>` +
+        `<div class="pr-bar${share > 100 ? ' over' : ''}"><i style="width:${Math.min(100, share)}%"></i>${STARS.slice(1).map((at, n) => `<s style="left:${at * 100}%"${share >= at * 100 ? ' class="on"' : ''}><em>${'★'.repeat(n + 2)}<u> ${at * 100}%</u></em></s>`).join('')}</div>` +
+        (best ? '' : '<div class="pr-none">還沒有紀錄</div>');
     go.disabled = state === 'locked' || state === 'soon';
   }
   go.addEventListener('click', () => play(chosenId));
@@ -321,15 +351,32 @@ function showMenu(): void {
   const pad = new Pad();
   const readPad = () => {
     pad.poll();
+    if (pad.anyPress) wakeMusic();
     if (pad.connected) {
-      stepFocus(choices(), pad.takeStep());
+      // The controller's buttons shown beside what they do, once it is in hand.
+      if (pad.anyPress || pad.leftX || pad.leftY) {
+        if (!document.body.classList.contains('using-pad')) namePadKeys();
+        document.body.classList.add('using-pad');
+      }
+      const left = pad.take('lb'), right = pad.take('rb');
+      bumpControls(menu, left, right);
+      // On the level page, the bumpers turn the preview's pictures.
+      if (!document.getElementById('menu-levels')!.hidden && (left || right)) {
+        showPicture(left ? -1 : 1);
+      }
+      // Everything on the page that can be worked: its buttons, and its sliders and switches.
+      const page = pages.find((p) => !p.hidden)!;
+      const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled), input')].filter((b) => b.offsetParent !== null);
+      if (page.id === 'menu-levels') stepFocus(choices(), pad.takeStep());
+      else padNavigate(pad, list);
       const focused = document.activeElement as HTMLElement | null;
-      if (pad.take('a') && focused && choices().includes(focused)) focused.click();
+      if (pad.take('a') && focused && list.includes(focused)) focused.click();
       if (pad.take('b')) open('menu-home');
     }
     requestAnimationFrame(readPad);
   };
   requestAnimationFrame(readPad);
+  for (const kind of ['mousemove', 'keydown'] as const) window.addEventListener(kind, () => document.body.classList.remove('using-pad'));
 
   soundButtons(menu);
   playMusic('menu');

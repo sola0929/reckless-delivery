@@ -128,9 +128,12 @@ export class GameAudio {
     const unlock = () => this.unlock();
     window.addEventListener('keydown', unlock);
     window.addEventListener('pointerdown', unlock);
+    // Tried at once as well: come from another page of the game that was clicked, the browser may let it start already.
+    unlock();
   }
 
-  private unlock(): void {
+  /** Start the sound, or try to again: on a key, a click, or a press of the controller. */
+  unlock(): void {
     if (!this.ctx) {
       try {
         this.ctx = new AudioContext();

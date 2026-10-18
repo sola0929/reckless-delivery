@@ -14,6 +14,7 @@ import { sandbox } from './sandbox';
 import { slopes } from './slopes';
 import { quarryLab } from './quarryLab';
 import { quarry } from './quarry';
+import type { CargoTypeId } from '../sim/cargo-types';
 import type { LevelDef } from './types';
 
 export const LEVELS: Record<string, () => LevelDef> = { city, hilltown, battlefield, sandbox, range, hills, steps, bends, relief: reliefShow, jiufen, hillcity, slopes, uptown, quarrylab: quarryLab, quarry, tutorial };
@@ -35,16 +36,16 @@ export interface LevelEntry {
   previews?: string[];
   /** Its load, as the preview tells it: how many things, and their worth all told. */
   load?: [number, number];
-  /** How many things lie hidden along the way: as many empty slots on its card, lit as they are brought in. */
-  hidden?: number;
+  /** The things hidden along the way, in the order they come: their cargo types, named on the level page once brought in. */
+  hidden?: CargoTypeId[];
 }
 
 /** The deliveries, in order; all of them can be played from the start. */
 export const LEVEL_LIST: LevelEntry[] = [
   // Level 1 is the city on its hillside; the flat city it was first built as is kept only as what the others are made from.
-  { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true, previews: ['市場小路', '機車車陣', '平交道', '路邊辦桌'], load: [18, 4000], hidden: 3 },
-  { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500], hidden: 3 },
-  { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000], hidden: 3 },
+  { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true, previews: ['市場小路', '機車車陣', '平交道', '路邊辦桌'], load: [18, 4000], hidden: ['amp', 'bicycle', 'aircon'] },
+  { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500], hidden: ['stockpot', 'riceCooker', 'lightbox'] },
+  { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000], hidden: ['megaphone', 'toolbox', 'radio'] },
 ];
 
 /** The tutorial: before the deliveries, never in the way of them. */

@@ -1,4 +1,6 @@
-import type { RecordsSet } from './best';
+import { loadBest, type RecordsSet } from './best';
+import { drawControls } from './controls';
+import { namePadKeys, padName, padText } from './gamepad';
 import { soundButtons, uiSound } from './jukebox';
 import type { LevelDef } from './levels/types';
 import { soundSettings } from './sound-settings';
@@ -28,11 +30,15 @@ const HELP_ON_FOOT =
   '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>F</b> 舉起、放下　<b>Q / E</b> 轉視角　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
 
 const PAD_DRIVING =
-  '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>A</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角、縮放';
+  '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>RB</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角　<b>十字鍵 ↑↓</b> 縮放';
 const PAD_ON_FOOT =
   '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 蓄力拋出　<b>LT</b> 取消　<b>Y</b> 上車　<b>Start</b> 暫停';
 
 export class Hud {
+  /** The pause menu's page of the controls: which set it shows. */
+  private readonly showControls = drawControls(el('pause-controls'), true);
+  /** What the controller's bottom button was called when the hints were last written: they are written again if that changes. */
+  private padA = '';
   private readonly speedEl = el('speed');
   private readonly cargoEl = el('cargo');
   private readonly valueEl = el('value');
@@ -103,6 +109,9 @@ export class Hud {
     for (const id of ['result-menu', 'pause-leave']) el(id).addEventListener('click', () => this.onMenu?.());
     el('pause-menu').addEventListener('click', () => this.askToLeave(true));
     el('pause-stay').addEventListener('click', () => this.askToLeave(false));
+    el('pause-help-open').addEventListener('click', () => this.showPage('help'));
+    el('pause-settings-open').addEventListener('click', () => this.showPage('settings'));
+    el('pause-info-open').addEventListener('click', () => this.showPage('info'));
     el('pause-resume').addEventListener('click', () => this.onResume?.());
     el('pause-button').addEventListener('click', () => this.onPause?.());
     el('pause-level').textContent = level.name;
@@ -144,9 +153,10 @@ export class Hud {
     el('banner-list').innerHTML = scored ? this.manifest() : '';
     // Its way out is a button of its own, rather than a word in the corner; the clock starting is said beside it.
     el('banner-foot').innerHTML = scored
-      ? `<span>共 ${this.load().length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd>Enter</kbd></button>`
+      ? `<span>共 ${this.load().length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd><span class="key-k">Enter</span><span class="key-p" data-pad="A"></span></kbd></button>`
       : '';
     el('banner-go')?.addEventListener('click', () => this.onBannerClose());
+    namePadKeys(this.banner);
     this.banner.classList.toggle('plain', !scored);
     this.banner.classList.remove('leaving');
     this.banner.hidden = false;
@@ -167,6 +177,16 @@ export class Hud {
     return true;
   }
 
+  /**
+   * The pause menu's panel: how the run stands, or the controls, or the settings, each a page of it. The choices beside it
+   * stay as they are; the one that opened a page is lit while it is open.
+   */
+  private showPage(page: 'info' | 'help' | 'settings', focus = true): void {
+    for (const name of ['info', 'help', 'settings'] as const) el(`pause-${name}`).hidden = name !== page;
+    for (const name of ['info', 'help', 'settings'] as const) el(`pause-${name}-open`).classList.toggle('open', name === page);
+    if (focus) el(`pause-${page}-open`).focus();
+  }
+
   /** Swap the pause menu's choices for the question of whether to really leave, or back again. */
   private askToLeave(asking: boolean): void {
     el('pause-choices').hidden = asking;
@@ -175,15 +195,40 @@ export class Hud {
   }
 
   /** Open or close the pause menu. Opening it, say how the run stands. */
-  showPause(on: boolean, run?: { seconds: number; value: number; fullValue: number; onTruck: number; total: number }): void {
+  showPause(on: boolean, run?: { seconds: number; value: number; fullValue: number; onTruck: number; total: number; hidden?: { found: number; total: number; items: string[] } }, usingPad = false): void {
     el('pause').hidden = !on;
+    // The controls for whichever was last touched, where the controller's are there to show.
+    this.showControls(usingPad ? 'pad' : 'keyboard');
+    namePadKeys(el('pause'));
     this.askToLeave(false);
+    this.showPage('info', false);
     el('pause-save').hidden = !this.saveAvailable;
     if (!on || !run) return;
     el('pause-time').textContent = clock(run.seconds);
-    el('pause-value').textContent = money(run.value);
     el('pause-cargo').textContent = `${run.onTruck} / ${run.total}`;
-    el('pause-resume').focus();
+    // What the load is worth now, of what it was, and where that stands against each star's share.
+    const share = run.fullValue > 0 ? run.value / run.fullValue : 0;
+    const [, two, three] = this.level.stars;
+    el('pause-value').textContent = money(run.value);
+    el('pause-full').textContent = `/ ${money(run.fullValue)}`;
+    el('pause-share').textContent = `${Math.floor(share * 100)}%`;
+    el('pause-bar').className = `pw-bar${share > 1 ? ' over' : share >= three ? ' good' : ''}`;
+    el('pause-bar').innerHTML = `<i style="width:${Math.min(100, share * 100)}%"></i>` +
+      [two, three].map((at, n) => `<s style="left:${at * 100}%"${share >= at ? ' class="on"' : ''}><em>${'★'.repeat(n + 2)} ${Math.round(at * 100)}%</em></s>`).join('');
+    // The things hidden along the way: one slot each, named once brought in this run.
+    el('pause-hidden-box').hidden = !run.hidden;
+    if (run.hidden) {
+      el('pause-hidden').textContent = `${run.hidden.found} / ${run.hidden.total}`;
+      el('pause-hidden-slots').innerHTML = Array.from({ length: run.hidden.total }, (_, n) => {
+        const type = run.hidden!.items[n] as keyof typeof CARGO_TYPES | undefined;
+        return type ? `<span class="on">${CARGO_TYPES[type].name}</span>` : '<span>？</span>';
+      }).join('');
+    }
+    // And the best on record, to measure the run by.
+    const best = loadBest(this.level.id);
+    el('pause-best').innerHTML = best ? `最佳紀錄　送達 <b>${Math.floor(best.fraction * 100)}%</b>　最快 <b>${best.seconds != null ? clock(best.seconds) : '－'}</b>` : '';
+    // Marked as chosen where the controller opened it, as a press of Tab would mark it.
+    el('pause-resume').focus({ focusVisible: usingPad } as FocusOptions);
   }
 
   /** The load as it sets out: not what is hidden along the way, which is not on the list. */
@@ -250,11 +295,12 @@ export class Hud {
 
   /** The key list along the bottom, for driving or for being on foot. */
   setMode(onFoot: boolean, pad = false): void {
-    if (onFoot === this.onFoot && pad === this.pad) return;
+    if (onFoot === this.onFoot && pad === this.pad && padText('A') === this.padA) return;
+    this.padA = padText('A');
     this.onFoot = onFoot;
     this.pad = pad;
-    const keys = pad ? (onFoot ? PAD_ON_FOOT : PAD_DRIVING) : onFoot ? HELP_ON_FOOT : HELP_DRIVING;
-    this.help.innerHTML = `<span class="help-keys">${keys}</span><span class="help-tab">${pad ? '' : '<b>F1</b> '}操作說明</span>`;
+    const keys = pad ? padText(onFoot ? PAD_ON_FOOT : PAD_DRIVING) : onFoot ? HELP_ON_FOOT : HELP_DRIVING;
+    this.help.innerHTML = `<span class="help-keys">${keys}</span><span class="help-tab"><b>${pad ? padName('Back') : 'F1'}</b> 操作說明</span>`;
     this.showHelp(8);
   }
 
@@ -265,6 +311,12 @@ export class Hud {
     this.hiddenText = text;
     el('hidden').textContent = text;
     el('hidden-stat').hidden = found === 0;
+  }
+
+  /** Whether the pause menu says the controller has gone. */
+  padLost(lost: boolean): void {
+    if (el('pause-pad-lost').hidden === !lost) return;
+    el('pause-pad-lost').hidden = !lost;
   }
 
   /** Bring the key list up for this many seconds, at least. */
@@ -310,13 +362,15 @@ export class Hud {
     el('result-reason').textContent = reason;
     el('result-verdict').textContent = this.level.finish ? `「${verdict(result, this.level)}」` : '';
 
-    const [pass, two, three] = this.level.stars;
+    const [, two, three] = this.level.stars;
     const percent = Math.floor(result.fraction * 100);
     // Past the whole load, with what was found along the way: the bar is full, and gold.
     const over = result.fraction > 1 ? ' over' : result.fraction >= three ? ' good' : '';
     el('result-value').innerHTML =
       `<div class="figure"><b>${money(result.value)}</b><span>/ ${money(fullValue)}</span><em>${percent}%</em></div>` +
-      `<div class="bar"><div class="fill${over}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div><div class="mark" style="left:${three * 100}%"></div></div>`;
+      `<div class="bar"><div class="fill${over}" style="width:${Math.min(100, result.fraction * 100)}%"></div>` +
+      // Each star's share marked on it, lit once reached: what each star asks, without a list of them.
+      [two, three].map((at, n) => `<div class="mark${!failed && result.fraction >= at ? ' on' : ''}" style="left:${at * 100}%"><em>${'★'.repeat(n + 2)} ${Math.round(at * 100)}%</em></div>`).join('') + '</div>';
 
     // The worth counts up from nothing as the bar fills, and each star chimes as it comes.
     this.countUp(result.value, result.fraction);
@@ -337,18 +391,17 @@ export class Hud {
       tile('撞飛物品', String(things), 'trip'),
     ].join('');
 
-    const goals: [string, boolean][] = [
-      [pass > 0 ? `送達價值 ${Math.round(pass * 100)}% 以上` : '抵達卸貨區', !failed && result.fraction >= pass],
-      [`送達價值 ${Math.round(two * 100)}% 以上`, !failed && result.fraction >= two],
-      [`送達價值 ${Math.round(three * 100)}% 以上`, !failed && result.fraction >= three],
-    ];
+    // The things hidden along the way, one slot each as on the level page: those brought in this run lit and named, new
+    // ones marked; those brought in on an earlier run named but dim; the rest a question mark.
     const hidden = result.hidden;
+    const types = this.level.cargo.filter((place) => place.found).map((place) => place.type);
+    const known = records?.before?.items ?? [];
     el('result-hidden').innerHTML = hidden
-      ? `<span>隱藏貨物</span><b>${hidden.found} / ${hidden.total}</b>${hidden.value > 0 ? `<em>+${money(hidden.value)}</em>` : ''}${hidden.found === hidden.total ? '<i>全收</i>' : ''}`
+      ? `<div class="rh-head"><span>隱藏貨物</span><b>${hidden.found} / ${hidden.total}</b>${hidden.value > 0 ? `<em>+${money(hidden.value)}</em>` : ''}${hidden.found === hidden.total ? '<i>全收</i>' : ''}</div>` +
+        `<div class="rh-slots">${types.map((type) => hidden.items.includes(type) ? `<span class="on">${CARGO_TYPES[type].name}${known.includes(type) ? '' : '<sup>NEW</sup>'}</span>`
+          : known.includes(type) ? `<span class="seen">${CARGO_TYPES[type].name}</span>` : '<span>？</span>').join('')}</div>`
       : '';
-    el('result-goals').innerHTML = goals
-      .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}<i>${met ? '✓' : ''}</i></div>`)
-      .join('');
+    el('result-goals').innerHTML = '';
 
     // The two records, each against what stood before: the most delivered, and the quickest.
     const before = records?.before ?? null;
@@ -375,8 +428,18 @@ export class Hud {
     // The card from the start has had its day, if it is somehow still up.
     this.banner.hidden = true;
     this.result.hidden = false;
+    // With the controller, each button's own: A the one first in line, X going again (when that is not it), B the menu.
+    const first = back ? 'result-save' : next ? 'result-next' : 'result-retry';
+    const chip = (name: string) => `<kbd class="key-p pad-chip" data-pad="${name}"></kbd>`;
+    for (const id of ['result-next', 'result-save', 'result-retry', 'result-menu']) {
+      const button = el(id);
+      button.querySelector('.pad-chip')?.remove();
+      const name = id === first ? 'A' : id === 'result-menu' ? 'B' : id === 'result-retry' ? 'X' : '';
+      if (name) button.insertAdjacentHTML('afterbegin', chip(name));
+    }
+    namePadKeys(el('result'));
     // Something to press with Enter straight away: going back to the save point when there is one, else going again.
-    el(back ? 'result-save' : next ? 'result-next' : 'result-retry').focus();
+    el(first).focus();
   }
 
   /** The result page's worth, counted up from nothing over a second, and its bar filled alongside. */

@@ -23,6 +23,9 @@ export interface ChaseView {
   ground?: (x: number, z: number, reach?: number) => number;
 }
 
+/** At most this far either way. */
+const capped = (step: number, most: number) => Math.max(-most, Math.min(most, step));
+
 /** High chase camera: sits above and behind what it follows, looking ahead of it. */
 export class ChaseCamera {
   private yaw = 0;
@@ -46,6 +49,8 @@ export class ChaseCamera {
   private lookDrag = 0;
   private lookHeld = false;
   private lookStick = 0;
+  /** How fast it swings round to where Q, E or the stick point it: the stick slower than the keys. */
+  private lookRate: number = CAMERA.lookStickRate;
   private footTurn = 0;
   /** How far the road drops away ahead, metres, eased: the camera rises to see down it. */
   private drop = 0;
@@ -69,10 +74,11 @@ export class ChaseCamera {
    * Look round, for this frame: pixels dragged across with the right button and whether it is held, and the controller's
    * stick across (or Q and E), -1 to 1. Dragged or pushed to the right, the view turns to the right, as in most games.
    */
-  lookAround(drag: number, holding: boolean, stick: number): void {
+  lookAround(drag: number, holding: boolean, stick: number, fromPad = false): void {
     this.lookDrag -= drag;
     this.lookHeld = holding;
     this.lookStick = -stick;
+    this.lookRate = fromPad ? CAMERA.lookPadRate : CAMERA.lookStickRate;
   }
 
   addZoom(wheelDelta: number): void {
@@ -111,8 +117,9 @@ export class ChaseCamera {
       if (this.lookHeld) this.yaw += this.lookDrag * CAMERA.lookPerPixel;
       this.yaw += this.footTurn * CAMERA.footTurn * dt;
     } else if (this.lookHeld) this.look += this.lookDrag * CAMERA.lookPerPixel;
-    else if (this.lookStick) this.look += (this.lookStick * CAMERA.lookMax - this.look) * ease(CAMERA.lookStickFollow, dt);
-    else this.look -= this.look * ease(CAMERA.lookReturn, dt);
+    // Round to the side and back no faster than so many radians a second, easing in at the end.
+    else if (this.lookStick) this.look += capped((this.lookStick * CAMERA.lookMax - this.look) * ease(CAMERA.lookStickFollow, dt), this.lookRate * dt);
+    else this.look -= capped(this.look * ease(CAMERA.lookReturn, dt), CAMERA.lookReturnRate * dt);
     this.look = THREE.MathUtils.clamp(this.look, -CAMERA.lookMax, CAMERA.lookMax);
     this.lookDrag = 0;
     this.speed += ((onFoot ? 0 : Math.abs(speed)) - this.speed) * ease(CAMERA.speedFollow, dt);

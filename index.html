@@ -76,59 +76,70 @@
       </div>
       <div id="pause" hidden>
         <div id="pause-card">
-          <div class="pause-main">
+          <!-- On the left what can be done; on the right a panel: how the run stands, or the controls, or the settings. -->
+          <div class="pause-side">
             <div class="pause-head">
               <div id="pause-title">暫停</div>
               <div id="pause-level"></div>
-            </div>
-            <div class="pause-stats">
-              <div><span>時間</span><b id="pause-time">0:00</b></div>
-              <div><span>貨物價值</span><b id="pause-value">$0</b></div>
-              <div><span>車上貨物</span><b id="pause-cargo">0 / 0</b></div>
+              <div id="pause-pad-lost" hidden>手把已中斷連線，接回後再繼續</div>
             </div>
             <div id="pause-choices">
-              <button id="pause-resume" class="menu-item primary" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>繼續<small>Esc</small></button>
+              <button id="pause-resume" class="menu-item primary" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>繼續<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
               <button id="pause-save" class="menu-item" type="button" hidden><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 14h8v7H8z"/></svg>回到存檔點</button>
               <button id="pause-retry" class="menu-item" type="button"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 7.7 10h-2.6A5.5 5.5 0 1 1 12 6.5c1.5 0 2.9.6 3.9 1.6L13 11h8V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg>重新開始</button>
+              <!-- The panel's pages, one button each: the one open is lit. -->
+              <button id="pause-info-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zm2 2v12h12V6zm2 2h8v2H8zm0 3h8v2H8zm0 3h5v2H8z" fill-rule="evenodd"/></svg>詳情</button>
+              <button id="pause-help-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
+              <button id="pause-settings-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
               <button id="pause-menu" class="menu-item leave" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l10 9h-3v9h-5v-6h-4v6H5v-9H2z"/></svg>回到主選單</button>
-            </div>
-            <div class="pause-sound">
-              <label><span>音效</span><input id="vol-sfx" type="range" min="0" max="100" /></label>
-              <label><span>音樂</span><input id="vol-music" type="range" min="0" max="100" /></label>
-              <label class="mute"><input id="vol-mute" type="checkbox" /><span>靜音</span></label>
-              <div class="quality"><span>畫質</span><div class="segments" id="gfx-quality">
-                <button type="button" data-quality="auto">自動</button>
-                <button type="button" data-quality="high">高</button>
-                <button type="button" data-quality="medium">中</button>
-                <button type="button" data-quality="low">低</button>
-              </div></div>
             </div>
             <div id="pause-confirm" hidden>
               <p>確定要回到主選單嗎？<br />這一趟的進度不會保留。</p>
               <button id="pause-leave" class="menu-item leave" type="button">回到主選單</button>
               <button id="pause-stay" class="menu-item" type="button">取消，繼續送貨</button>
             </div>
+            <!-- With the controller in hand, which of its buttons choose and which go back. -->
+            <div class="pause-foot key-p"><b data-pad="A"></b> 確認　<b data-pad="B"></b> 繼續遊戲</div>
           </div>
-          <div class="pause-keys">
-            <div class="keys">
-            <h4>開車</h4>
-            <kbd>W</kbd><span>前進</span>
-            <kbd>S</kbd><span>煞車（按住越久越重）、倒車</span>
-            <kbd>A / D</kbd><span>左右轉向</span>
-            <kbd>Shift</kbd><span>急加速</span>
-            <kbd>空白鍵</kbd><span>手煞車</span>
-            <kbd>H</kbd><span>喇叭（趕開附近的人）</span>
-            <h4>下車</h4>
-            <kbd>C</kbd><span>上下車</span>
-            <kbd>F</kbd><span>舉起、放下貨物</span>
-            <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
-            <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
-            <h4>其他</h4>
-            <kbd>Esc</kbd><span>暫停</span>
-            <kbd>滾輪</kbd><span>拉近、拉遠</span>
-            <kbd>Q / E</kbd><span>轉視角：開車時按住看側邊，放開回正；下車時轉向</span>
-            <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
-            <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
+          <div class="pause-panel">
+            <div class="pause-page" id="pause-info">
+              <div class="pause-page-title">這一趟的詳情</div>
+              <div class="pause-stats">
+                <div><span>時間</span><b id="pause-time">0:00</b></div>
+                <div><span>車上貨物</span><b id="pause-cargo">0 / 0</b></div>
+              </div>
+              <div class="pause-worth">
+                <div class="pw-figure"><span>貨物價值</span><b id="pause-value">$0</b><small id="pause-full"></small><em id="pause-share"></em></div>
+                <div class="pw-bar" id="pause-bar"></div>
+              </div>
+              <div class="pause-hidden" id="pause-hidden-box" hidden>
+                <div class="ph-head"><svg class="crate" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zm2 1.6v7.1l6 2.7v-7.1zm14 0l-6 2.7v7.1l6-2.7zM12 5.2L6.4 7.7 12 10.2l5.6-2.5z"/></svg>隱藏貨物 <b id="pause-hidden">0 / 0</b></div>
+                <div class="ph-slots" id="pause-hidden-slots"></div>
+              </div>
+              <div class="pause-best" id="pause-best"></div>
+            </div>
+            <div class="pause-page" id="pause-help" hidden>
+              <div class="pause-page-title">操作說明</div>
+              <div id="pause-controls"></div>
+            </div>
+            <div class="pause-page" id="pause-settings" hidden>
+              <div class="pause-page-title">設定</div>
+              <div class="pause-sound pause-group">
+                <div class="pause-group-title">音量</div>
+                <label><span>音效</span><input id="vol-sfx" type="range" min="0" max="100" /></label>
+                <label><span>音樂</span><input id="vol-music" type="range" min="0" max="100" /></label>
+                <label class="mute"><span>聲音</span><input id="vol-mute" type="checkbox" /><i class="mute-chip"><svg class="mute-icon" viewBox="0 0 24 24"><path class="body" d="M3 9h4l5-5v16l-5-5H3z"/><path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg><b class="on">開啟</b><b class="off">靜音中</b></i></label>
+              </div>
+              <div class="pause-sound pause-group">
+                <div class="pause-group-title">畫面</div>
+                <div class="quality"><span>畫質</span><div class="segments" id="gfx-quality">
+                  <button type="button" data-quality="auto">自動</button>
+                  <button type="button" data-quality="high">高</button>
+                  <button type="button" data-quality="medium">中</button>
+                  <button type="button" data-quality="low">低</button>
+                </div></div>
+                <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
+              </div>
             </div>
           </div>
         </div>
@@ -169,12 +180,16 @@
       <!-- The level page's preview of the one chosen, in the room to the right of its cards. -->
       <div id="level-preview">
         <div class="preview-shots"><div class="preview-caption"></div><div class="preview-dots"></div></div>
-        <div class="preview-tag"></div>
-        <div class="preview-name"></div>
-        <div class="preview-note"></div>
-        <div class="preview-facts"></div>
-        <div class="preview-best"></div>
-        <button class="menu-item primary" id="preview-go" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>出發！<small>Enter</small></button>
+        <div class="preview-body">
+          <div class="preview-main">
+            <div class="preview-tag"></div>
+            <div class="preview-name"></div>
+            <div class="preview-note"></div>
+            <div class="preview-facts"></div>
+            <button class="menu-item primary" id="preview-go" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>出發！<small><span class="key-k">Enter</span><span class="key-p" data-pad="A"></span></small></button>
+          </div>
+          <div class="preview-record"></div>
+        </div>
       </div>
       <div class="menu-side">
         <div class="logo">胡鬧<span>快遞</span></div>
@@ -186,7 +201,7 @@
           <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
           <button class="menu-item" data-page="menu-settings" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
           <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
-          <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b>Enter</b><span class="pad-only"> / <b>A</b></span> 確定</div>
+          <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b class="key-k">Enter</b><b class="key-p" data-pad="A"></b> 確定　<b class="key-k">Esc</b><b class="key-p" data-pad="B"></b> 返回</div>
         </div>
 
         <div class="menu-page" id="menu-offer" hidden>
@@ -194,7 +209,7 @@
           <p class="offer-note">先到「新手上路」練習開車、煞車、飛越斷橋和下車撿貨，大約兩分鐘。之後也可以從「關卡選擇」再進去。</p>
           <button class="menu-item primary" id="offer-tutorial" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>先去新手上路</button>
           <button class="menu-item" id="offer-skip" type="button"><svg viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zm8 0l8 7-8 7z"/></svg>直接開始第 1 關</button>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
         </div>
 
         <div class="menu-page" id="menu-levels" hidden>
@@ -204,7 +219,7 @@
           </div>
           <div id="menu-level-list"></div>
           <div id="menu-free"></div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
         </div>
 
         <div class="menu-page" id="menu-settings" hidden>
@@ -212,7 +227,7 @@
           <div class="pause-sound settings-panel">
             <label><span>音效</span><input id="set-sfx" type="range" min="0" max="100" /></label>
             <label><span>音樂</span><input id="set-music" type="range" min="0" max="100" /></label>
-            <label class="mute"><input id="set-mute" type="checkbox" /><span>靜音</span></label>
+            <label class="mute"><span>聲音</span><input id="set-mute" type="checkbox" /><i class="mute-chip"><svg class="mute-icon" viewBox="0 0 24 24"><path class="body" d="M3 9h4l5-5v16l-5-5H3z"/><path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg><b class="on">開啟</b><b class="off">靜音中</b></i></label>
             <div class="quality"><span>畫質</span><div class="segments" id="set-quality">
               <button type="button" data-quality="auto">自動</button>
               <button type="button" data-quality="high">高</button>
@@ -221,43 +236,13 @@
             </div></div>
             <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
           </div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
         </div>
 
         <div class="menu-page" id="menu-help" hidden>
           <div class="page-title">操作說明</div>
-          <div class="keys">
-            <h4>開車</h4>
-            <kbd>W</kbd><span>前進</span>
-            <kbd>S</kbd><span>煞車（按住越久越重）、倒車</span>
-            <kbd>A / D</kbd><span>左右轉向</span>
-            <kbd>Shift</kbd><span>急加速</span>
-            <kbd>空白鍵</kbd><span>手煞車</span>
-            <kbd>H</kbd><span>喇叭（趕開附近的人）</span>
-            <h4>下車</h4>
-            <kbd>C</kbd><span>上下車</span>
-            <kbd>F</kbd><span>舉起、放下貨物</span>
-            <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
-            <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
-            <h4>其他</h4>
-            <kbd>Esc</kbd><span>暫停</span>
-            <kbd>滾輪</kbd><span>拉近、拉遠</span>
-            <kbd>Q / E</kbd><span>轉視角：開車時按住看側邊，放開回正；下車時轉向</span>
-            <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
-            <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
-            <h4 class="pad-only">手把</h4>
-            <kbd class="pad-only">RT / LT</kbd><span class="pad-only">油門／煞車、倒車</span>
-            <kbd class="pad-only">左搖桿</kbd><span class="pad-only">轉向；下車時移動</span>
-            <kbd class="pad-only">X</kbd><span class="pad-only">急加速；下車時奔跑</span>
-            <kbd class="pad-only">A</kbd><span class="pad-only">手煞車；下車時跳躍</span>
-            <kbd class="pad-only">LB</kbd><span class="pad-only">喇叭</span>
-            <kbd class="pad-only">Y</kbd><span class="pad-only">上下車</span>
-            <kbd class="pad-only">B</kbd><span class="pad-only">舉起、放下貨物</span>
-            <kbd class="pad-only">右搖桿</kbd><span class="pad-only">開車時左右轉視角、上下拉近拉遠；下車時瞄準</span>
-            <kbd class="pad-only">RT</kbd><span class="pad-only">下車時按住蓄力，放開拋出；LT 取消</span>
-            <kbd class="pad-only">Start</kbd><span class="pad-only">暫停</span>
-          </div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small>Esc</small></button>
+          <div id="menu-controls"></div>
+          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
         </div>
       </div>
     </div>
@@ -290,7 +275,7 @@
       <div class="phone-card">
         <div class="phone-title">請用電腦遊玩</div>
         <p>這個遊戲要用鍵盤<span class="pad-only">或手把</span>操作，手機和平板目前沒有觸控按鍵，畫面也可能跑不順。</p>
-        <p>建議改用電腦開啟這個網址<span class="pad-only">；手機接上藍牙手把也可以玩</span>。</p>
+        <p>建議改用電腦開啟這個網址。</p>
         <button type="button" id="phone-go">我知道了，仍要繼續</button>
       </div>
     </div>

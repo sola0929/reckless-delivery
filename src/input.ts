@@ -1,4 +1,4 @@
-import { Pad, type PadButton } from './gamepad';
+import { namePadKeys, Pad, type PadButton } from './gamepad';
 import type { DriveInput } from './sim/truck';
 
 const HANDLED = new Set([
@@ -11,7 +11,7 @@ const HANDLED = new Set([
 /** Keys whose presses are picked up once each, rather than read as held. */
 export type PressKey = 'KeyC' | 'KeyF' | 'KeyH' | 'Space' | 'Escape' | 'KeyP' | 'Enter' | `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
-/** Which controller button stands for each key that is pressed once. A (jump, handbrake) also closes the start banner. */
+/** Which controller button stands for each key that is pressed once. A (jump) also closes the start banner. */
 const PAD_PRESS: [PadButton, PressKey[]][] = [
   ['a', ['Space', 'Enter']], ['b', ['KeyF']], ['y', ['KeyC']], ['lb', ['KeyH']], ['start', ['Escape']],
 ];
@@ -81,18 +81,32 @@ export class Input {
   poll(): void {
     const pad = this.pad;
     pad.poll();
-    this.padPressed.clear();
-    this.padCancel = false;
+    document.body.classList.toggle('using-pad', this.usingPad);
+    // A press is kept until it is acted on, as a key's is: a frame with no step of the game in it (a fast screen) must not
+    // lose it. clearPresses() forgets them.
     if (!pad.connected) return;
     for (const [button, codes] of PAD_PRESS) if (pad.wasPressed(button)) for (const code of codes) this.padPressed.add(code);
     if (pad.wasPressed('lt')) this.padCancel = true;
-    const touched = this.padPressed.size > 0 || pad.leftX || pad.leftY || pad.rightX || pad.rightY || pad.lt || pad.rt || pad.isHeld('x');
+    const touched = this.padPressed.size > 0 || pad.leftX || pad.leftY || pad.rightX || pad.rightY || pad.lt || pad.rt || (['x', 'lb', 'rb', 'up', 'down'] as const).some((b) => pad.isHeld(b));
+    if (touched && !this.usingPad) namePadKeys();
     if (touched) this.usingPad = true;
+    // Said to the page, for whatever shows the controller's buttons only to someone holding one.
+    document.body.classList.toggle('using-pad', this.usingPad);
   }
 
   /** Q and E held, to turn the view: -1 to the left, 1 to the right, 0 for neither or both. */
   turnKeys(): number {
     return (this.down.has('KeyE') ? 1 : 0) - (this.down.has('KeyQ') ? 1 : 0);
+  }
+
+  /**
+   * Turning the view on foot, -1 to 1, plus to the right: Q and E; on the controller LB and RB (the horn and the handbrake,
+   * which do nothing on foot), and the right stick across while nothing is carried, when it is not wanted for aiming.
+   */
+  footTurn(carrying: boolean): number {
+    const pad = this.pad;
+    const bumpers = (pad.isHeld('rb') ? 1 : 0) - (pad.isHeld('lb') ? 1 : 0);
+    return this.turnKeys() || bumpers || (carrying ? 0 : pad.rightX);
   }
 
   private held(...codes: string[]): boolean {
@@ -116,7 +130,8 @@ export class Input {
     return {
       throttle: boost ? 1 : keyThrottle || pad.rt - pad.lt,
       steer: keySteer || padSteer,
-      handbrake: this.down.has('Space') || pad.isHeld('a'),
+      // RB, as in most driving games: pressed with the forefinger while the trigger is held, the thumb left on the stick.
+      handbrake: this.down.has('Space') || pad.isHeld('rb'),
       boost,
     };
   }
@@ -175,9 +190,9 @@ export class Input {
 
   /** Scroll wheel movement since the last call. */
   takeWheel(withStick = true): number {
-    // The right stick, up and down, zooms as the wheel does while driving.
-    const { rightX, rightY } = this.pad;
-    const w = this.wheel + (withStick && Math.abs(rightY) > Math.abs(rightX) ? rightY * 30 : 0);
+    // The d-pad, up and down, zooms as the wheel does while driving; the right stick only turns the view.
+    const pad = this.pad;
+    const w = this.wheel + (withStick ? ((pad.isHeld('down') ? 1 : 0) - (pad.isHeld('up') ? 1 : 0)) * 30 : 0);
     this.wheel = 0;
     return w;
   }

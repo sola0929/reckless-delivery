@@ -81,7 +81,7 @@ export interface Result {
   /** How many times the run went back to its save point. */
   retries: number;
   /** On a level with things hidden along the way: how many of them were brought in, of how many, and what they added. */
-  hidden?: { found: number; total: number; value: number };
+  hidden?: { found: number; total: number; value: number; items: string[] };
 }
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
@@ -663,7 +663,9 @@ export class Sim {
 
   tally(): Tally {
     const tally: Tally = { intact: 0, damaged: 0, destroyed: 0, lost: 0 };
+    // The things hidden along the way are not the load: they have their own row on the result.
     for (const c of this.cargo) {
+      if (c.bonus) continue;
       if (c.stage === 3) tally.destroyed++;
       else if (!c.body || c.held || !this.truck.isOnBed(c.body.translation())) tally.lost++;
       else if (c.stage === 0) tally.intact++;
@@ -1096,7 +1098,7 @@ export class Sim {
       trip: this.trip(),
       retries: this.retries,
       hidden: hiddenItems.length && !this.level.practice
-        ? { found: brought.filter((c) => c.value > 0).length, total: hiddenItems.length, value: brought.reduce((sum, c) => sum + c.value, 0) }
+        ? { found: brought.filter((c) => c.value > 0).length, total: hiddenItems.length, value: brought.reduce((sum, c) => sum + c.value, 0), items: brought.filter((c) => c.value > 0).map((c) => c.type.id) }
         : undefined,
     };
   }

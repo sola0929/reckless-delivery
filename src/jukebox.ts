@@ -66,6 +66,14 @@ function start(): void {
   );
 }
 
+/** Try the music again if the browser held it back: on a press of the controller, which it does not wait on as it does keys. */
+export function wakeMusic(): void {
+  if (waiting) {
+    waiting = false;
+    start();
+  }
+}
+
 /** Start a track, looping; or stop the music with null. */
 export function playMusic(track: keyof typeof TRACKS | null): void {
   if (music) {
