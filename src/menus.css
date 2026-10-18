@@ -488,6 +488,41 @@ body.in-menu #hud {
   text-shadow: 0 0 12px rgba(255, 209, 102, 0.5);
 }
 
+/* The things hidden along the way: a slot each, lit as brought in, and a stamp when they all have been on one run. */
+.level-hidden {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+.level-hidden span {
+  width: 14px;
+  height: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+}
+
+.level-hidden span.on {
+  border: 0;
+  background: linear-gradient(#e2b066, #b98a55);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.level-hidden em {
+  margin-left: 6px;
+  padding: 0 8px;
+  border: 2px solid #ff8a5a;
+  border-radius: 4px;
+  color: #ff8a5a;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 2px;
+  transform: rotate(-8deg);
+}
+
 .level-best {
   margin-top: 2px;
   padding: 0 4px;

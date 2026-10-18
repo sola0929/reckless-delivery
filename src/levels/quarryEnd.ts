@@ -2,6 +2,7 @@ import { containerModel } from './city';
 import type { ObjectKindId } from './objects';
 import { CONCRETE, hash, HAUL, type Site } from './quarryParts';
 import type { Look } from './relief';
+import type { CargoPlacement } from '../sim/cargo';
 import type { FinishZone, LevelDef, PropDesc, SignDesc, Vec2 } from './types';
 
 // Level 3, its second half: from the melon field on the sand bar, over the main channel by the haul road's steel bridge,
@@ -80,6 +81,8 @@ export interface EndBuilt {
   route: Vec2[];
   checkpoints: NonNullable<LevelDef['checkpoints']>;
   pools: NonNullable<LevelDef['pools']>;
+  /** The hidden thing in this half: the men's radio, in their corner of the second building's lower floor. */
+  hidden: CargoPlacement[];
 }
 
 /** Lays the second half: its ground, its ways and everything on them. `from` is where the crossing comes out on the sand bar. */
@@ -117,6 +120,7 @@ export function secondHalf(s: Site, signs: SignDesc[], from: Vec2): EndBuilt {
   relief.area(rect(-20, 1372, 18, 1384), SITE_Y, { tag: 'drop', color: 0x6a8048, wall: 0x6a6450 });
   siteYard(s);
   buildings(s, signs);
+  const hidden = [lowerFloor(s)];
   siteGrounds(s);
 
   // The main channel's water, running west.
@@ -131,6 +135,7 @@ export function secondHalf(s: Site, signs: SignDesc[], from: Vec2): EndBuilt {
       { name: 'F 二號樓', pos: [4, 1516], yaw: -Math.PI / 2, y: F3 },
     ],
     pools,
+    hidden,
     wet: WET_BAYS.map(([x0, z0, x1, z1]) => ({ area: [x0, z0, x1, z1] as [number, number, number, number], y: F3 + 0.74, drag: 0.9, grip: 0.45 })),
   };
 }
@@ -361,7 +366,7 @@ function siteYard(s: Site): void {
   const hoard = (a: Vec2, b: Vec2) => {
     const long = Math.hypot(b[0] - a[0], b[1] - a[1]), yaw = Math.atan2(b[0] - a[0], b[1] - a[1]);
     props.push({ shape: 'box', size: [0.05, 1.2, long / 2], pos: [(a[0] + b[0]) / 2, Y + 1.2, (a[1] + b[1]) / 2], rot: [0, yaw, 0], color: 0x2f62a8 });
-    props.push({ shape: 'box', size: [0.06, 0.1, long / 2], pos: [(a[0] + b[0]) / 2, Y + 2.3, (a[1] + b[1]) / 2], rot: [0, yaw, 0], color: WHITE, ghost: true });
+    props.push({ shape: 'box', size: [0.06, 0.1, long / 2], pos: [(a[0] + b[0]) / 2, Y + 2.33, (a[1] + b[1]) / 2], rot: [0, yaw, 0], color: WHITE, ghost: true });
     for (let d = 0; d < long + 0.01; d += 3) box(props, [0.06, 1.3, 0.06], [a[0] + ((b[0] - a[0]) * d) / long, Y + 1.3, a[1] + ((b[1] - a[1]) * d) / long], 0x5f646a, { ghost: true });
   };
   hoard([-56, 1384.3], [119.7, 1384.3]);
@@ -417,6 +422,103 @@ function siteYard(s: Site): void {
   s.crowds.push({ area: [96, gz + 3, 112, gz + 5], count: 2, y: Y, workers: true });
 }
 
+/**
+ * The second building's lower floor, the one the truck comes level with off the hanging bridge: what goes on under the
+ * floor above while it sets. Steel props under each bay poured this morning; blocks, bags and bars brought up for the
+ * walls; the walls of the first rooms going up; edge rails. And, deep in its far corner, walled off but for a doorway,
+ * where the men eat and sleep at noon: cardboard on the floor, stools round a cable drum, their tea, their fan, and on
+ * the drum their radio, left there. Returns the radio.
+ */
+function lowerFloor(s: Site): CargoPlacement {
+  const { props } = s;
+  const box2 = (size: [number, number, number], pos: [number, number, number], color: number, extra: Partial<PropDesc> = {}) => box(props, size, pos, color, extra);
+  const BLOCK = 0x9c9a92, BLOCK_DARK = 0x86847c;
+  const rails = (a: Vec2, b: Vec2) => {
+    const long = Math.hypot(b[0] - a[0], b[1] - a[1]), yaw = Math.atan2(b[0] - a[0], b[1] - a[1]);
+    // A little apart, end to end, so that one knocked does not take the rest with it.
+    for (let d = 1.15; d < long - 1; d += 2.3) s.object('handrail', a[0] + ((b[0] - a[0]) * d) / long, a[1] + ((b[1] - a[1]) * d) / long, yaw, F2);
+  };
+  // The edges, railed: all round but where the platform comes up to it.
+  rails([B2.x0 + 0.8, B2.z0 + 1], [B2.x0 + 0.8, 1479.6]);
+  rails([B2.x0 + 0.8, 1480.4], [B2.x0 + 0.8, B2.z1 - 1]);
+  rails([B2.x0 + 1, B2.z0 + 0.8], [B2.x1 - 1, B2.z0 + 0.8]);
+  rails([B2.x0 + 1, B2.z1 - 0.8], [B2.x1 - 1, B2.z1 - 0.8]);
+  rails([B2.x1 - 0.7, B2.z0 + 1], [B2.x1 - 0.7, P2.z0]);
+  rails([B2.x1 - 0.7, P2.z1 + 1], [B2.x1 - 0.7, B2.z1 - 1]);
+  // Under each bay poured this morning, props in rows holding it up, a timber head along each row.
+  // The timbers go see-through with the floor they hold up, when the truck is under it.
+  const overhead: NonNullable<PropDesc['fadeZone']> = [[B2.x0 - 1, F2, B2.z0 - 1], [B2.x1 + 1, F3 - 0.5, B2.z1 + 1]];
+  for (const [x0, z0, x1, z1] of WET_BAYS) {
+    const nx = Math.max(2, Math.round((x1 - x0) / 2.4)), nz = Math.max(2, Math.round((z1 - z0) / 2.4));
+    for (let i = 0; i < nx; i++) {
+      const x = x0 + 0.6 + ((x1 - x0 - 1.2) * i) / (nx - 1);
+      box2([0.05, 0.14, (z1 - z0) / 2 - 0.3], [x, F2 + 4.06, (z0 + z1) / 2], 0xb0874f, { ghost: true, fade: true, fadeZone: overhead });
+      for (let j = 0; j < nz; j++) {
+        const z = z0 + 0.6 + ((z1 - z0 - 1.2) * j) / (nz - 1);
+        if (hash(x * 3, z) < 0.12) continue;
+        s.object('shoringProp', x, z, hash(z, x) * 3, F2);
+      }
+    }
+  }
+  // Brought up for the walls, along the south side: pallets of blocks, cement, bars; the mortar mixer and its water.
+  for (let n = 0; n < 6; n++) s.object('bricks', -13 + n * 1.5, 1443.5, 0, F2);
+  for (let n = 0; n < 4; n++) s.object('bricks', -12.2 + n * 1.5, 1445.2, 0, F2);
+  for (const [x, z] of [[-3, 1443.4], [-3, 1444.1], [-2.1, 1443.4], [-2.1, 1444.1]] as const) s.object('cementBag', x, z, 0, F2);
+  for (const z of [1449, 1449.6]) s.object('rebar', 2, z, 0, F2);
+  s.object('mixer', 8.5, 1444, 0.4, F2);
+  for (const [x, z] of [[10, 1442.6], [10.8, 1443.1]] as const) s.object('waterDrum', x, z, 0, F2);
+  s.object('wheelbarrow', 6.6, 1446, 1.2, F2);
+  s.object('formwork', -7, 1450, 0, F2);
+  s.object('formwork', -7, 1451.4, 0.1, F2);
+  // The first rooms' walls going up, blocks to waist and shoulder height, their courses marked.
+  const wall = (x0: number, z0: number, x1: number, z1: number, h: number) => {
+    box2([Math.max(0.1, (x1 - x0) / 2), h / 2, Math.max(0.1, (z1 - z0) / 2)], [(x0 + x1) / 2, F2 + h / 2, (z0 + z1) / 2], BLOCK);
+    const along = x1 - x0 > z1 - z0;
+    for (let y = 0.2; y < h - 0.05; y += 0.2) {
+      box2(along ? [(x1 - x0) / 2 + 0.003, 0.006, 0.103] : [0.103, 0.006, (z1 - z0) / 2 + 0.003], [(x0 + x1) / 2, F2 + y, (z0 + z1) / 2], BLOCK_DARK, { ghost: true });
+    }
+  };
+  wall(-1.15, 1481, -0.95, 1498.9, 1.5);
+  wall(6.4, 1481, 6.6, 1490, 1.1);
+  // The men's corner: walled off from the floor by blocks to above the head, a doorway in its east wall.
+  const [cx0, cx1, cz0, cz1] = [-15.45, -10.6, 1480, 1498.9];
+  const DOOR = [1486.4, 1487.8];
+  wall(cx1 - 0.1, cz0, cx1 + 0.1, DOOR[0], 1.9);
+  wall(cx1 - 0.1, DOOR[1], cx1 + 0.1, cz1, 1.9);
+  wall(cx0, cz0 - 0.1, cx1 - 0.1, cz0 + 0.1, 1.9);
+  box2([0.12, 0.06, (DOOR[1] - DOOR[0]) / 2 + 0.2], [cx1, F2 + 1.96, (DOOR[0] + DOOR[1]) / 2], 0xb0874f, { ghost: true });
+  // Cardboard laid down to sleep on, a hard hat for a pillow.
+  const CARD = 0xb08a5a;
+  for (const [x, z, r] of [[-14.2, 1483.5, 0.1], [-14.3, 1486.2, -0.05], [-12.4, 1484.6, 1.6]] as const) {
+    box2([0.5, 0.006, 0.95], [x, F2 + 0.006, z], CARD, { ghost: true, rot: [0, r, 0] });
+  }
+  for (const [x, z, c] of [[-14.2, 1482.8, 0xffd23a], [-14.3, 1485.5, 0xf2f2ee]] as const) {
+    props.push({ shape: 'sphere', size: [0.15, 0.1, 0.15], pos: [x, F2 + 0.08, z], color: c, ghost: true });
+  }
+  // The cable drum they eat round: its rims and its core, the top a table; the stools; the cooler, the tea, the lunchboxes.
+  const [tx, tz] = [-13, 1494.5];
+  props.push({ shape: 'cylinder', size: [0.5, 0.03, 0], pos: [tx, F2 + 0.63, tz], color: 0xa8824f });
+  props.push({ shape: 'cylinder', size: [0.2, 0.3, 0], pos: [tx, F2 + 0.3, tz], color: 0x8a6a40 });
+  props.push({ shape: 'cylinder', size: [0.5, 0.03, 0], pos: [tx, F2 + 0.03, tz], color: 0xa8824f, ghost: true });
+  for (const [dx, dz] of [[0.9, 0.2], [-0.8, 0.6], [0.1, -0.95]] as const) s.object('stool', tx + dx, tz + dz, 0, F2);
+  box2([0.3, 0.2, 0.2], [-15, F2 + 0.2, 1497.8], 0x2f6fb0);
+  box2([0.31, 0.03, 0.21], [-15, F2 + 0.42, 1497.8], 0xf2f2ee, { ghost: true });
+  props.push({ shape: 'cylinder', size: [0.1, 0.16, 0], pos: [-14.4, F2 + 0.16, 1497.9], color: 0xe25a3a, ghost: true });
+  props.push({ shape: 'cylinder', size: [0.04, 0.02, 0], pos: [-14.4, F2 + 0.34, 1497.9], color: 0xf2f2ee, ghost: true });
+  for (const [x, z] of [[-12.2, 1495.9], [-11.9, 1496.2], [-12.4, 1496.4]] as const) box2([0.11, 0.03, 0.08], [x, F2 + 0.03, z], 0xf2f2ee, { ghost: true });
+  // The fan on its stand, turned to where they sleep; a lamp on a cord from the floor above.
+  props.push({ shape: 'cylinder', size: [0.16, 0.02, 0], pos: [-11.4, F2 + 0.02, 1483], color: 0x3a8ad0, ghost: true });
+  props.push({ shape: 'cylinder', size: [0.02, 0.5, 0], pos: [-11.4, F2 + 0.52, 1483], color: 0xe8e8e2, ghost: true });
+  props.push({ shape: 'cylinder', size: [0.22, 0.05, 0], pos: [-11.42, F2 + 1.1, 1483.4], rot: [Math.PI / 2 - 0.2, 0, 0], color: 0x3a8ad0, ghost: true });
+  props.push({ shape: 'cylinder', size: [0.005, 1.6, 0], pos: [-13, F3 - 1.9, 1490], color: 0x1a1b1e, ghost: true });
+  props.push({ shape: 'sphere', size: [0.1, 0.1, 0.1], pos: [-13, F3 - 3.55, 1490], color: 0xfff2c0, ghost: true });
+  // Their clothes hung to dry on a cord across the corner.
+  box2([0.005, 0.005, 2.6], [-15.2, F2 + 1.8, 1492], 0x1a1b1e, { ghost: true });
+  for (const [z, c] of [[1490.4, 0x3a5a8a], [1491.5, 0xe8e8e2], [1492.7, 0x8a8a5a]] as const) box2([0.02, 0.3, 0.25], [-15.2, F2 + 1.48, z], c, { ghost: true });
+  // On the drum, the radio, facing the door.
+  return { type: 'radio', pos: [tx + 0.05, F2 + 0.66 + 0.2, tz - 0.1], rotY: Math.PI / 2, found: true };
+}
+
 /** The three buildings: their frames, their floors, the ramps up their sides, the hanging bridge, the gap, the roof. */
 function buildings(s: Site, signs: SignDesc[]): void {
   const { props, decals, rigs } = s;
@@ -428,16 +530,17 @@ function buildings(s: Site, signs: SignDesc[]): void {
   const ramp = (x0: number, x1: number, z0: number, z1: number, h0: number, h1: number) => {
     const run = z1 - z0, rise = h1 - h0, long = Math.hypot(run, rise), a = Math.atan2(rise, run), t = 0.4;
     box2([(x1 - x0) / 2, t / 2, long / 2], [(x0 + x1) / 2, (h0 + h1) / 2 - t / 2 / Math.cos(a), (z0 + z1) / 2], CONC, { rot: [-a, 0, 0] });
-    // A kerb along either edge, the slab's own, too high to drive over.
-    for (const x of [x0 + 0.15, x1 - 0.15]) box2([0.15, 0.2, long / 2], [x, (h0 + h1) / 2 + 0.2, (z0 + z1) / 2], 0xa9aba6, { rot: [-a, 0, 0] });
     const at = (z: number) => h0 + (rise * (z - z0)) / run;
     for (let z = z0 + 6; z < z1 - 1; z += 8) for (const x of [x0 + 0.4, x1 - 0.4]) if (at(z) - 0.5 > Y + 0.5) column(x, z, Y, at(z) - 0.45);
     return at;
   };
-  /** Edge guards along a line: lengths of handrail, knockable, one every 2 m, at a height. */
+  /**
+   * Edge guards along a line: lengths of handrail, knockable, at a height; a little apart, not end to end, or one knocked
+   * wakes the whole row with it, and the rest, held where they stand, sink into the floor.
+   */
   const rails = (a: Vec2, b: Vec2, y: number | ((z: number) => number)) => {
     const long = Math.hypot(b[0] - a[0], b[1] - a[1]), yaw = Math.atan2(b[0] - a[0], b[1] - a[1]);
-    for (let d = 1; d < long; d += 2) {
+    for (let d = 1.15; d < long - 1; d += 2.3) {
       const x = a[0] + ((b[0] - a[0]) * d) / long, z = a[1] + ((b[1] - a[1]) * d) / long;
       s.object('handrail', x, z, yaw, typeof y === 'number' ? y : y(z));
     }

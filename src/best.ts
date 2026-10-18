@@ -6,8 +6,10 @@ export interface Best {
   stars: number;
   /** The quickest delivery, seconds; null while every delivery has gone back to a save point on the way. */
   seconds: number | null;
-  /** The largest share of the load's value delivered, 0 to 1. */
+  /** The largest share of the load's value delivered, 0 to 1, or past it with what was found along the way. */
   fraction: number;
+  /** The most of the things hidden along the way brought in on one run. */
+  found?: number;
 }
 
 /** Which records a run set, and what stood before it. */
@@ -45,7 +47,7 @@ export function loadBest(levelId: string): Best | null {
  * Take a finished run into the record: whichever of the most delivered and the quickest
  * time it has beaten. A run that failed, or delivered too little to pass, sets nothing.
  */
-export function saveBest(levelId: string, result: { stars: number; seconds: number; fraction: number; failure?: string; retries?: number }): RecordsSet {
+export function saveBest(levelId: string, result: { stars: number; seconds: number; fraction: number; failure?: string; retries?: number; hidden?: { found: number } }): RecordsSet {
   const before = loadBest(levelId);
   if (result.failure || result.stars === 0) return { value: false, time: false, before };
   // A hair's difference is no record.
@@ -53,12 +55,14 @@ export function saveBest(levelId: string, result: { stars: number; seconds: numb
   // A run that went back to its save point is no time to beat: the clock was put back with it.
   const time = !result.retries && (before?.seconds == null || result.seconds < before.seconds - 0.05);
   const stars = Math.max(before?.stars ?? 0, result.stars);
-  if (value || time || stars !== before?.stars) {
+  const found = Math.max(before?.found ?? 0, result.hidden?.found ?? 0);
+  if (value || time || stars !== before?.stars || found !== (before?.found ?? 0)) {
     try {
       localStorage.setItem(key(levelId), JSON.stringify({
         stars,
         seconds: time ? result.seconds : before?.seconds ?? null,
         fraction: value ? result.fraction : before!.fraction,
+        ...(found ? { found } : {}),
       }));
     } catch {
       // No storage, no record: the game goes on without one.

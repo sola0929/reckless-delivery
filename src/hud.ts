@@ -23,9 +23,9 @@ const FAILURES: Record<Failure, [string, string]> = {
 };
 
 const HELP_DRIVING =
-  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>右鍵拖曳</b> 轉視角';
+  '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>Q / E</b> 或 <b>右鍵拖曳</b> 轉視角';
 const HELP_ON_FOOT =
-  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>E</b> 舉起、放下　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
+  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>F</b> 舉起、放下　<b>Q / E</b> 轉視角　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
 
 const PAD_DRIVING =
   '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>A</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角、縮放';
@@ -67,6 +67,7 @@ export class Hud {
   /** The delivery after this one, offered first on the result page once this one is passed; null after the last. */
   nextLevel: { id: string; name: string } | null = null;
   onNext: (() => void) | null = null;
+  private hiddenText = '';
   /** Called by the pause button in the corner of the screen. */
   onPause: (() => void) | null = null;
   private onFoot: boolean | null = null;
@@ -143,7 +144,7 @@ export class Hud {
     el('banner-list').innerHTML = scored ? this.manifest() : '';
     // Its way out is a button of its own, rather than a word in the corner; the clock starting is said beside it.
     el('banner-foot').innerHTML = scored
-      ? `<span>共 ${this.level.cargo.length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd>Enter</kbd></button>`
+      ? `<span>共 ${this.load().length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd>Enter</kbd></button>`
       : '';
     el('banner-go')?.addEventListener('click', () => this.onBannerClose());
     this.banner.classList.toggle('plain', !scored);
@@ -185,15 +186,20 @@ export class Hud {
     el('pause-resume').focus();
   }
 
+  /** The load as it sets out: not what is hidden along the way, which is not on the list. */
+  private load(): LevelDef['cargo'] {
+    return this.level.cargo.filter((c) => !c.found);
+  }
+
   /** What the whole load is worth. */
   private loadValue(): number {
-    return this.level.cargo.reduce((sum, { type }) => sum + (CARGO_TYPES[type] as CargoType).value, 0);
+    return this.load().reduce((sum, { type }) => sum + (CARGO_TYPES[type] as CargoType).value, 0);
   }
 
   /** The load, a tile for each kind of thing: its colour, how many, and what one is worth. */
   private manifest(): string {
     const counts = new Map<CargoType, number>();
-    for (const { type } of this.level.cargo) {
+    for (const { type } of this.load()) {
       const kind: CargoType = CARGO_TYPES[type];
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
@@ -252,6 +258,15 @@ export class Hud {
     this.showHelp(8);
   }
 
+  /** How many of the things hidden along the way have been found, of how many: shown once the first is. */
+  setHidden(found: number, total: number): void {
+    const text = `${found} / ${total}`;
+    if (text === this.hiddenText) return;
+    this.hiddenText = text;
+    el('hidden').textContent = text;
+    el('hidden-stat').hidden = found === 0;
+  }
+
   /** Bring the key list up for this many seconds, at least. */
   showHelp(seconds: number): void {
     this.helpUntil = Math.max(this.helpUntil, performance.now() + seconds * 1000);
@@ -297,9 +312,11 @@ export class Hud {
 
     const [pass, two, three] = this.level.stars;
     const percent = Math.floor(result.fraction * 100);
+    // Past the whole load, with what was found along the way: the bar is full, and gold.
+    const over = result.fraction > 1 ? ' over' : result.fraction >= three ? ' good' : '';
     el('result-value').innerHTML =
       `<div class="figure"><b>${money(result.value)}</b><span>/ ${money(fullValue)}</span><em>${percent}%</em></div>` +
-      `<div class="bar"><div class="fill${result.fraction >= three ? ' good' : ''}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div><div class="mark" style="left:${three * 100}%"></div></div>`;
+      `<div class="bar"><div class="fill${over}" style="width:${Math.min(100, result.fraction * 100)}%"></div><div class="mark" style="left:${two * 100}%"></div><div class="mark" style="left:${three * 100}%"></div></div>`;
 
     // The worth counts up from nothing as the bar fills, and each star chimes as it comes.
     this.countUp(result.value, result.fraction);
@@ -325,6 +342,10 @@ export class Hud {
       [`送達價值 ${Math.round(two * 100)}% 以上`, !failed && result.fraction >= two],
       [`送達價值 ${Math.round(three * 100)}% 以上`, !failed && result.fraction >= three],
     ];
+    const hidden = result.hidden;
+    el('result-hidden').innerHTML = hidden
+      ? `<span>隱藏貨物</span><b>${hidden.found} / ${hidden.total}</b>${hidden.value > 0 ? `<em>+${money(hidden.value)}</em>` : ''}${hidden.found === hidden.total ? '<i>全收</i>' : ''}`
+      : '';
     el('result-goals').innerHTML = goals
       .map(([text, met], i) => `<div class="result-goal${met ? ' met' : ''}"><span class="star">${'★'.repeat(i + 1)}</span>${text}<i>${met ? '✓' : ''}</i></div>`)
       .join('');
@@ -388,6 +409,7 @@ export class Hud {
     const learnt = ['油門與轉彎', '看到火車就煞車', '急加速飛越斷橋', '下車撿貨', '卸貨'];
     el('result-value').innerHTML = '';
     el('result-rows').innerHTML = '';
+    el('result-hidden').innerHTML = '';
     el('result-goals').innerHTML = learnt.map((text) => `<div class="result-goal met"><span class="star">✓</span>${text}<i></i></div>`).join('');
     el('result-record').innerHTML = `<div class="record"><span>用時</span><b>${clock(result.seconds)}</b></div>`;
     this.banner.hidden = true;
@@ -399,7 +421,7 @@ export class Hud {
   }
 
   /** Floating text at a screen position, e.g. money lost. */
-  popup(text: string, x: number, y: number, style: '' | 'big' | 'gain' = ''): void {
+  popup(text: string, x: number, y: number, style: '' | 'big' | 'gain' | 'found' = ''): void {
     const popup = document.createElement('div');
     popup.className = style ? `popup ${style}` : 'popup';
     popup.textContent = text;

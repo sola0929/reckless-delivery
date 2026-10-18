@@ -86,6 +86,14 @@ export class Driver {
   plan: ThrowPlan | null = null;
   /** Off the ground: jumping or falling. */
   airborne = false;
+  /** Whether a drop costs what they carry: see LevelDef.carryFalls. */
+  carryFalls = false;
+  /** The lowest they can be: see LevelDef.footFloor. */
+  floor = 0;
+  /** The current their feet are in, wading, m/s; set each step by the sim. Carries them while they are on the bed. */
+  current = { x: 0, z: 0 };
+  /** The highest they have been since last on their feet: how far a landing has come down. */
+  private fallTop = 0;
   /** Seconds left to show that a jump was refused because the load is too heavy. */
   tooHeavyLeft = 0;
   /** True while pressing against the limit of how far they may go from the truck. */
@@ -158,7 +166,7 @@ export class Driver {
       else this.pickUp(truck, cargo);
     }
     this.windUp(dt, input, truck, cargo);
-    this.walk(dt, input, truck);
+    this.walk(dt, input, truck, cargo);
 
     if (this.held?.body) {
       this.held.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y + DRIVER.carryHeight, z: this.pos.z });
@@ -170,6 +178,7 @@ export class Driver {
   }
 
   reset(): void {
+    this.sinking = 0;
     this.mode = 'driving';
     this.body.setEnabled(false);
     this.held = null;
@@ -180,7 +189,27 @@ export class Driver {
     this.speed = 0;
   }
 
-  /** Out of their depth: put back beside the truck, flat on the ground, without whatever they were carrying. */
+  /** Seconds left floundering in the water before they are fished out; 0 when not in it. */
+  sinking = 0;
+
+  /** Fallen in: down where they are, letting go of what they held, until they are fished out (see Sim). */
+  sink(cargo: CargoSystem): void {
+    if (this.held) {
+      v.set(this.pos.x, this.pos.y + DRIVER.carryHeight * 0.5, this.pos.z);
+      cargo.release(this.held, v, new Vector3(), false);
+      this.held.immune = 0;
+      this.held = null;
+    }
+    this.velocity.set(0, 0, 0);
+    this.mode = 'down';
+    this.downLeft = 99;
+    this.charge = 0;
+    this.speed = 0;
+    this.rise = 0;
+    this.sinking = 1.3;
+  }
+
+  /** Out of their depth: put back beside the truck, on their feet (the screen went dark for it), without what they carried. */
   fishOut(truck: Truck, cargo: CargoSystem): void {
     if (this.held) {
       v.set(this.pos.x, this.pos.y + DRIVER.carryHeight, this.pos.z);
@@ -198,11 +227,14 @@ export class Driver {
       break;
     }
     this.velocity.set(0, 0, 0);
-    this.mode = 'down';
-    this.downLeft = DRIVER.downSeconds;
+    this.mode = 'onFoot';
+    this.downLeft = 0;
+    this.safeLeft = DRIVER.safeSeconds;
+    this.fallTop = this.pos.y;
     this.charge = 0;
     this.speed = 0;
     this.rise = 0;
+    this.sinking = 0;
   }
 
   /** How far a load of this mass can be thrown, in metres. */
@@ -224,6 +256,7 @@ export class Driver {
       this.mode = 'onFoot';
       this.rise = 0;
       this.speed = 0;
+      this.fallTop = this.pos.y;
       // Facing away from the truck.
       const r = truck.body.rotation();
       const out = new Vector3(side, 0, 0).applyQuaternion(q.set(r.x, r.y, r.z, r.w));
@@ -256,7 +289,7 @@ export class Driver {
     });
   }
 
-  private walk(dt: number, input: FootInput, truck: Truck): void {
+  private walk(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem): void {
     let pace = 0;
     const moving = Math.hypot(input.moveX, input.moveZ) > 0.01;
     // Winding up a throw roots them to the spot.
@@ -267,11 +300,19 @@ export class Driver {
     const scale = moving ? pace / Math.hypot(input.moveX, input.moveZ) : 0;
     this.tooHeavyLeft -= dt;
     const grounded = this.fallOrLand(dt);
+    if (grounded) {
+      const drop = this.fallTop - this.pos.y;
+      this.fallTop = this.pos.y;
+      if (this.carryFalls && this.held && drop > DRIVER.fallSafe) this.landHard(drop, cargo);
+      if (this.mode === 'down') return;
+    } else this.fallTop = Math.max(this.fallTop, this.pos.y);
     if (input.jumpPressed && grounded && this.charge === 0) {
       if (this.held && this.held.mass > DRIVER.jumpMaxLoad) this.tooHeavyLeft = 1.2;
       else this.rise = DRIVER.jumpSpeed;
     }
-    this.move(input.moveX * scale * dt, this.rise * dt, input.moveZ * scale * dt);
+    const wading = grounded && this.rise === 0;
+    const cx = wading ? this.current.x : 0, cz = wading ? this.current.z : 0;
+    this.move((input.moveX * scale + cx) * dt, this.rise * dt, (input.moveZ * scale + cz) * dt);
 
     // Not too far from the truck: past the limit, they are held at it.
     const t = truck.body.translation();
@@ -289,6 +330,17 @@ export class Driver {
     // Carrying, they face where the player points, ready to throw. Otherwise where they walk.
     if (this.held && input.aim) this.yaw = Math.atan2(input.aim.x - this.pos.x, input.aim.z - this.pos.z);
     else if (pace > 0) this.yaw = Math.atan2(input.moveX, input.moveZ);
+  }
+
+  /** Down from a height with something in their arms: it takes a knock; from high enough, they fall and it flies. */
+  private landHard(drop: number, cargo: CargoSystem): void {
+    if (drop > DRIVER.fallFling) {
+      this.knockDown(Math.sin(this.yaw), Math.cos(this.yaw), 3, 1, cargo);
+      return;
+    }
+    const share = Math.min(1, Math.max(0, (drop - 2) / 2));
+    const hurt = drop < 2 ? DRIVER.fallAt2 * (drop - DRIVER.fallSafe) / (2 - DRIVER.fallSafe) : DRIVER.fallAt2 + (DRIVER.fallAt4 - DRIVER.fallAt2) * share;
+    cargo.bump(this.held!, hurt);
   }
 
   /** Gravity, and coming back to earth. Returns whether they are standing on something. */
@@ -326,7 +378,7 @@ export class Driver {
         this.rise = 0;
       }
     }
-    this.pos.y = Math.max(0, this.pos.y);
+    this.pos.y = Math.max(this.floor, this.pos.y);
     this.place();
     // Standing, if the fall was stopped (even by an edge off to one side) or the ground is right underfoot.
     this.blockedBelow = this.feelForGround() || landed;
@@ -509,6 +561,13 @@ export class Driver {
     }
     const train = trains.at(this.pos.x, this.pos.z, DRIVER.radius);
     if (train) this.knockDown(train.direction, 0, train.speed, this.random() < 0.5 ? -1 : 1, cargo);
+  }
+
+  /** Struck by something swung or thrown at them, going this way at this speed: a demolition ball. Knocked flying. */
+  struck(dirX: number, dirZ: number, speed: number, cargo: CargoSystem): void {
+    if (this.mode !== 'onFoot' || this.safeLeft > 0) return;
+    const across = Math.hypot(dirX, dirZ) || 1;
+    this.knockDown(dirX / across, dirZ / across, Math.min(speed, 12), this.random() < 0.5 ? -1 : 1, cargo);
   }
 
   /** Caught by a blast at this spot, if they are out of the cab and within `radius` of it: thrown away from it. */

@@ -24,7 +24,7 @@ export interface PartDesc {
   color: number;
   mass: number;
   /** Surface pattern drawn under the damage cracks. On a dome, 'flesh' is what shows on the cut face. */
-  texture?: 'crate' | 'melon' | 'flesh' | 'rice';
+  texture?: 'crate' | 'melon' | 'flesh' | 'rice' | 'sign';
   /** Stage at which this part drops off the item. Anything still attached comes apart at stage 3. */
   detachAt?: 1 | 2;
   /** A bottle's cap, of this colour: drawn on its top, and coming away with it, not a piece of its own. */
@@ -433,6 +433,382 @@ function washer(): CargoType {
   };
 }
 
+const TOLEX = 0x26272b;
+const GRILLE = 0x45474d;
+const PIPING = 0xd8c48a;
+
+/**
+ * A guitar amplifier, a combo: a black box with a cloth grille across the front, a strip of knobs along the top and a
+ * handle on it. Not to be thrown about: its knobs and handle come off, and a hard knock throws sparks.
+ */
+function amp(): CargoType {
+  const [w, h, d] = [0.33, 0.27, 0.15];
+  return {
+    id: 'amp',
+    name: '音箱',
+    value: 300,
+    threshold: 6,
+    maxHit: 30,
+    give: 18,
+    salvage: 0.25,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w, h, d] },
+    parts: [
+      { shape: 'box', size: [w, h, d], pos: [0, 0, 0], color: TOLEX, mass: 13.6 },
+      // The grille cloth, inset in a frame of piping, and the maker's badge on it.
+      { shape: 'box', size: [w - 0.03, h * 0.66, 0.006], pos: [0, -h * 0.22, d + 0.004], color: GRILLE, mass: 0.3, detachAt: 2 },
+      { shape: 'box', size: [w - 0.02, 0.006, 0.007], pos: [0, h * 0.46, d + 0.005], color: PIPING, mass: 0.05 },
+      { shape: 'box', size: [0.05, 0.016, 0.004], pos: [-w * 0.55, h * 0.3, d + 0.011], color: 0xf2efe6, mass: 0.02, detachAt: 1 },
+      // The control panel along the top of the front, its knobs, and the jack.
+      { shape: 'box', size: [w - 0.03, 0.035, 0.006], pos: [0, h - 0.055, d + 0.004], color: 0xb8b0a0, mass: 0.3 },
+      ...[-0.22, -0.14, -0.06, 0.02, 0.1, 0.18].map((x): PartDesc => ({ shape: 'cylinder', size: [0.013, 0.012, 0], pos: [x, h - 0.055, d + 0.02], rot: [Math.PI / 2, 0, 0], color: 0x1a1b1e, mass: 0.03, detachAt: 2 })),
+      { shape: 'cylinder', size: [0.009, 0.006, 0], pos: [0.26, h - 0.055, d + 0.012], rot: [Math.PI / 2, 0, 0], color: 0x9aa0a6, mass: 0.02 },
+      // The handle on top, and the metal corners.
+      { shape: 'box', size: [0.1, 0.018, 0.03], pos: [0, h + 0.025, 0], color: 0x1a1b1e, mass: 0.3, detachAt: 1 },
+      ...[-1, 1].flatMap((sx) => [-1, 1].map((sy): PartDesc => ({ shape: 'box', size: [0.024, 0.024, d + 0.004], pos: [sx * (w - 0.018), sy * (h - 0.018), 0], color: 0x9aa0a6, mass: 0.05 }))),
+    ],
+    debris: [
+      { shape: 'box', size: [w, h, 0.02], pos: [0, 0, -d + 0.02], color: TOLEX, mass: 4 },
+      { shape: 'box', size: [w, 0.02, d - 0.02], pos: [0, h - 0.02, 0], color: TOLEX, mass: 2.5 },
+      { shape: 'cylinder', size: [0.14, 0.05, 0], pos: [0, -0.05, 0.04], rot: [Math.PI / 2, 0, 0], color: 0x3a3c42, mass: 3 },
+      { shape: 'box', size: [w - 0.03, h * 0.66, 0.006], pos: [0, -h * 0.22, d], color: GRILLE, mass: 0.3 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+const BIKE = 0x2f8f9a;
+const TYRE = 0x1e1f23;
+
+/**
+ * A town bicycle, standing: a step-through frame, two wheels, a saddle, upswept bars and a basket on the front. Its
+ * mudguards, basket and bell come off; wrecked, it is a bent frame and two wheels.
+ */
+function bicycle(): CargoType {
+  const wheel = 0.33;
+  const axle = wheel - 0.5;
+  const parts: PartDesc[] = [];
+  for (const z of [-0.55, 0.55]) {
+    parts.push({ shape: 'cylinder', size: [wheel, 0.022, 0], pos: [0, axle, z], rot: [0, 0, Math.PI / 2], color: TYRE, mass: 1.6 });
+    parts.push({ shape: 'cylinder', size: [wheel - 0.05, 0.026, 0], pos: [0, axle, z], rot: [0, 0, Math.PI / 2], color: 0xc8ccd0, mass: 0.3 });
+    parts.push({ shape: 'cylinder', size: [0.035, 0.04, 0], pos: [0, axle, z], rot: [0, 0, Math.PI / 2], color: 0x8c9096, mass: 0.1 });
+    // The mudguard over it.
+    parts.push({ shape: 'box', size: [0.04, 0.01, 0.2], pos: [0, axle + wheel + 0.03, z], color: 0xc8ccd0, mass: 0.15, detachAt: 1 });
+  }
+  // The frame: the low step-through tube, the seat tube, the stays to the back wheel, the head tube and the fork.
+  parts.push({ shape: 'box', size: [0.025, 0.025, 0.36], pos: [0, axle + 0.08, 0.02], rot: [-0.25, 0, 0], color: BIKE, mass: 3.8 });
+  parts.push({ shape: 'box', size: [0.025, 0.25, 0.025], pos: [0, axle + 0.28, -0.18], rot: [-0.25, 0, 0], color: BIKE, mass: 1.5 });
+  parts.push({ shape: 'box', size: [0.02, 0.02, 0.2], pos: [0, axle + 0.02, -0.37], color: BIKE, mass: 0.6 });
+  parts.push({ shape: 'box', size: [0.02, 0.02, 0.24], pos: [0, axle + 0.2, -0.38], rot: [0.75, 0, 0], color: BIKE, mass: 0.6 });
+  parts.push({ shape: 'box', size: [0.03, 0.19, 0.03], pos: [0, axle + 0.33, 0.43], rot: [0.3, 0, 0], color: BIKE, mass: 1.2 });
+  parts.push({ shape: 'box', size: [0.02, 0.17, 0.02], pos: [0, axle + 0.1, 0.5], rot: [0.3, 0, 0], color: 0x8c9096, mass: 0.5 });
+  // The chain guard and the pedals.
+  parts.push({ shape: 'box', size: [0.035, 0.07, 0.23], pos: [-0.04, axle + 0.01, -0.28], color: 0x8c9096, mass: 0.4 });
+  parts.push({ shape: 'box', size: [0.13, 0.015, 0.04], pos: [0, axle - 0.02, -0.08], color: 0x2a2c31, mass: 0.2 });
+  // The saddle on its post, the bars and their grips, the bell, and the basket over the front wheel.
+  parts.push({ shape: 'box', size: [0.08, 0.035, 0.13], pos: [0, axle + 0.6, -0.27], color: 0x3a2a20, mass: 0.5, detachAt: 2 });
+  parts.push({ shape: 'box', size: [0.28, 0.015, 0.02], pos: [0, axle + 0.56, 0.36], color: 0x8c9096, mass: 0.5 });
+  for (const x of [-0.27, 0.27]) parts.push({ shape: 'box', size: [0.03, 0.02, 0.05], pos: [x, axle + 0.57, 0.33], color: 0x1e1f23, mass: 0.05 });
+  parts.push({ shape: 'cylinder', size: [0.025, 0.015, 0], pos: [0.17, axle + 0.59, 0.37], color: 0xd8c48a, mass: 0.05, detachAt: 1 });
+  parts.push({ shape: 'box', size: [0.17, 0.11, 0.13], pos: [0, axle + 0.47, 0.62], color: 0xb0b6bc, mass: 0.8, detachAt: 1 });
+  return {
+    id: 'bicycle',
+    name: '腳踏車',
+    value: 300,
+    threshold: 6,
+    maxHit: 30,
+    give: 18,
+    salvage: 0.2,
+    friction: 0.7,
+    hull: { shape: 'box', size: [0.25, 0.5, 0.88] },
+    parts,
+    debris: [
+      { shape: 'cylinder', size: [wheel, 0.03, 0], pos: [0, axle, -0.55], rot: [0, 0, Math.PI / 2], color: TYRE, mass: 2 },
+      { shape: 'cylinder', size: [wheel, 0.03, 0], pos: [0, axle, 0.55], rot: [0, 0, Math.PI / 2], color: TYRE, mass: 2 },
+      { shape: 'box', size: [0.04, 0.2, 0.45], pos: [0, axle + 0.2, 0], rot: [0.4, 0, 0], color: BIKE, mass: 6 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+const AIRCON = 0xf7f7f3;
+
+/**
+ * A window air conditioner, brand new, still with its foam corners on and the energy label stuck on its side: a pale metal box with louvres across its front, a control strip with its knobs,
+ * and the coil's fins across the back. Heavy, and not built to be dropped: the front comes off, then the knobs and the
+ * fins; wrecked, its casing, the compressor and the fan.
+ */
+function aircon(): CargoType {
+  const [w, h, d] = [0.33, 0.22, 0.3];
+  const parts: PartDesc[] = [
+    { shape: 'box', size: [w, h, d], pos: [0, 0, 0], color: AIRCON, mass: 25 },
+    // The front: a dark grille with pale louvres across it, the control strip down its right side with two knobs.
+    { shape: 'box', size: [w * 0.66, h - 0.03, 0.01], pos: [-w * 0.3, 0, d + 0.006], color: 0x4a4c50, mass: 0.8, detachAt: 1 },
+    ...[0, 1, 2, 3, 4, 5, 6].map((k): PartDesc => ({ shape: 'box', size: [w * 0.62, 0.01, 0.014], pos: [-w * 0.3, -h + 0.05 + k * 0.058, d + 0.018], rot: [0.5, 0, 0], color: 0xf2f0ea, mass: 0.05, detachAt: 1 })),
+    { shape: 'box', size: [w * 0.28, h - 0.03, 0.008], pos: [w * 0.66, 0, d + 0.005], color: 0xd6d2c6, mass: 0.3 },
+    ...[0.05, -0.06].map((y): PartDesc => ({ shape: 'cylinder', size: [0.022, 0.012, 0], pos: [w * 0.66, y, d + 0.018], rot: [Math.PI / 2, 0, 0], color: 0x3a3a36, mass: 0.04, detachAt: 2 })),
+    { shape: 'box', size: [0.05, 0.012, 0.004], pos: [w * 0.66, h - 0.04, d + 0.01], color: 0x2f6fb0, mass: 0.01 },
+    // On top, toward the back, the slots the hot air goes out of: what says what it is, seen from above.
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map((k): PartDesc => ({ shape: 'box', size: [w - 0.05, 0.004, 0.012], pos: [0, h + 0.002, -d + 0.04 + k * 0.034], color: 0x3a3c42, mass: 0.01 })),
+    // Down each side, a block of vents; at the back, the coil's fins.
+    ...[-1, 1].flatMap((sx) => [0, 1, 2, 3].map((k): PartDesc => ({ shape: 'box', size: [0.004, 0.012, d * 0.55], pos: [sx * (w + 0.002), h - 0.05 - k * 0.04, -d * 0.3], color: 0x3a3c42, mass: 0.01 }))),
+    { shape: 'box', size: [w - 0.02, h - 0.02, 0.008], pos: [0, 0, -d - 0.004], color: 0x8c9096, mass: 0.6, detachAt: 2 },
+    ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((k): PartDesc => ({ shape: 'box', size: [0.004, h - 0.03, 0.006], pos: [-w + 0.05 + k * 0.07, 0, -d - 0.012], color: 0x5a5e64, mass: 0.01, detachAt: 2 })),
+    // New: the packing foam still on its four lower corners, the yellow energy label on its side, the lead tied up on top.
+    ...[-1, 1].flatMap((sx) => [-1, 1].map((sz): PartDesc => ({ shape: 'box', size: [0.05, 0.06, 0.05], pos: [sx * (w - 0.02), -h + 0.05, sz * (d - 0.02)], color: 0xffffff, mass: 0.05, detachAt: 1 }))),
+    { shape: 'box', size: [0.004, 0.07, 0.05], pos: [w + 0.004, 0, d * 0.35], color: 0xf2c12e, mass: 0.01, detachAt: 1 },
+    { shape: 'box', size: [0.004, 0.035, 0.035], pos: [w + 0.006, 0.01, d * 0.35], color: 0x3f9a62, mass: 0.01, detachAt: 1 },
+    { shape: 'cylinder', size: [0.06, 0.012, 0], pos: [w * 0.4, h + 0.012, -d * 0.55], color: 0xe8e8e2, mass: 0.1, detachAt: 1 },
+  ];
+  return {
+    id: 'aircon',
+    name: '冷氣',
+    value: 300,
+    threshold: 5.5,
+    maxHit: 32,
+    give: 16,
+    salvage: 0.2,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w, h, d] },
+    parts,
+    debris: [
+      { shape: 'box', size: [w, 0.015, d], pos: [0, h - 0.015, 0], color: AIRCON, mass: 4 },
+      { shape: 'box', size: [0.015, h, d], pos: [w - 0.015, 0, 0], color: AIRCON, mass: 3 },
+      { shape: 'cylinder', size: [0.1, 0.12, 0], pos: [0.12, -0.08, -0.1], color: 0x3a3c42, mass: 12 },
+      { shape: 'cylinder', size: [0.14, 0.02, 0], pos: [-0.12, 0, 0.1], rot: [Math.PI / 2, 0, 0], color: 0x5a5c62, mass: 2 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+const STEEL_POT = 0xc8ccd2;
+
+/**
+ * A big stainless stockpot, the kind a canteen boils its soup in: a tall steel drum with two handles and a lid. It takes a
+ * fall that would wreck anything else, and only dents: the lid and the handles come off first.
+ */
+function stockpot(): CargoType {
+  const [r, h] = [0.25, 0.22];
+  return {
+    id: 'stockpot',
+    name: '湯鍋',
+    value: 200,
+    threshold: 11,
+    maxHit: 16,
+    give: 30,
+    salvage: 0.5,
+    friction: 0.45,
+    hull: { shape: 'cylinder', size: [r, h, 0] },
+    parts: [
+      { shape: 'cylinder', size: [r, h, 0], pos: [0, 0, 0], color: STEEL_POT, mass: 18 },
+      { shape: 'cylinder', size: [r + 0.012, 0.012, 0], pos: [0, h - 0.012, 0], color: 0xe2e5ea, mass: 0.4 },
+      { shape: 'cylinder', size: [r + 0.006, 0.006, 0], pos: [0, -h + 0.03, 0], color: 0x9aa0a6, mass: 0.2 },
+      { shape: 'cylinder', size: [r - 0.005, 0.012, 0], pos: [0, h + 0.012, 0], color: 0xdadde2, mass: 1.2, detachAt: 1 },
+      { shape: 'box', size: [0.05, 0.025, 0.02], pos: [0, h + 0.05, 0], color: 0x2a2c31, mass: 0.1, detachAt: 1 },
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.03, 0.02, 0.07], pos: [sx * (r + 0.03), h - 0.06, 0], color: 0x9aa0a6, mass: 0.2, detachAt: 2 })),
+      { shape: 'box', size: [0.004, 0.06, 0.08], pos: [r + 0.002, 0, 0.1], color: 0xc8372d, mass: 0.01 },
+    ],
+    debris: [
+      { shape: 'cylinder', size: [r, h * 0.8, 0], pos: [0, -h * 0.2, 0], color: 0xa8acb2, mass: 15 },
+      { shape: 'cylinder', size: [r - 0.005, 0.012, 0], pos: [0, h, 0], color: 0xdadde2, mass: 1.2 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+const COOKER_RED = 0xc8262a;
+
+/**
+ * The rice cooker every kitchen in Taiwan has: a round red body on little feet, a cream lid with a black knob, chrome
+ * bands, black handles at its sides and the switch on its front. It takes a knock or two; its lid and knob come off first.
+ */
+function riceCooker(): CargoType {
+  // Drawn larger than life (a real one is about 0.34 m across), or from the chase camera it is a dot: every measure is a
+  // real one's times k.
+  const k = 1.6;
+  const [r, h] = [0.17 * k, 0.13 * k];
+  return {
+    id: 'riceCooker',
+    name: '電鍋',
+    value: 200,
+    threshold: 7,
+    maxHit: 30,
+    give: 18,
+    salvage: 0.25,
+    friction: 0.6,
+    hull: { shape: 'cylinder', size: [r, h + 0.04 * k, 0] },
+    parts: [
+      { shape: 'cylinder', size: [r, h, 0], pos: [0, -0.02 * k, 0], color: COOKER_RED, mass: 3.6 },
+      { shape: 'cylinder', size: [r + 0.006 * k, 0.01 * k, 0], pos: [0, h - 0.025 * k, 0], color: 0xd8dce0, mass: 0.15 },
+      { shape: 'cylinder', size: [r + 0.004 * k, 0.012 * k, 0], pos: [0, -h, 0], color: 0xd8dce0, mass: 0.15 },
+      { shape: 'cylinder', size: [r - 0.012 * k, 0.03 * k, 0], pos: [0, h + 0.015 * k, 0], color: 0xf2ecd8, mass: 0.5, detachAt: 1 },
+      { shape: 'cylinder', size: [0.03 * k, 0.018 * k, 0], pos: [0, h + 0.06 * k, 0], color: 0x1a1b1e, mass: 0.05, detachAt: 1 },
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.02 * k, 0.018 * k, 0.05 * k], pos: [sx * (r + 0.018 * k), h - 0.05 * k, 0], color: 0x1a1b1e, mass: 0.08, detachAt: 2 })),
+      { shape: 'box', size: [0.035 * k, 0.022 * k, 0.012 * k], pos: [0, -h * 0.35, r + 0.006 * k], color: 0x1a1b1e, mass: 0.03, detachAt: 2 },
+      { shape: 'box', size: [0.05 * k, 0.012 * k, 0.004 * k], pos: [0, h * 0.25, r + 0.003 * k], color: 0xf2efe6, mass: 0.01 },
+      ...[0, 1, 2].map((n): PartDesc => ({ shape: 'cylinder', size: [0.018 * k, 0.012 * k, 0], pos: [Math.cos(n * 2.1) * (r - 0.04 * k), -h - 0.032 * k, Math.sin(n * 2.1) * (r - 0.04 * k)], color: 0x2a2c31, mass: 0.02 })),
+    ],
+    debris: [
+      { shape: 'cylinder', size: [r, h * 0.7, 0], pos: [0, -0.04 * k, 0], color: COOKER_RED, mass: 3 },
+      { shape: 'cylinder', size: [r - 0.012 * k, 0.03 * k, 0], pos: [0, h, 0], color: 0xf2ecd8, mass: 0.5 },
+      { shape: 'cylinder', size: [r - 0.03 * k, h * 0.5, 0], pos: [0, 0.02 * k, 0], color: 0xb0b6bc, mass: 0.8 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+/**
+ * A standing lightbox, the kind every shop puts out on the pavement: an upright box with 阿月 down both faces in white on red,
+ * a white frame, on a heavy black foot. Light and tall, it goes over easily; a face cracks, and comes away.
+ */
+function lightbox(): CargoType {
+  const [w, h, d] = [0.3, 0.45, 0.1];
+  const parts: PartDesc[] = [
+    { shape: 'box', size: [w, h, d], pos: [0, 0.03, 0], color: 0xf2efe6, mass: 4 },
+    { shape: 'box', size: [w + 0.04, 0.05, d + 0.06], pos: [0, -h - 0.02, 0], color: 0x1e1f23, mass: 4 },
+    { shape: 'box', size: [w + 0.015, 0.015, d + 0.015], pos: [0, h + 0.045, 0], color: 0xf2efe6, mass: 0.2 },
+  ];
+  for (const sz of [-1, 1]) parts.push({ shape: 'box', size: [w - 0.025, h - 0.03, 0.006], pos: [0, 0.03, sz * (d + 0.004)], color: 0xffffff, mass: 0.2, texture: 'sign', detachAt: sz < 0 ? 1 : 2 });
+  // A string of LEDs round the edge of each face, red, yellow, green and blue in turn; they come off with the face.
+  const LED = [0xff4a3a, 0xffd23a, 0x4adf6a, 0x4ab0ff];
+  for (const sz of [-1, 1]) {
+    let n = 0;
+    const bulb = (x: number, y: number) => parts.push({ shape: 'box', size: [0.014, 0.014, 0.008], pos: [x, 0.03 + y, sz * (d + 0.012)], color: LED[n++ % LED.length], mass: 0.005, detachAt: sz < 0 ? 1 : 2 });
+    for (let x = -w + 0.03; x <= w - 0.03; x += 0.06) { bulb(x, h - 0.012); bulb(x, -h + 0.012); }
+    for (let y = -h + 0.07; y <= h - 0.07; y += 0.06) { bulb(-w + 0.012, y); bulb(w - 0.012, y); }
+  }
+  // And on top, a little lit crown: a yellow bar with a red light at each end.
+  parts.push({ shape: 'box', size: [w * 0.6, 0.03, 0.03], pos: [0, h + 0.09, 0], color: 0xffd23a, mass: 0.1, detachAt: 1 });
+  for (const sx of [-1, 1]) parts.push({ shape: 'sphere', size: [0.035, 0, 0], pos: [sx * w * 0.6, h + 0.09, 0], color: 0xff4a3a, mass: 0.05, detachAt: 1 });
+  return {
+    id: 'lightbox',
+    name: '招牌',
+    value: 200,
+    threshold: 6,
+    maxHit: 32,
+    give: 16,
+    salvage: 0.2,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w + 0.04, h + 0.06, d + 0.03] },
+    parts,
+    debris: [
+      { shape: 'box', size: [w, h * 0.6, d], pos: [0, -h * 0.3, 0], color: 0xf2efe6, mass: 3 },
+      { shape: 'box', size: [w + 0.04, 0.05, d + 0.06], pos: [0, -h - 0.02, 0], color: 0x1e1f23, mass: 4 },
+    ],
+    burst: 'porcelain',
+  };
+}
+
+/**
+ * A loudhailer, the site foreman's: a white flared horn on a grey body, a red pistol grip with its trigger under it, the
+ * strap. Drawn twice life size, or from above it would be a dot. Its horn comes off, then the grip.
+ */
+function megaphone(): CargoType {
+  const k = 2;
+  const parts: PartDesc[] = [
+    { shape: 'cylinder', size: [0.07 * k, 0.09 * k, 0], pos: [0, 0, -0.06 * k], rot: [Math.PI / 2, 0, 0], color: 0x8a9096, mass: 1.6 },
+    { shape: 'cylinder', size: [0.12 * k, 0.05 * k, 0], pos: [0, 0, 0.08 * k], rot: [Math.PI / 2, 0, 0], color: 0xf2f2ee, mass: 0.6, detachAt: 2 },
+    { shape: 'cylinder', size: [0.15 * k, 0.03 * k, 0], pos: [0, 0, 0.15 * k], rot: [Math.PI / 2, 0, 0], color: 0xf2f2ee, mass: 0.4, detachAt: 2 },
+    { shape: 'cylinder', size: [0.13 * k, 0.005 * k, 0], pos: [0, 0, 0.181 * k], rot: [Math.PI / 2, 0, 0], color: 0x3a3c42, mass: 0.05, detachAt: 2 },
+    { shape: 'box', size: [0.025 * k, 0.07 * k, 0.03 * k], pos: [0, -0.1 * k, -0.08 * k], rot: [0.25, 0, 0], color: 0xc8372d, mass: 0.3, detachAt: 1 },
+    { shape: 'box', size: [0.012 * k, 0.025 * k, 0.012 * k], pos: [0, -0.08 * k, -0.04 * k], color: 0x1a1b1e, mass: 0.02, detachAt: 1 },
+    { shape: 'box', size: [0.015 * k, 0.06 * k, 0.005 * k], pos: [0.072 * k, 0.03 * k, -0.06 * k], color: 0x2a2c31, mass: 0.02 },
+    { shape: 'box', size: [0.03 * k, 0.012 * k, 0.004 * k], pos: [0, 0.03 * k, -0.149 * k], color: 0xffd23a, mass: 0.01 },
+  ];
+  return {
+    id: 'megaphone',
+    name: '大聲公',
+    value: 230,
+    threshold: 6,
+    maxHit: 30,
+    give: 18,
+    salvage: 0.2,
+    friction: 0.6,
+    hull: { shape: 'box', size: [0.15 * k, 0.15 * k, 0.18 * k] },
+    parts,
+    debris: [
+      { shape: 'cylinder', size: [0.07 * k, 0.09 * k, 0], pos: [0, 0, -0.06 * k], rot: [Math.PI / 2, 0, 0], color: 0x8a9096, mass: 1.6 },
+      { shape: 'cylinder', size: [0.15 * k, 0.03 * k, 0], pos: [0, 0, 0.15 * k], rot: [Math.PI / 2, 0, 0], color: 0xf2f2ee, mass: 0.4 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+/**
+ * A steel toolbox, red, the cantilever kind: its lid with a handle across it, the catches at the front, a spanner and a
+ * hammer handle sticking out of the top tray. Heavy for its size; its lid and the tools come off.
+ */
+function toolbox(): CargoType {
+  const k = 1.5;
+  const [w, h, d] = [0.27 * k, 0.12 * k, 0.12 * k];
+  return {
+    id: 'toolbox',
+    name: '工具箱',
+    value: 230,
+    threshold: 8,
+    maxHit: 26,
+    give: 24,
+    salvage: 0.35,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w, h + 0.03 * k, d] },
+    parts: [
+      { shape: 'box', size: [w, h, d], pos: [0, -0.02 * k, 0], color: 0xc8262a, mass: 12 },
+      { shape: 'box', size: [w + 0.005, 0.025 * k, d + 0.005], pos: [0, h - 0.01 * k, 0], color: 0xa81f22, mass: 1.5, detachAt: 2 },
+      { shape: 'box', size: [w * 0.55, 0.012 * k, 0.012 * k], pos: [0, h + 0.05 * k, 0], color: 0x1a1b1e, mass: 0.3, detachAt: 2 },
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.012 * k, 0.03 * k, 0.012 * k], pos: [sx * w * 0.55, h + 0.03 * k, 0], color: 0x1a1b1e, mass: 0.05, detachAt: 2 })),
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.03 * k, 0.02 * k, 0.006 * k], pos: [sx * w * 0.6, h - 0.04 * k, d + 0.004], color: 0xd8dce0, mass: 0.03 })),
+      { shape: 'box', size: [w - 0.01, 0.004 * k, 0.003 * k], pos: [0, -h * 0.2, d + 0.003], color: 0x7a1518, mass: 0.01 },
+      { shape: 'box', size: [0.13 * k, 0.012 * k, 0.025 * k], pos: [-w * 0.3, h + 0.04 * k, d * 0.5], rot: [0, 0.3, 0.4], color: 0xb0b6bc, mass: 0.2, detachAt: 1 },
+      { shape: 'box', size: [0.015 * k, 0.11 * k, 0.015 * k], pos: [w * 0.4, h + 0.06 * k, -d * 0.4], rot: [0.3, 0, -0.5], color: 0xd9a62e, mass: 0.2, detachAt: 1 },
+    ],
+    debris: [
+      { shape: 'box', size: [w, h * 0.8, d], pos: [0, -0.04 * k, 0], color: 0xa81f22, mass: 10 },
+      { shape: 'box', size: [w, 0.025 * k, d], pos: [0, h, 0], color: 0xa81f22, mass: 1.5 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+/**
+ * The men's radio, an old portable cassette one: silver, a speaker either side of the cassette door, the tuning dial
+ * along the top, a handle over it and the aerial up at a slant. Drawn a little over life size. The aerial goes first,
+ * then the handle and the speakers' grilles.
+ */
+function radio(): CargoType {
+  const k = 1.6;
+  const [w, h, d] = [0.2 * k, 0.11 * k, 0.06 * k];
+  const SILVER = 0xb8bcc2, BLACK = 0x2a2c31;
+  return {
+    id: 'radio',
+    name: '收音機',
+    value: 230,
+    threshold: 6,
+    maxHit: 30,
+    give: 18,
+    salvage: 0.25,
+    friction: 0.6,
+    hull: { shape: 'box', size: [w, h + 0.03 * k, d] },
+    parts: [
+      { shape: 'box', size: [w, h, d], pos: [0, 0, 0], color: SILVER, mass: 3.6 },
+      ...[-1, 1].flatMap((sx): PartDesc[] => [
+        { shape: 'cylinder', size: [0.075 * k, 0.006 * k, 0], pos: [sx * w * 0.6, -0.01 * k, d + 0.004], rot: [Math.PI / 2, 0, 0], color: BLACK, mass: 0.2, detachAt: 2 },
+        { shape: 'cylinder', size: [0.025 * k, 0.004 * k, 0], pos: [sx * w * 0.6, -0.01 * k, d + 0.012], rot: [Math.PI / 2, 0, 0], color: SILVER, mass: 0.02, detachAt: 2 },
+      ]),
+      { shape: 'box', size: [0.05 * k, 0.04 * k, 0.004 * k], pos: [0, -0.03 * k, d + 0.003], color: 0x3a3e46, mass: 0.05 },
+      { shape: 'box', size: [w * 0.85, 0.012 * k, 0.004 * k], pos: [0, h - 0.025 * k, d + 0.003], color: 0xe0a040, mass: 0.02 },
+      ...[-0.6, -0.2, 0.2, 0.6].map((x): PartDesc => ({ shape: 'box', size: [0.012 * k, 0.006 * k, 0.012 * k], pos: [x * w, h + 0.004 * k, d * 0.4], color: BLACK, mass: 0.01 })),
+      { shape: 'box', size: [w * 0.7, 0.01 * k, 0.012 * k], pos: [0, h + 0.05 * k, 0], color: BLACK, mass: 0.2, detachAt: 2 },
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.01 * k, 0.025 * k, 0.01 * k], pos: [sx * w * 0.68, h + 0.025 * k, 0], color: BLACK, mass: 0.03, detachAt: 2 })),
+      { shape: 'cylinder', size: [0.003 * k, 0.16 * k, 0], pos: [w * 0.85 + 0.06 * k, h + 0.14 * k, -d * 0.5], rot: [0, 0, -0.45], color: 0xd8dce0, mass: 0.02, detachAt: 1 },
+    ],
+    debris: [
+      { shape: 'box', size: [w, h * 0.7, d], pos: [0, -h * 0.3, 0], color: SILVER, mass: 3 },
+      { shape: 'box', size: [w * 0.5, h * 0.3, d], pos: [w * 0.4, h * 0.6, 0], color: SILVER, mass: 0.6 },
+    ],
+    burst: 'sparks',
+  };
+}
+
 const SACKING = 0xe8e0c8;
 const SACKING_DARK = 0xd2c7a8;
 const RICE = 0xf2e6bf;
@@ -635,6 +1011,15 @@ export const CARGO_TYPES = {
   paintBlue: paint('paintBlue', 0x2f62a8, 'paintBlue'),
   paintYellow: paint('paintYellow', 0xe0b020, 'paintYellow'),
   rebar: rebar(),
+  amp: amp(),
+  bicycle: bicycle(),
+  aircon: aircon(),
+  stockpot: stockpot(),
+  riceCooker: riceCooker(),
+  lightbox: lightbox(),
+  megaphone: megaphone(),
+  toolbox: toolbox(),
+  radio: radio(),
 } satisfies Record<string, CargoType>;
 
 export type CargoTypeId = keyof typeof CARGO_TYPES;

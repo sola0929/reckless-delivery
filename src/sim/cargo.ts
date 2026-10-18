@@ -52,6 +52,8 @@ export type CargoEvent =
   | { kind: 'fallen'; item: CargoItem; loss: number }
   /** Back on the truck. */
   | { kind: 'recovered'; item: CargoItem; gain: number }
+  /** Something hidden along the way, taken aboard for the first time: found. */
+  | { kind: 'found'; item: CargoItem }
   /** A destroyed item's salvage changed in value, as pieces of it left the truck (negative) or came back. */
   | { kind: 'scrap'; item: CargoItem; change: number };
 
@@ -116,6 +118,16 @@ export class CargoItem {
   immune = 0;
   /** Not part of the original load: picked up along the way for extra value. */
   bonus = false;
+  /** For something hidden along the way: whether it has been aboard yet, so that finding it is said once. */
+  aboardOnce = false;
+  /** For something hidden along the way: whether it has been picked up yet, off the spot where it was left. */
+  taken = false;
+  /** For something hidden along the way: held fixed where it was left, until the truck comes close or what it lies on moves. */
+  pinned = false;
+  /** For something hidden along the way: where it was left, to go back to if it is lost in the water. */
+  home: { pos: Vec3; rotY: number } | null = null;
+  /** Seconds it has lain in the water, for that. */
+  soaked = 0;
   readonly mass: number;
   /** Which parts are still on the item. */
   readonly attached: boolean[];
@@ -240,6 +252,13 @@ export class CargoSystem {
             .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
           item.partColliders[i] = add(desc, part.mass);
         });
+      }
+      // Something hidden along the way is pinned where it was left until something comes to it (see unpin): set on top of
+      // things that are themselves held still, or out of the world, until the truck comes (a scaffold), it would fall through.
+      if (place.found) {
+        item.home = { pos: [at.x, at.y, at.z], rotY: place.rotY ?? 0 };
+        body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
+        item.pinned = true;
       }
       this.items.push(item);
     }
@@ -397,7 +416,10 @@ export class CargoSystem {
       this.events.push({ kind: 'fallen', item, loss: item.bonus ? 0 : item.value });
     } else if (item.fallen && onBed && !item.thrown) {
       item.fallen = false;
-      this.events.push({ kind: 'recovered', item, gain: item.value });
+      if (item.bonus && !item.aboardOnce) {
+        item.aboardOnce = true;
+        this.events.push({ kind: 'found', item });
+      } else this.events.push({ kind: 'recovered', item, gain: item.value });
     }
   }
 
@@ -410,12 +432,39 @@ export class CargoSystem {
     item.knock = item.squeeze = item.hitPeak = 0;
   }
 
+  /** Something hidden along the way, lost in the water: back where it was left, as it was found, to be fetched again. */
+  putBack(item: CargoItem): void {
+    const body = item.body;
+    if (!body || !item.home) return;
+    const [x, y, z] = item.home.pos;
+    q.setFromEuler(e.set(0, item.home.rotY, 0));
+    body.setTranslation({ x, y, z }, true);
+    body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    item.pinned = true;
+    item.taken = false;
+    item.thrown = false;
+    item.soaked = 0;
+    item.lastPos.set(x, y, z);
+  }
+
+  /** Let something hidden along the way go from where it was pinned: from now on it falls and is pushed like the rest. */
+  unpin(item: CargoItem): void {
+    if (!item.pinned) return;
+    item.pinned = false;
+    if (!item.held) item.body?.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+  }
+
   /** Hand an item to the driver: it stops being a physical object until it is put down or thrown. */
   hold(item: CargoItem): void {
     const body = item.body!;
     body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     for (let i = 0; i < body.numColliders(); i++) body.collider(i).setEnabled(false);
     item.held = true;
+    item.taken = true;
+    item.pinned = false;
     item.thrown = false;
     if (!item.fallen) {
       // Lifted straight off the truck.
@@ -471,6 +520,11 @@ export class CargoSystem {
     const out = this.events;
     this.events = [];
     return out;
+  }
+
+  /** A knock that is not a collision: carried, and dropped with from a height. `amount` is health, out of 100. */
+  bump(item: CargoItem, amount: number): void {
+    this.damage(item, amount * this.damageScale);
   }
 
   private damage(item: CargoItem, amount: number): void {
@@ -582,6 +636,7 @@ export class CargoSystem {
         body.setTranslation({ x: t.x + v.x, y: t.y + v.y + 0.05, z: t.z + v.z }, true);
         body.setRotation({ x: q2.x, y: q2.y, z: q2.z, w: q2.w }, true);
         item.fallen = false;
+        item.aboardOnce = true;
       }
       item.hp = s.hp;
       item.stage = s.stage;

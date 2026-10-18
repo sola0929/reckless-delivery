@@ -125,6 +125,16 @@ export const DRIVER = {
    * longest range is throwMax for a weightless load, less throwPerKg for each kg, and never
    * below throwShortest. A 10 kg crate reaches about 9 m after 2.3 s.
    */
+  /**
+   * Falling while carrying, where the level has somewhere to fall from: no harm up to a jump's height; then, at 2 m,
+   * this much of the item's health, rising to fallAt4 at 4 m; past fallFling the driver goes down and the item flies.
+   */
+  fallSafe: 1.6,
+  /** Wading in a river (a ford with a surface), their feet in it: the current carries them downstream this fast, m/s. */
+  wadeDrift: 1.2,
+  fallAt2: 5,
+  fallAt4: 20,
+  fallFling: 4,
   throwMin: 1.5,
   throwRate: 3.4,
   throwMax: 12,
@@ -154,9 +164,15 @@ export const CAMERA = {
   // Field of view widens while boosting.
   boostFov: 8,
   fovFollow: 4,
-  // Following the driver on foot: how much closer, how fast it closes in, and how long the
-  // view takes to slide across when they get out or back in.
-  footZoom: 0.72,
+  // Following the driver on foot: how far it stands off (as the truck's view, standing still: close in, it felt cramped
+  // and low), how fast it closes in, and how long the view takes to slide across when they get out or back in.
+  footZoom: 1,
+  // And on foot it stands higher, by this share, and aims this far up the screen from them: looking down at their feet
+  // with the ground behind them in view, there was little to see of where they were going.
+  footRise: 0.4,
+  footLookAhead: 7,
+  // Q and E on foot: radians a second the view turns while one is held.
+  footTurn: 2.2,
   footZoomFollow: 3,
   handoverSeconds: 0.6,
   handoverFollow: 9,

@@ -1,24 +1,22 @@
-// Level 3's ball cranes, once settled (after 8 s): how low each ball's middle comes above its crane's feet and how far out
-// from the crane it goes round, and how high its middle is over the dike's road. On the first, low jib: low 5.24 / 5.37 /
-// 5.12 / 5.50, out 10.0 / 10.2 / 9.9 / 10.3, over the road about 3.0-3.6. Now: over the road 2.0-2.8, out the same.
-// npx tsx dev/ball-path.ts
-import { quarry } from '../src/levels/quarry';
+// Level 3's demolition balls: for the one nearest the island's stones, over 20 s, how close and how high the ball comes to
+// the dike's edge by the stones and to each stone. npx tsx dev/ball-path.ts
+import { LEVELS } from '../src/levels';
 import { Sim } from '../src/sim/sim';
-const sim = await Sim.create({ ...quarry(), crowds: [] });
-sim.teleport(80, 640, 0);
+const sim = await Sim.create(LEVELS.quarry());
+sim.teleport(79.5, 745, Math.PI);
+for (let k = 0; k < 30; k++) sim.step({ throttle: 0, steer: 0, handbrake: true });
 const balls = sim.rigs.list.filter((r) => r.desc.kind === 'ball');
-const lows = balls.map(() => 99), rs = balls.map(() => [99, 0]), over = balls.map(() => [] as number[]);
-for (let s = 0; s < 60 * 25; s++) {
+const rig = balls.sort((a, b) => Math.abs(a.parts[2].body.translation().z - 722) - Math.abs(b.parts[2].body.translation().z - 722))[0];
+console.log('balls', balls.length, 'nearest at', JSON.stringify(rig.desc.pos ?? rig.desc));
+const spots: [string, number, number, number][] = [['edge', 82.8, 722.2, 6.0], ['s1', 84.4, 722.2, 5.5], ['s2', 87.6, 721.6, 4.95], ['s3', 90.8, 722.4, 4.45], ['dike', 80, 722, 6.2]];
+const best = new Map<string, [number, number]>();
+for (let k = 0; k < 60 * 20; k++) {
   sim.step({ throttle: 0, steer: 0, handbrake: true });
-  if (s < 60 * 8) continue;
-  balls.forEach((rig, i) => {
-    const p = rig.parts[2].body.translation(), [cx, cy, cz] = rig.desc.pos;
-    lows[i] = Math.min(lows[i], p.y - cy);
-    const r = Math.hypot(p.x - cx, p.z - cz);
-    rs[i] = [Math.min(rs[i][0], r), Math.max(rs[i][1], r)];
-    // Over the road on the dike (its middle at x 77.5 there, 6.5 m wide, its top at 6.2): the ball's middle above the road.
-    if (Math.abs(p.x - 77.5) < 3.25 && Math.abs(p.z - cz) < 5) over[i].push(p.y - 6.2);
-  });
+  const b = rig.parts[2].body.translation();
+  for (const [name, x, z, y] of spots) {
+    const flat = Math.hypot(b.x - x, b.z - z);
+    const cur = best.get(name);
+    if (!cur || flat < cur[0]) best.set(name, [flat, b.y - (y + 0.85)]);
+  }
 }
-console.log(balls.map((_, i) => `low ${lows[i].toFixed(2)} out ${rs[i][0].toFixed(1)}-${rs[i][1].toFixed(1)} over road ${over[i].length ? Math.min(...over[i]).toFixed(2) + '..' + Math.max(...over[i]).toFixed(2) : '-'}`).join(' | '));
-process.exit(0);
+for (const [name, [flat, dy]] of best) console.log(name, 'closest across', flat.toFixed(2), 'ball centre above their middle', dy.toFixed(2));

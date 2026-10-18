@@ -176,7 +176,7 @@ export class LessonGuide {
       return Math.abs(sim.truck.forwardSpeed()) > 1.5 ? '前面路邊有一個保險箱：在它旁邊停車' : `按 ${k('C', 'Y')} 下車`;
     }
     if (crate.held) return pad ? '走到車尾，用<b>右搖桿</b>對準車斗，按住 <b>RT</b> 蓄力、放開拋上去' : '走到車尾，滑鼠對準車斗，<b>按住左鍵</b>蓄力、放開拋上去';
-    if (crate.fallen) return `走到保險箱旁邊，按 ${k('E', 'B')} 舉起`;
+    if (crate.fallen) return `走到保險箱旁邊，按 ${k('F', 'B')} 舉起`;
     return `保險箱上車了！回到駕駛座，按 ${k('C', 'Y')} 上車`;
   }
 }

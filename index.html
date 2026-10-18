@@ -25,6 +25,7 @@
         <div class="stat"><span class="label">時速</span><span class="value" id="speed">0</span><span class="unit">km/h</span></div>
         <div class="stat"><span class="label">貨物價值</span><span class="value" id="value">$0</span><span class="unit" id="value-full">/ $0</span><div id="value-bar"><div id="value-fill"></div><div id="value-goal"></div><div id="value-goal3"></div></div></div>
         <div class="stat"><span class="label">車上貨物</span><span class="value" id="cargo">0 / 0</span></div>
+        <div class="stat" id="hidden-stat" hidden><span class="label">隱藏貨物</span><span class="value" id="hidden">0 / 0</span></div>
         <div class="stat" id="timer-stat"><span class="label">時間</span><span class="value" id="timer">0:00</span></div>
       </div>
       <div id="corner">
@@ -63,6 +64,7 @@
         <div id="result-verdict"></div>
         <div id="result-value"></div>
         <div id="result-rows"></div>
+        <div id="result-hidden"></div>
         <div id="result-goals"></div>
         <div id="result-record"></div>
         <div class="buttons">
@@ -118,12 +120,13 @@
             <kbd>H</kbd><span>喇叭（趕開附近的人）</span>
             <h4>下車</h4>
             <kbd>C</kbd><span>上下車</span>
-            <kbd>E</kbd><span>舉起、放下貨物</span>
+            <kbd>F</kbd><span>舉起、放下貨物</span>
             <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
             <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
             <h4>其他</h4>
             <kbd>Esc</kbd><span>暫停</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            <kbd>Q / E</kbd><span>轉視角：開車時按住看側邊，放開回正；下車時轉向</span>
             <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
             <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
             </div>
@@ -233,12 +236,13 @@
             <kbd>H</kbd><span>喇叭（趕開附近的人）</span>
             <h4>下車</h4>
             <kbd>C</kbd><span>上下車</span>
-            <kbd>E</kbd><span>舉起、放下貨物</span>
+            <kbd>F</kbd><span>舉起、放下貨物</span>
             <kbd>左鍵</kbd><span>按住蓄力，放開拋出；右鍵取消</span>
             <kbd>空白鍵</kbd><span>跳躍（拿重物時不能跳）</span>
             <h4>其他</h4>
             <kbd>Esc</kbd><span>暫停</span>
             <kbd>滾輪</kbd><span>拉近、拉遠</span>
+            <kbd>Q / E</kbd><span>轉視角：開車時按住看側邊，放開回正；下車時轉向</span>
             <kbd>右鍵拖曳</kbd><span>開車時轉視角（看後方來車、側邊），放開回正</span>
             <kbd>F1</kbd><span>顯示或收起畫面下方的按鍵說明</span>
             <h4 class="pad-only">手把</h4>

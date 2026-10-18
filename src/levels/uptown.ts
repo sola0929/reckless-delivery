@@ -357,6 +357,8 @@ export function uptown(): LevelDef {
   const ground = (x: number, z: number) => heightAt(terrain, x, z);
   const props: PropDesc[] = [];
   const objects: ObjectDesc[] = [];
+  /** Things hidden along the way, for the canteen: found and brought, they add to the delivery. */
+  const hidden: CargoPlacement[] = [];
   const decals: DecalDesc[] = [];
   const object = (kind: ObjectKindId, x: number, z: number, rotY = 0) => objects.push({ kind, pos: [x, ground(x, z), z], rotY });
 
@@ -636,6 +638,10 @@ export function uptown(): LevelDef {
     object('bricks', x0 + 9, zc + 3.2);
     object('bricks', x0 + 10.3, zc + 3.2);
     object('rebar', x0 + 13, zc + 3.6, Math.PI / 2);
+    // Up on the second lift, out of reach and out of sight, behind the braces and under the boards above: the canteen's big soup
+    // pot, lent to the temple for its feast and taken up by the men to mix in. (On the top lift it was seen from the steps.) It comes down with the scaffold when the truck brings it down, and is tough enough to take the fall.
+    const potX = x0 + 3.5 * BAY;
+    hidden.push({ type: 'stockpot', pos: [potX, ground(potX, zc) + STOREY + 1.755 + 0.235, zc], found: true });
   }
   object('stallIncense', px0 + 2, pz0 + 20, Math.PI / 2);
   for (let z = pz0 + 4; z < pz1 - 2; z += 6) object(POTS[Math.floor(z / 6) % POTS.length], px1 + 3.4, z);
@@ -718,6 +724,56 @@ export function uptown(): LevelDef {
   // Across the lane, not along it: nothing gets past at either end.
   const vanLane: TrafficLane = { from: [VAN[0] + 0.25, VAN[1]], to: [VAN[0] - 0.25, VAN[1]], cars: 1, speed: 0, kinds: ['van'] };
   const floatLane: TrafficLane = { from: [xOf(18) + 4, zOf(55) + 0.25], to: [xOf(18) + 4, zOf(55) - 0.25], cars: 1, speed: 0, kinds: ['float'] };
+  // Behind the float, on the side of the dead-end lane: the canteen's rice cooker, back from being mended, left there by the
+  // repair shop's man when the float stopped him. Its pointer shows over the float from the square; got at only by going round
+  // into the lane and backing out again.
+  {
+    const [cx, cz] = [xOf(18) + 4 - 2.5, zOf(55) + 2.4];
+    // And in the small square off the coil road, behind its fountain from the way in, against the far wall: 阿玉's tofu pudding
+    // cart, its name on a board over its roof, a table and stools before it; and beside it the canteen's new lightbox, which the sign
+    // maker left at the wrong 阿.
+    const [sx, sz] = [xOf(27) - 3, zOf(54) + 19.5];
+    const kerb = ground(sx, sz) + 0.15;
+    // The stall: a wooden counter under a striped awning on four poles, its name along the awning's front; on the counter
+    // the two steel pails of pudding, a tray of toppings in their bowls, a stack of bowls and the ladle; a menu on a stand,
+    // a pair of red lanterns, the ice chest behind. Before it, two tables with stools.
+    const [bx, bz] = [sx + 3.9, sz + 1.1];
+    const fixed = (size: Vec3, pos: Vec3, color: number) => props.push({ shape: 'box', size, pos, color });
+    const show = (size: Vec3, pos: Vec3, color: number) => props.push({ shape: 'box', size, pos, color, ghost: true });
+    fixed([1.25, 0.45, 0.42], [bx, kerb + 0.45, bz], 0x9a6a3a);
+    show([1.27, 0.03, 0.44], [bx, kerb + 0.92, bz], 0xd8c8a8);
+    show([1.2, 0.3, 0.005], [bx, kerb + 0.5, bz - 0.425], 0x2f6fb0);
+    for (let k = 0; k < 6; k++) show([0.1, 0.2, 0.004], [bx - 1 + k * 0.4, kerb + 0.5, bz - 0.432], k % 2 ? 0xf2efe6 : 0xffd23a);
+    for (const dx of [-1.45, 1.45]) for (const dz of [-1.05, 0.55]) props.push({ shape: 'cylinder', size: [0.035, 1.15, 0], pos: [bx + dx, kerb + 1.15, bz + dz], color: 0x5a6068 });
+    for (let k = 0; k < 8; k++) show([0.19, 0.025, 0.85], [bx - 1.33 + k * 0.38, kerb + 2.32 - 0.0, bz - 0.25], k % 2 ? 0xf2efe6 : 0x2f6fb0);
+    for (let k = 0; k < 8; k++) show([0.19, 0.12, 0.012], [bx - 1.33 + k * 0.38, kerb + 2.2, bz - 1.1], k % 2 ? 0xf2efe6 : 0x2f6fb0);
+    signs.push({ kind: 'aYu', pos: [bx, kerb + 2.62, bz - 1.12], rotY: Math.PI });
+    for (const dx of [-0.75, -0.25]) {
+      props.push({ shape: 'cylinder', size: [0.2, 0.22, 0], pos: [bx + dx, kerb + 1.17, bz + 0.05], color: 0xc8ccd2, ghost: true });
+      props.push({ shape: 'cylinder', size: [0.17, 0.005, 0], pos: [bx + dx, kerb + 1.395, bz + 0.05], color: 0xf2ead2, ghost: true });
+    }
+    show([0.42, 0.03, 0.2], [bx + 0.45, kerb + 0.97, bz - 0.12], 0xb0b6bc);
+    [0x7a3a22, 0xe8d0a0, 0x3a7a3a, 0xc8862a, 0x5a2a22, 0xf2efe6].forEach((color, k) => props.push({ shape: 'cylinder', size: [0.06, 0.03, 0], pos: [bx + 0.15 + (k % 3) * 0.3, kerb + 1.02, bz - 0.2 + Math.floor(k / 3) * 0.17], color, ghost: true }));
+    for (let k = 0; k < 6; k++) props.push({ shape: 'cylinder', size: [0.075, 0.02, 0], pos: [bx + 1.05, kerb + 0.97 + k * 0.04, bz + 0.1], color: 0xf2efe6, ghost: true });
+    show([0.02, 0.02, 0.18], [bx - 0.5, kerb + 1.42, bz + 0.15], 0x9aa0a6);
+    // The menu on its stand by the counter's end, and the lanterns hung under the awning's front corners.
+    props.push({ shape: 'box', size: [0.03, 0.55, 0.03], pos: [bx + 1.75, kerb + 0.55, bz - 0.8], color: 0x5a3a24 });
+    show([0.3, 0.38, 0.015], [bx + 1.75, kerb + 1.35, bz - 0.82], 0x2a3a2a);
+    for (let k = 0; k < 5; k++) show([0.22 - (k % 2) * 0.05, 0.018, 0.004], [bx + 1.75, kerb + 1.6 - k * 0.12, bz - 0.84], k === 0 ? 0xffd23a : 0xf2efe6);
+    for (const dx of [-1.3, 1.3]) {
+      show([0.005, 0.25, 0.005], [bx + dx, kerb + 2.0, bz - 1.05], 0x2a2c31);
+      props.push({ shape: 'sphere', size: [0.17, 0.17, 0.17], pos: [bx + dx, kerb + 1.68, bz - 1.05], color: 0xd8262a, ghost: true });
+      show([0.1, 0.02, 0.1], [bx + dx, kerb + 1.86, bz - 1.05], 0xd9a62e);
+    }
+    objects.push({ kind: 'crateYellow', pos: [bx + 1.9, kerb, bz + 0.9] });
+    objects.push({ kind: 'gasCylinder', pos: [bx - 1.75, kerb, bz + 0.7] });
+    for (const [tx, tz] of [[bx - 0.8, bz - 2.6], [bx + 1.3, bz - 3.1]] as const) {
+      objects.push({ kind: 'table', pos: [tx, kerb, tz] });
+      for (const [dx, dz] of [[-0.8, 0], [0.8, 0], [0, -0.8]] as const) objects.push({ kind: 'stool', pos: [tx + dx, kerb, tz + dz] });
+    }
+    hidden.push({ type: 'lightbox', pos: [sx, kerb + 0.53, sz], found: true });
+    hidden.push({ type: 'riceCooker', pos: [cx, ground(cx, cz) + 0.28, cz], rotY: Math.PI / 2, found: true });
+  }
   const traffic: TrafficLane[] = [
     // 0, 1: the road along row 51, east and west (west into its gate, east out of it).
     // Each meets the avenue's lane it turns into, or out of, where the two cross: a car turns there and does not jump.
@@ -1465,7 +1521,7 @@ export function uptown(): LevelDef {
     smokes,
     route: way,
     decals: [...lifted.decals, ...decals],
-    cargo: hillLoad(),
+    cargo: [...hillLoad(), ...hidden],
     traffic: [...lifted.traffic, ...traffic, floatLane, vanLane, ...standing],
     signs: [...(lifted.signs ?? []), ...signs],
     // Across the road, and down the pavements too: the pavement is no way round them.

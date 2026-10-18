@@ -464,8 +464,14 @@ export class Pedestrians {
   /** Somewhere to stand in a crowd's patch. At a crossing that is on one pavement or the other: the far one, or the near. */
   private pointIn(crowd: CrowdDesc, far: boolean): Vector3 {
     const [x0, z0, x1, z1] = crowd.area;
-    const x = x0 + this.random() * (x1 - x0);
-    const z = z0 + this.random() * (z1 - z0);
+    let x = x0 + this.random() * (x1 - x0);
+    let z = z0 + this.random() * (z1 - z0);
+    // Never somewhere nobody walks into: drawn again, a few times, if it is.
+    const barred = () => this.keepOut.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
+    for (let tries = 0; tries < 8 && barred(); tries++) {
+      x = x0 + this.random() * (x1 - x0);
+      z = z0 + this.random() * (z1 - z0);
+    }
     const kerb = this.random() * KERBSIDE;
     if (crowd.crossing === 'x') return new Vector3(far ? x1 - kerb : x0 + kerb, crowd.y, z);
     if (crowd.crossing === 'z') return new Vector3(x, crowd.y, far ? z1 - kerb : z0 + kerb);

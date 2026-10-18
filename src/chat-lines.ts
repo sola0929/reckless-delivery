@@ -4,7 +4,7 @@ import type { ChatDesc, Talk } from './levels/types';
 // Who the customer is is never said; it is to be made out from what they write. The driver answers flat.
 
 /** Things that happen on a run that someone has something to say about. */
-export type ChatCue = 'start' | 'fallen' | 'destroyed' | 'below60' | 'below30' | 'train' | 'hits' | 'idle' | 'save' | 'back' | 'near';
+export type ChatCue = 'start' | 'fallen' | 'destroyed' | 'below60' | 'below30' | 'train' | 'hits' | 'idle' | 'save' | 'back' | 'near' | 'found';
 
 /** The boss: a different mood each time, shouting, counting the cost, uplifting, past caring, fired up. */
 export const BOSS: Partial<Record<ChatCue, Talk[]>> = {
@@ -66,6 +66,8 @@ export const BOSS: Partial<Record<ChatCue, Talk[]>> = {
 interface Customer {
   cues: Partial<Record<ChatCue, Talk[]>>;
   wrecked: Record<string, Talk[]>;
+  /** When something of theirs hidden along the way is found and taken aboard, by its kind. */
+  found?: Record<string, Talk[]>;
 }
 
 export const CUSTOMERS: Record<ChatDesc['customer'], Customer> = {
@@ -85,6 +87,17 @@ export const CUSTOMERS: Record<ChatDesc['customer'], Customer> = {
       near: [
         [['them', '我看到你了！！'], ['them', '……你的車斗為什麼在冒煙'], ['me', '它很熱情']],
         [['them', '我在樓下等你'], ['them', '需要準備什麼嗎？'], ['me', '掃把跟垃圾袋吧']],
+      ],
+    },
+    found: {
+      amp: [
+        [['them', '你怎麼找到我們社團的音箱的？！'], ['me', '它放在舞台後台'], ['me', '我本來想拿來當車用音響的'], ['them', '…幫我送回來 我會加錢的']],
+      ],
+      bicycle: [
+        [['them', '我的腳踏車！我還以為被偷了'], ['me', '它在河邊等你'], ['me', '它破成那樣 你應該慶幸的不是沒小偷'], ['me', '而是清潔隊還沒來']],
+      ],
+      aircon: [
+        [['them', '師傅說工地拆下來的舊冷氣免費拿'], ['them', '可惜已經沒了…'], ['me', '沒事 我幫你拿了一台'], ['them', '你怎麼拿到的？'], ['me', '鷹架上正好有台全新的']],
       ],
     },
     wrecked: {
@@ -126,6 +139,17 @@ export const CUSTOMERS: Record<ChatDesc['customer'], Customer> = {
         [['them', '你到門口按個喇叭'], ['them', '我出來幫你卸貨'], ['me', '不用'], ['me', '很多已經自己卸好了']],
       ],
     },
+    found: {
+      stockpot: [
+        [['them', '那是我的湯鍋嗎？！'], ['me', '它在鷹架上'], ['them', '我借給廟裡辦桌的'], ['me', '工人拿去裝水泥了'], ['them', '……洗乾淨再還我']],
+      ],
+      lightbox: [
+        [['them', '那是我的新招牌！'], ['them', '招牌行說送到了 我等了一早上'], ['me', '送到阿玉豆花那邊了'], ['them', '……']],
+      ],
+      riceCooker: [
+        [['them', '我的電鍋修好了？'], ['them', '修理行怎麼不送過來'], ['me', '說不定他機車被我撞了'], ['me', '或是他本人被我撞了']],
+      ],
+    },
     wrecked: {
       washer: [
         [['them', '洗衣機壞了？'], ['them', '那工人的制服怎麼辦'], ['me', '再穿三天'], ['them', '那你來跟他們一起吃飯']],
@@ -155,6 +179,17 @@ export const CUSTOMERS: Record<ChatDesc['customer'], Customer> = {
       near: [
         [['me', '我快到了'], ['them', '太好了，工人等貨很久了'], ['me', '貨……也會到'], ['them', '可以說得有信心一點嗎']],
         [['them', '工地危險，記得小心'], ['them', '工安提醒：油門不是越大越好'], ['me', '那是什麼越大越好'], ['them', '看到你後覺得保險越大越好']],
+      ],
+    },
+    found: {
+      megaphone: [
+        [['them', '那是我的大聲公'], ['them', '為什麼會被丟在那邊'], ['me', '可能是工人們想要保護耳朵']],
+      ],
+      toolbox: [
+        [['them', '工安提醒：工具不可隨意放置'], ['me', '它放在河中間的石頭上'], ['me', '你們難道是游泳渡河上班的嗎']],
+      ],
+      radio: [
+        [['them', '你在哪找到工人們的收音機的？'], ['them', '中午沒有它放音樂，大家只好聽我唱歌'], ['them', '我總覺得他們拿著工具盯著我的眼神怪怪的']],
       ],
     },
     wrecked: {

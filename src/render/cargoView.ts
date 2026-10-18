@@ -15,6 +15,13 @@ const LEAK_INTERVAL = 0.05;
 /** An arrowhead pointing down at a fallen item. Drawn over everything, so it shows behind buildings too. */
 const MARKER_SHAPE = new THREE.ConeGeometry(0.28, 0.6, 4).rotateX(Math.PI);
 const MARKER_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffd166, depthTest: false, transparent: true, opacity: 0.95 });
+/**
+ * Over something hidden along the way, the pointer is blue; and where it was left, a small blue ring on the ground until it
+ * is taken. Unlike the yellow one it is hidden behind whatever stands in front of it: seen through walls, it would give away
+ * where the thing is.
+ */
+const HIDDEN_MARKER_MATERIAL = new THREE.MeshBasicMaterial({ color: 0x5ec8ff, transparent: true, opacity: 0.95 });
+const RING_SHAPE = new THREE.RingGeometry(0.75, 0.95, 40).rotateX(-Math.PI / 2);
 
 const textures = new Map<string, THREE.Texture>();
 
@@ -68,6 +75,22 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
     g.lineJoin = 'round';
     g.strokeText('米', size / 2, size / 2 + size * 0.04);
     g.fillText('米', size / 2, size / 2 + size * 0.04);
+  }
+
+  if (base === 'sign') {
+    // The canteen's name, 阿月, down a red lightbox's face in white: drawn squat, as the face it goes on is half as tall again
+    // as it is wide.
+    g.fillStyle = '#c8262a';
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = '#ffffff';
+    g.font = `bold ${Math.round(size * 0.5)}px sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.save();
+    g.scale(1, 1 / 1.5);
+    g.fillText('阿', size / 2, size * 0.27 * 1.5);
+    g.fillText('月', size / 2, size * 0.73 * 1.5);
+    g.restore();
   }
 
   if (base === 'crate') {
@@ -181,12 +204,16 @@ interface ItemView {
   flash: number;
   /** A bobbing pointer shown over the item while it lies off the truck, waiting to be fetched. */
   marker: THREE.Mesh;
+  /** For something hidden along the way, the ring on the ground where it was left; gone once it is taken. */
+  ring: THREE.Mesh | null;
   leakLeft: number;
   leakTimer: number;
 }
 
 /** Draws the cargo: parts, damage stages, pieces falling off, and the mess it makes. */
 export class CargoViews {
+  /** Whether something hidden along the way gets the marker over it before it has been found: only in the tutorial. */
+  markHidden = false;
   private readonly views = new Map<CargoItem, ItemView>();
   private readonly loose: { sync: BodySync; mesh: THREE.Mesh }[] = [];
   private readonly at = new THREE.Vector3();
@@ -199,7 +226,10 @@ export class CargoViews {
 
   /** Throw away every mesh and build the load again, e.g. after a reset. */
   rebuild(sim: Sim): void {
-    for (const view of this.views.values()) this.scene.remove(view.group, view.marker);
+    for (const view of this.views.values()) {
+      this.scene.remove(view.group, view.marker);
+      if (view.ring) this.scene.remove(view.ring);
+    }
     for (const piece of this.loose) this.scene.remove(piece.mesh);
     this.views.clear();
     this.loose.length = 0;
@@ -215,12 +245,22 @@ export class CargoViews {
         return mesh;
       });
       if (item.body) this.scene.add(group);
-      const marker = new THREE.Mesh(MARKER_SHAPE, MARKER_MATERIAL);
+      const hidden = item.bonus && !this.markHidden;
+      const marker = new THREE.Mesh(MARKER_SHAPE, hidden ? HIDDEN_MARKER_MATERIAL : MARKER_MATERIAL);
       marker.visible = false;
       marker.renderOrder = 9;
       this.scene.add(marker);
+      let ring: THREE.Mesh | null = null;
+      if (hidden && !item.taken && item.body) {
+        const at = item.body.translation();
+        const half = item.type.hull ? item.type.hull.size[1] : 0.3;
+        ring = new THREE.Mesh(RING_SHAPE, new THREE.MeshBasicMaterial({ color: 0x5ec8ff, transparent: true, opacity: 0.7, depthWrite: false }));
+        ring.position.set(at.x, at.y - half + 0.04, at.z);
+        ring.renderOrder = 2;
+        this.scene.add(ring);
+      }
       const view: ItemView = {
-        item, group, meshes, marker,
+        item, group, meshes, marker, ring,
         sync: item.body ? new BodySync(item.body, group) : null,
         flash: 0, leakLeft: 0, leakTimer: 0,
       };
@@ -297,6 +337,10 @@ export class CargoViews {
     for (const view of this.views.values()) {
       const { item, marker } = view;
       marker.visible = item.fallen && !item.held && !item.thrown && item.body !== null;
+      if (view.ring) {
+        view.ring.visible = !item.taken;
+        (view.ring.material as THREE.MeshBasicMaterial).opacity = 0.45 + Math.sin(this.time * 3) * 0.25;
+      }
       if (marker.visible) {
         marker.position.copy(view.group.position);
         marker.position.y += 1.5 + Math.sin(this.time * 4) * 0.15;

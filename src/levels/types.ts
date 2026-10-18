@@ -357,7 +357,7 @@ export interface SignDesc {
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
   /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road; the name over a quarry's loading shed. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight' | 'canteen' | 'bento';
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight' | 'canteen' | 'bento' | 'concert' | 'aYu';
   /** As a prop's: faded while the camera's line to the truck passes through this box. Upright name signs only. */
   fadeZone?: [Vec3, Vec3];
 }
@@ -587,6 +587,13 @@ export interface LevelDef {
    * the game puts the truck back to try that part again. No stars, no par, no record.
    */
   practice?: boolean;
+  /**
+   * Somewhere high to climb with something in one's arms: a drop of more than a jump, carrying, costs what is carried a
+   * little, more the further; past FALL_FLING the driver goes down and it flies out of their arms.
+   */
+  carryFalls?: boolean;
+  /** The lowest a driver on foot can be, where the ground goes below 0 (a river bed to wade in); 0 if not given. */
+  footFloor?: number;
   /** The tutorial's lessons, one after another: each shown when it is reached, done when its task is. */
   lessons?: LessonDesc[];
   /** Things playing music, by their place in `objects`: notes rise from each until it is knocked over. */

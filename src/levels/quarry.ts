@@ -240,6 +240,47 @@ function base(x: number, z: number): { h: number; look: Look } {
   return square;
 }
 
+/**
+ * The things hidden along the way, for the site foreman (more of them after). First, in the settling pond east of the dike, along its straight
+ * stretch: a little island of reeds, and stepping stones out to it from the dike's edge, each a little lower than the one
+ * before, so that the way back up is a jump at a time; on it, the foreman's loudhailer, left there by the men who went
+ * out to fish. Returns them, and adds the island and the stones to the props.
+ */
+function hiddenCargo(props: PropDesc[], ground: (x: number, z: number) => number): CargoPlacement[] {
+  const found: CargoPlacement[] = [];
+  const [ix, iz, ir] = [97, 722, 3.2];
+  const water = 3.4, top = 3.85;
+  // The island: a mound of earth, a skin of grass, reeds round it, a bush.
+  props.push({ shape: 'cylinder', size: [ir, top / 2, 0], pos: [ix, top / 2, iz], color: 0x7a6a50 });
+  props.push({ shape: 'cylinder', size: [ir + 0.5, 0.06, 0], pos: [ix, water + 0.04, iz], color: 0x7a6a50, ghost: true });
+  props.push({ shape: 'cylinder', size: [ir - 0.15, 0.03, 0], pos: [ix, top + 0.02, iz], color: 0x6f8a4a, ghost: true });
+  for (let n = 0; n < 14; n++) {
+    const a = (n / 14) * Math.PI * 2, r = ir - 0.35;
+    props.push({ shape: 'cone', size: [0.07, 0.55 + (n % 3) * 0.15, 0], pos: [ix + Math.cos(a) * r, top + 0.5, iz + Math.sin(a) * r], color: n % 2 ? 0x8a9a52 : 0x6f8a3a, ghost: true });
+  }
+  props.push({ shape: 'sphere', size: [0.8, 0.8, 0.8], pos: [ix + 1.2, top + 0.4, iz + 1.1], color: 0x5a7a3a, ghost: true });
+  // A fishing stool and a rod left lying, what the men were at.
+  props.push({ shape: 'box', size: [0.2, 0.18, 0.2], pos: [ix - 1, top + 0.18, iz - 1.2], color: 0x2f6fb0 });
+  props.push({ shape: 'box', size: [0.01, 0.01, 1.4], pos: [ix - 0.6, top + 0.05, iz - 0.3], rot: [0, 0.5, 0], color: 0x2a2c31, ghost: true });
+  // The stepping stones, from the dike's east edge (x 83.3, at 6.2) out to the island: grey rocks on the pond's bed.
+  const stones: [number, number, number][] = [[84.4, 722.2, 5.5], [87.6, 721.6, 4.95], [90.8, 722.4, 4.45]];
+  stones.forEach(([sx, sz, h], n) => {
+    const r = 0.85 + (n % 2) * 0.1;
+    props.push({ shape: 'cylinder', size: [r, h / 2, 0], pos: [sx, h / 2, sz], color: n % 2 ? 0x8a857a : 0x9a958a });
+    props.push({ shape: 'cylinder', size: [r * 0.8, 0.04, 0], pos: [sx, h + 0.03, sz], rot: [0.08, n, 0.06], color: 0xaaa59a, ghost: true });
+  });
+  found.push({ type: 'megaphone', pos: [ix + 0.3, top + 0.3, iz + 0.2], rotY: 2.2, found: true });
+  // Second, out in the middle of the river crossing, on a big boulder east of the way: a red toolbox, swept off a fitter's
+  // barrow upstream and stranded there. Up it from the river bed by a lower rock against its east side, then its own lower
+  // block; too heavy to jump down with, it is thrown from up there into the truck, standing in the current below.
+  const [rx, rz] = [104.3, 955.2];
+  props.push({ shape: 'box', size: [0.75, 0.5, 0.7], pos: [rx + 2.3, -0.5, rz - 0.4], rot: [0.05, 0.4, -0.06], color: 0x7d7a72 });
+  props.push({ shape: 'box', size: [0.55, 0.12, 0.5], pos: [rx + 2.3, 0.05, rz - 0.35], rot: [0.08, 0.9, 0.04], color: 0x858278, ghost: true });
+  found.push({ type: 'toolbox', pos: [rx, 1.06 + 0.24, rz], rotY: 1.1, found: true });
+  void ground;
+  return found;
+}
+
 export function quarry(): LevelDef {
   const min: Vec2 = [xOf(COL0) - 8, -8], max: Vec2 = [xOf(COL0 + MAP[0].length - 1) + 8, zOf(MAP.length - 1) + 8];
   const relief = new Relief(min, max, 8, base);
@@ -776,6 +817,7 @@ export function quarry(): LevelDef {
   const { terrain } = relief.build();
   ground = (x, z) => heightAt(terrain, x, z);
   for (const add of later) add();
+  const hidden = hiddenCargo(props, ground);
 
   const spawn: [number, number, number] = [A[0], TOP + 0.9, yard.z0 + 12];
   return {
@@ -785,6 +827,7 @@ export function quarry(): LevelDef {
     ground: { center: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2], half: [(max[0] - min[0]) / 2 + 200, (max[1] - min[1]) / 2 + 200], style: 'earth' },
     terrain,
     sinks: ['water', 'drop'],
+    footFloor: -20,
     slicks,
     stillWater,
     pools: [...pools, ...end.pools],
@@ -798,7 +841,7 @@ export function quarry(): LevelDef {
     objects,
     decals,
     signs,
-    cargo: quarryLoad(),
+    cargo: [...quarryLoad(), ...hidden, ...end.hidden],
     traffic,
     machines,
     rigs,

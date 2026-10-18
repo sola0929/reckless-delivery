@@ -138,6 +138,7 @@ document.getElementById('hud')!.append(lockRing);
 let beepWait = 0;
 let hornWait = 0;
 const cargoViews = new CargoViews(view.scene, bursts);
+cargoViews.markHidden = !!level.practice;
 // A tin of paint burst on the bed: the truck wears it.
 cargoViews.onSpill = (color) => truckMesh.stain(color);
 cargoViews.rebuild(sim);
@@ -642,7 +643,19 @@ function playFountains(dt: number): void {
   }
 }
 
+/** How many things lie hidden along the way on this level. */
+const hiddenTotal = sim.cargo.filter((c) => c.bonus).length;
+
 function noteEvent(event: CargoEvent): void {
+  // Something hidden along the way, aboard for the first time: said large, with its worth over it, and a chime.
+  if (event.kind === 'found') {
+    const found = sim.cargo.filter((c) => c.bonus && c.aboardOnce).length;
+    hud.popup(`找到隱藏貨物！ ${found} / ${hiddenTotal}`, window.innerWidth / 2, window.innerHeight * 0.3, 'found');
+    const at = onScreen(event.item);
+    if (at) hud.popup(`+${money(event.item.value)}`, at.x, at.y, 'gain');
+    uiSound('win');
+    return;
+  }
   if (event.kind === 'recovered') {
     const at = onScreen(event.item);
     if (at && event.gain >= 1) hud.popup(`+${money(event.gain)}`, at.x, at.y, 'gain');
@@ -746,7 +759,7 @@ function setPaused(on: boolean): void {
   if (on !== paused) uiSound(on ? 'open' : 'close');
   paused = on;
   audio.setPaused(on);
-  hud.showPause(on, { seconds: sim.time, value: sim.cargoValue(), fullValue: sim.fullValue, onTruck: sim.cargoOnTruck(), total: sim.cargo.length });
+  hud.showPause(on, { seconds: sim.time, value: sim.cargoValue(), fullValue: sim.fullValue, onTruck: sim.cargoOnTruck(), total: sim.cargo.filter((c) => !c.bonus || !c.fallen).length });
   if (!on) input.clearPresses();
 }
 hud.onResume = () => setPaused(false);
@@ -883,7 +896,7 @@ function footInput(first: boolean): FootInput {
     return {
       moveX, moveZ, run: walk.run,
       vehiclePressed: first && input.take('KeyC'),
-      grabPressed: first && input.take('KeyE'),
+      grabPressed: first && input.take('KeyF'),
       jumpPressed: first && input.take('Space'),
       aim,
       charging: input.charging(),
@@ -901,7 +914,7 @@ function footInput(first: boolean): FootInput {
     moveZ,
     run: walk.run,
     vehiclePressed: first && input.take('KeyC'),
-    grabPressed: first && input.take('KeyE'),
+    grabPressed: first && input.take('KeyF'),
     jumpPressed: first && input.take('Space'),
     aim: hit ? { x: hit.x, z: hit.z } : null,
     charging: input.charging(),
@@ -927,15 +940,15 @@ function updatePrompt(): void {
     const slow = Math.abs(truck.forwardSpeed()) < DRIVER.exitSpeed;
     // Something found lying along the way is only worth getting out for once it is close.
     const t = truck.body.translation();
-    const toFetch = sim.cargo.some((c) => c.fallen && c.body && (!c.bonus || Math.hypot(c.body.translation().x - t.x, c.body.translation().z - t.z) < 20));
+    const toFetch = sim.cargo.some((c) => c.fallen && c.body && (!c.bonus || (level.practice && Math.hypot(c.body.translation().x - t.x, c.body.translation().z - t.z) < 20)));
     return hud.setPrompt(slow && toFetch ? `<b>${key('C', 'Y')}</b> 下車撿貨` : '');
   }
   if (driver.mode === 'down') return hud.setPrompt('被撞倒了…', true);
   if (driver.atLeash) return hud.setPrompt('離貨車太遠了', true);
   if (driver.tooHeavyLeft > 0) return hud.setPrompt('太重了，跳不起來', true);
   if (driver.charge > 0) return hud.setPrompt(`放開${key('左鍵', ' RT ')}拋出　<b>${key('右鍵', 'LT')}</b> 取消`);
-  if (driver.held) return hud.setPrompt(`<b>按住${key('左鍵', ' RT')}</b> 蓄力拋出　<b>${key('E', 'B')}</b> 放下`);
-  if (driver.withinReach(truck, cargoSystem)) return hud.setPrompt(`<b>${key('E', 'B')}</b> 舉起`);
+  if (driver.held) return hud.setPrompt(`<b>按住${key('左鍵', ' RT')}</b> 蓄力拋出　<b>${key('F', 'B')}</b> 放下`);
+  if (driver.withinReach(truck, cargoSystem)) return hud.setPrompt(`<b>${key('F', 'B')}</b> 舉起`);
   if (driver.nearDoor(truck)) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車`);
   hud.setPrompt('');
 }
@@ -1017,6 +1030,9 @@ function frame(now: number): void {
     chat?.cue('save');
   }
 
+  // Fallen in the water on foot: dark for the moment they are fished out, and light again after.
+  if (!guide || !mishapLeft) document.getElementById('fade')!.classList.toggle('on', sim.driver.sinking > 0 && sim.driver.sinking < 0.5);
+
   // The tutorial: a mishap puts the truck back to try that part again, after a moment to see what happened.
   if (guide && !mishapLeft) {
     const mishap = sim.takeMishap();
@@ -1064,6 +1080,7 @@ function frame(now: number): void {
       noteEvent(event);
       if (event.kind === 'fallen' && !event.item.bonus) chat?.cue('fallen');
       else if (event.kind === 'destroyed') chat?.cue('destroyed', event.item.type.id);
+      else if (event.kind === 'found') chat?.cue('found', event.item.type.id);
       soundCargoEvent(event);
     }
     for (const knock of sim.drainKnocks()) showKnock(knock);
@@ -1235,7 +1252,10 @@ function frame(now: number): void {
   // On foot, the right stick aims rather than zooms or looks round; the right button cancels a throw.
   chase.addZoom(input.takeWheel(!onFoot));
   const lookDrag = input.takeLookDrag();
-  if (!onFoot) chase.lookAround(lookDrag, input.rightDown, input.pad.rightX);
+  // On foot the right button still turns the view, unless a throw is being wound up, when it cancels it; the stick aims.
+  // Q and E turn the view as the stick does: held round while driving, turned for good on foot.
+  chase.lookAround(onFoot && driver.charge > 0 ? 0 : lookDrag, input.rightDown && !(onFoot && driver.charge > 0), onFoot ? 0 : input.pad.rightX || input.turnKeys());
+  chase.turnOnFoot(onFoot && driver.charge === 0 ? input.turnKeys() : 0);
   if (!debug.freeze) chase.update(dt, focus, onFoot ? null : truckHeading(), speed, sim.truck.boosting);
   if (!onFoot) {
     emitSmoke(dt, drive, speed);
@@ -1250,6 +1270,7 @@ function frame(now: number): void {
   aimSun(view, focus);
 
   hud.setMode(onFoot, input.usingPad);
+  if (hiddenTotal && !level.practice) hud.setHidden(sim.cargo.filter((c) => c.bonus && c.aboardOnce).length, hiddenTotal);
   hud.tickHelp();
   // Something found along the way counts toward the load once it is aboard, not while it still lies where it was found.
   hud.update(speed, sim.cargoOnTruck(), sim.cargo.filter((c) => !c.bonus || !c.fallen).length, sim.cargoValue(), sim.fullValue, sim.time);
@@ -1259,7 +1280,8 @@ function frame(now: number): void {
   // The bay only takes the load once the last lesson, delivering, is the one being taught.
   if (guide) sim.finishShut = !!guide.current && guide.current.done !== 'delivered';
   navigate();
-  const fallen = sim.cargo.filter((c) => c.fallen && c.body && !c.held).map((c) => ({ x: c.lastPos.x, z: c.lastPos.z }));
+  // Nothing hidden along the way is given away: it is on the map only once it has been aboard.
+  const fallen = sim.cargo.filter((c) => c.fallen && c.body && !c.held && (!c.bonus || c.aboardOnce || level.practice)).map((c) => ({ x: c.lastPos.x, z: c.lastPos.z }));
   minimap.saved = sim.hasSave;
   minimap.update(
     dt, truckAt.x, truckAt.z, truckHeading(), chase.viewYaw, sim.traffic.cars, fallen,

@@ -46,6 +46,15 @@ export class Afloat {
     return this.waters.length > 0;
   }
 
+  /** Taken out of the water by hand, not by its own going: as it was before it went in, solid and in the world again. */
+  forget(body: RAPIER.RigidBody): void {
+    const w = this.wet.get(body.handle);
+    if (!w) return;
+    this.dry(w);
+    this.wet.delete(body.handle);
+    if (!body.isEnabled()) body.setEnabled(true);
+  }
+
   /** Call every step for each loose body that might go in, saying whether it is the kind that sinks. */
   step(body: RAPIER.RigidBody, sinks: boolean, dt: number): void {
     const p = body.translation();

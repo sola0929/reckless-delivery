@@ -556,6 +556,9 @@ export class ObjectSystem {
     }
     // A crash barrier still standing is never gone through: it holds, or it is broken first.
     for (const object of found) if (object.kind.sturdy && !object.near) found.delete(object);
+    // Nor is a coil rolled down a hill: on its side it reads as something fallen flat, small enough to go under the frame,
+    // and let through it went through the cab and into the load.
+    for (const object of found) if (object.pace !== undefined) found.delete(object);
     for (const object of found) if (!this.under.has(object)) this.setGroups(object, this.letThrough(object));
     for (const object of this.under) if (!found.has(object)) this.setGroups(object, solidOf(object.kind));
     this.under = found;
@@ -670,7 +673,10 @@ export class ObjectSystem {
       this.world.contactPairsWith(own, (other) => {
         if (met || (other.collisionGroups() >>> 16) & GROUP.ground || this.byCollider.get(other.handle)?.rolling) return;
         this.world.contactPair(own, other, (manifold) => {
-          if (manifold.numContacts() === 0 || Math.abs(manifold.normal().y) >= 0.7) return;
+          // The truck is met however it is touched: a coil coming down on to its bonnet from above, taken for something to
+          // roll on, went on rolling, at the pace it was given, through the cab and into the load.
+          const onTruck = ((other.collisionGroups() >>> 16) & GROUP.truck) !== 0;
+          if (manifold.numContacts() === 0 || (!onTruck && Math.abs(manifold.normal().y) >= 0.7)) return;
           const body = other.parent();
           // A kerb, or the edge of a slab of paving: something fixed whose top is well below its middle is rolled over, not met.
           if (body?.isFixed() && other.shape.type === RAPIER.ShapeType.Cuboid) {
@@ -678,7 +684,7 @@ export class ObjectSystem {
             if (top < object.body.translation().y - 0.25) return;
           }
           const loose = this.byCollider.get(other.handle);
-          const truck = ((other.collisionGroups() >>> 16) & GROUP.truck) !== 0;
+          const truck = onTruck;
           if (heavy && body?.isKinematic()) {
             if (!this.rammed.some((r) => r.body === body)) this.rammed.push({ body, by: object });
           } else if (heavy && !truck && !loose && body?.isDynamic() && body.mass() < object.body.mass()) {

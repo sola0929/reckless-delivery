@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
-import { GROUP, PHYSICS, TRUCK, groups } from '../config';
+import { DRIVER, GROUP, PHYSICS, TRUCK, groups } from '../config';
 
 /** How long a manhole blows for; and how hard the water under the truck pushes it up at first, as a share of the truck's weight. */
 const JET_SECONDS = 2.5;
@@ -80,6 +80,8 @@ export interface Result {
   trip: Trip;
   /** How many times the run went back to its save point. */
   retries: number;
+  /** On a level with things hidden along the way: how many of them were brought in, of how many, and what they added. */
+  hidden?: { found: number; total: number; value: number };
 }
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
@@ -278,6 +280,8 @@ export class Sim {
     this.rigs = new Rigs(this.world, level.rigs ?? []);
     this.droppers = new Droppers(this.world, level.droppers ?? []);
     this.driver = new Driver(this.world, !!level.terrain);
+    this.driver.carryFalls = !!level.carryFalls;
+    this.driver.floor = level.footFloor ?? 0;
     this.truck.rolls = !!level.rollback;
     this.started = !level.startLine;
     this.water = new Water(level.pits ?? []);
@@ -293,7 +297,8 @@ export class Sim {
     this.battle = new Battle(this.world, level.battle);
     this.cargoSystem = new CargoSystem(this.world, level.damageScale ?? 1);
     this.cargoSystem.load(level.cargo, level.spawn, level.heading);
-    this.fullValue = this.cargo.reduce((sum, item) => sum + item.type.value, 0);
+    // Anything hidden along the way is extra: it adds to what is delivered, never to what there was to deliver.
+    this.fullValue = this.cargo.reduce((sum, item) => sum + (item.bonus ? 0 : item.type.value), 0);
   }
 
   get cargo(): CargoItem[] {
@@ -311,6 +316,16 @@ export class Sim {
     this.truck.sideGrip = (this.level.fords && this.fordAt(this.truck.body.translation())?.sideGrip) ?? 1;
     this.flung -= PHYSICS.dt;
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
+    // Wading in a river, the current takes them downstream: shallow water with a surface, their feet under it.
+    this.driver.current.x = this.driver.current.z = 0;
+    if (this.driver.mode === 'onFoot' && this.level.fords) {
+      const ford = this.fordAt(this.driver.pos);
+      const speed = ford ? Math.hypot(ford.flow[0], ford.flow[1]) : 0;
+      if (ford && !ford.deep && ford.surface !== undefined && speed > 0 && this.driver.pos.y < ford.surface - 0.1) {
+        this.driver.current.x = (ford.flow[0] / speed) * DRIVER.wadeDrift;
+        this.driver.current.z = (ford.flow[1] / speed) * DRIVER.wadeDrift;
+      }
+    }
     this.driver.update(PHYSICS.dt, foot, this.truck, this.cargoSystem, this.traffic, this.riders, this.trains, !this.result);
     this.trains.update(PHYSICS.dt, this.truck.body.translation());
     this.struck -= PHYSICS.dt;
@@ -371,6 +386,7 @@ export class Sim {
     const trying = driving && (input.throttle !== 0) && !input.handbrake && Math.abs(this.truck.forwardSpeed()) < 0.4;
     this.stalled = trying ? this.stalled + PHYSICS.dt : 0;
     this.objects.update(this.truck, this.stalled > STALL_SECONDS);
+    this.unpinHidden();
     this.burstMain();
     this.rollers.update(PHYSICS.dt, this.truck.body.translation());
     for (const blast of this.objects.blasts) this.blast(blast);
@@ -966,8 +982,64 @@ export class Sim {
       for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled()) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
       for (const car of this.traffic.cars) if (car.knocked > 0) this.afloat.step(car.body, true, PHYSICS.dt);
     }
-    if (this.driver.mode !== 'driving' && this.water.under({ x: this.driver.pos.x, y: this.driver.pos.y + 1, z: this.driver.pos.z })) {
-      this.driver.fishOut(this.truck, this.cargoSystem);
+    // In the water, or down on ground the level counts as sinking (a pond drawn as its surface, a drop): fished out.
+    const footing = this.driver.mode !== 'driving' && this.level.sinks && !this.driver.airborne ? this.level.terrain?.surface?.(this.driver.pos.x, this.driver.pos.z) : undefined;
+    // Or over their waist in a river too deep to wade, on the way down to its bed.
+    const deep = this.driver.mode === 'onFoot' && this.level.fords ? this.fordAt(this.driver.pos) : undefined;
+    const sunk = (!!footing && this.level.sinks!.includes(footing.tag) && this.driver.pos.y < footing.h + 0.3)
+      || (!!deep?.deep && deep.surface !== undefined && this.driver.pos.y + 0.9 < deep.surface);
+    // On foot within a demolition ball's reach as it comes round fast: knocked flying, and whatever they carried with them.
+    if (this.driver.mode === 'onFoot') {
+      for (const rig of this.rigs.list) {
+        if (rig.desc.kind !== 'ball') continue;
+        const ball = rig.parts[2].body;
+        const b = ball.translation(), lv = ball.linvel();
+        const speed = Math.hypot(lv.x, lv.z);
+        const dy = this.driver.pos.y + 0.85 - b.y;
+        if (speed > 2 && Math.hypot(this.driver.pos.x - b.x, this.driver.pos.z - b.z) < 1.5 + 0.45 && Math.abs(dy) < 1.5 + 0.85) {
+          this.driver.struck(lv.x, lv.z, speed, this.cargoSystem);
+        }
+      }
+    }
+    // A moment floundering where they went in, then fished out: not snatched out of the water in the same instant.
+    if (this.driver.sinking > 0) {
+      this.driver.sinking -= PHYSICS.dt;
+      if (this.driver.sinking <= 0) this.driver.fishOut(this.truck, this.cargoSystem);
+    } else if (this.driver.mode !== 'driving' && (sunk || this.water.under({ x: this.driver.pos.x, y: this.driver.pos.y + 1, z: this.driver.pos.z }))) {
+      this.driver.sink(this.cargoSystem);
+    }
+  }
+
+  /**
+   * Things hidden along the way are pinned where they were left until the truck is close, or something within reach of
+   * them moves: the scaffold a pot sits on coming down, a stall knocked into it.
+   */
+  private unpinHidden(): void {
+    const t = this.truck.body.translation();
+    for (const item of this.cargo) {
+      // Lost in the water, and not yet brought aboard: after a moment it is back where it was left, to be fetched again.
+      if (item.home && !item.held && !item.pinned && item.body && !this.truck.isOnBed(item.body.translation())) {
+        const p = item.body.translation();
+        const under = this.level.sinks && this.level.terrain?.surface?.(p.x, p.z);
+        const wet = (!!under && this.level.sinks!.includes(under.tag) && p.y < under.h + 0.6) || this.water.under(p);
+        item.soaked = wet ? item.soaked + PHYSICS.dt : 0;
+        if (item.soaked > 1.5) {
+          // Out of the water's keeping first: left in it, it is still sinking, through anything, when it is next let go.
+          this.afloat.forget(item.body);
+          this.cargoSystem.putBack(item);
+        }
+      }
+      if (!item.pinned || !item.body) continue;
+      const p = item.body.translation();
+      const near = Math.hypot(p.x - t.x, p.y - t.y, p.z - t.z) < 6;
+      const stirred = !near && this.objects.objects.some((o) => {
+        if (!o.body.isEnabled() || o.body.isSleeping()) return false;
+        const q = o.body.translation();
+        if (Math.abs(q.x - p.x) > 2.5 || Math.abs(q.z - p.z) > 2.5 || Math.abs(q.y - p.y) > 3) return false;
+        const v = o.body.linvel();
+        return Math.hypot(v.x, v.y, v.z) > 0.5;
+      });
+      if (near || stirred) this.cargoSystem.unpin(item);
     }
   }
 
@@ -1013,6 +1085,8 @@ export class Sim {
 
     const value = this.deliverableValue();
     const fraction = value / this.fullValue;
+    const hiddenItems = this.cargo.filter((c) => c.bonus);
+    const brought = hiddenItems.filter((c) => c.stage === 3 || (c.body && !c.held && this.truck.isOnBed(c.body.translation())));
     this.result = {
       value,
       fraction,
@@ -1021,6 +1095,9 @@ export class Sim {
       tally: this.tally(),
       trip: this.trip(),
       retries: this.retries,
+      hidden: hiddenItems.length && !this.level.practice
+        ? { found: brought.filter((c) => c.value > 0).length, total: hiddenItems.length, value: brought.reduce((sum, c) => sum + c.value, 0) }
+        : undefined,
     };
   }
 }

@@ -108,7 +108,9 @@ export class DriverView {
     this.arc.visible = this.landing.visible = driver.plan !== null;
     if (!out) return;
 
-    this.root.rotation.y = driver.yaw;
+    // The figure turns quickly but not in a blink: a tenth of a second or so round to the way they face.
+    const turn = Math.atan2(Math.sin(driver.yaw - this.root.rotation.y), Math.cos(driver.yaw - this.root.rotation.y));
+    this.root.rotation.y += turn * (1 - Math.exp(-28 * dt));
     this.leash.position.set(truck.x, 0.06, truck.z);
     (this.leash.material as THREE.LineBasicMaterial).color.set(driver.atLeash ? 0xff5040 : 0xffffff);
 

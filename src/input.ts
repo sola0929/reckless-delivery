@@ -2,18 +2,18 @@ import { Pad, type PadButton } from './gamepad';
 import type { DriveInput } from './sim/truck';
 
 const HANDLED = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyE', 'KeyH',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyE', 'KeyF', 'KeyQ', 'KeyH',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'Escape', 'KeyP',
   'Enter',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0',
 ]);
 
 /** Keys whose presses are picked up once each, rather than read as held. */
-export type PressKey = 'KeyC' | 'KeyE' | 'KeyH' | 'Space' | 'Escape' | 'KeyP' | 'Enter' | `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+export type PressKey = 'KeyC' | 'KeyF' | 'KeyH' | 'Space' | 'Escape' | 'KeyP' | 'Enter' | `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /** Which controller button stands for each key that is pressed once. A (jump, handbrake) also closes the start banner. */
 const PAD_PRESS: [PadButton, PressKey[]][] = [
-  ['a', ['Space', 'Enter']], ['b', ['KeyE']], ['y', ['KeyC']], ['lb', ['KeyH']], ['start', ['Escape']],
+  ['a', ['Space', 'Enter']], ['b', ['KeyF']], ['y', ['KeyC']], ['lb', ['KeyH']], ['start', ['Escape']],
 ];
 
 export class Input {
@@ -88,6 +88,11 @@ export class Input {
     if (pad.wasPressed('lt')) this.padCancel = true;
     const touched = this.padPressed.size > 0 || pad.leftX || pad.leftY || pad.rightX || pad.rightY || pad.lt || pad.rt || pad.isHeld('x');
     if (touched) this.usingPad = true;
+  }
+
+  /** Q and E held, to turn the view: -1 to the left, 1 to the right, 0 for neither or both. */
+  turnKeys(): number {
+    return (this.down.has('KeyE') ? 1 : 0) - (this.down.has('KeyQ') ? 1 : 0);
   }
 
   private held(...codes: string[]): boolean {

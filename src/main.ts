@@ -155,6 +155,12 @@ function showMenu(): void {
       : state === 'open' ? '還沒有紀錄'
       : state === 'locked' ? '完成上一關後開放'
       : '製作中，敬請期待';
+    // The things hidden along the way: a slot for each, lit for as many as one run has brought in, stamped when that was all.
+    const total = LEVEL_LIST[i].hidden ?? 0;
+    const found = Math.min(total, best?.found ?? 0);
+    const slots = total
+      ? `<div class="level-hidden" title="隱藏貨物 ${found} / ${total}">${Array.from({ length: total }, (_, k) => `<span${k < found ? ' class="on"' : ''}></span>`).join('')}${found === total ? '<em>全收</em>' : ''}</div>`
+      : '';
     const card = document.createElement('button');
     card.type = 'button';
     card.className = `level-card ${state}`;
@@ -163,7 +169,7 @@ function showMenu(): void {
       `<div class="level-thumb ${id}"><span>${badge}</span>${state === 'locked' ? LOCK : ''}</div>` +
       `<div class="level-state">${LABEL[state]}</div>` +
       `<div class="level-name">${name}</div><div class="level-note">${note}</div>` +
-      `<div class="level-stars">${stars}</div><div class="level-best">${record}</div>`;
+      `<div class="level-stars">${stars}</div>${slots}<div class="level-best">${record}</div>`;
     hook(id, card);
     list.append(card);
   });
@@ -236,6 +242,7 @@ function showMenu(): void {
       (count ? `<span>貨物 <b>${count}</b> 件　價值 <b>$${worth.toLocaleString()}</b></span>` : '') +
       (tutorial ? '<span>不計分，隨時可以跳過</span>' : '<span><i>★</i> 抵達　<i>★★</i> 送達 30%　<i>★★★</i> 送達 60%</span>');
     const best = state === 'done' ? loadBest(id) : null;
+    if (entry.hidden) preview.querySelector('.preview-facts')!.innerHTML += `<span>隱藏貨物 <b>${Math.min(entry.hidden, best?.found ?? 0)} / ${entry.hidden}</b></span>`;
     preview.querySelector('.preview-best')!.textContent = tutorial ? '' :
       best ? `最佳紀錄：送達 ${Math.floor(best.fraction * 100)}%　最快 ${best.seconds != null ? clock(best.seconds) : '－'}`
       : state === 'locked' ? '完成上一關後開放'

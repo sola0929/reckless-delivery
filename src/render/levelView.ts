@@ -294,7 +294,8 @@ function nameTexture(text = '山城國小', ground = '#1f4f9a', rim = '#d9a62e',
   g.font = 'bold 72px sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(text, 256, 60);
+  // A long name is squeezed to fit inside the rim rather than run off its ends.
+  g.fillText(text, 256, 60, 470);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
@@ -358,15 +359,15 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
 function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
   const group = new THREE.Group();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
-  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : arrowTexture(kind) }));
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'concert' ? nameTexture('熱音社 成果發表會', '#2a3a6a', '#ffd166') : kind === 'aYu' ? nameTexture('阿玉豆花', '#2f6fb0', '#f2efe6') : arrowTexture(kind) }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
-    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight' || sign.kind === 'canteen' || sign.kind === 'bento') {
+    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight' || sign.kind === 'canteen' || sign.kind === 'bento' || sign.kind === 'concert' || sign.kind === 'aYu') {
       // Upright, its middle where it is put: over a gate, on a wall. A shop's is smaller than a school's, a shed's larger.
-      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : sign.kind === 'canteen' ? 4.4 : sign.kind === 'bento' ? 3 : 6;
+      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : sign.kind === 'canteen' ? 4.4 : sign.kind === 'bento' ? 3 : sign.kind === 'concert' ? 7 : sign.kind === 'aYu' ? 2 : 6;
       // One that fades has materials of its own.
       const [back, face] = sign.fadeZone ? [steel.clone(), faceOf(sign.kind).clone()] : [steel, faceOf(sign.kind)];
       const plate = new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);

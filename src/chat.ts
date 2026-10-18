@@ -25,10 +25,12 @@ const GAP = 5;
 const CHANCE: Partial<Record<ChatCue, number>> = { destroyed: 0.5, fallen: 0.4, hits: 0.3 };
 /** Seconds something may wait its turn before it is no longer worth saying. */
 const WAIT = 15;
+/** Something hidden found along the way is the one thing never to go unsaid: it goes first, and waits out whatever is on. */
+const FOUND_WAIT = 60;
 /** Lines kept in sight; older ones go off the top. */
 const SHOWN = 4;
 /** Which goes first when several are waiting: a place's word, while the truck is still there, then the most pressing. */
-const ORDER: (ChatCue | 'place')[] = ['place', 'train', 'destroyed', 'back', 'save', 'near', 'fallen', 'below30', 'below60', 'hits', 'start', 'idle'];
+const ORDER: (ChatCue | 'place')[] = ['found', 'place', 'train', 'destroyed', 'back', 'save', 'near', 'fallen', 'below30', 'below60', 'hits', 'start', 'idle'];
 
 type Who = 'boss' | 'customer';
 /** Something waiting to be written about: what it is, and the seconds it may still wait. The words are chosen when it begins. */
@@ -64,10 +66,11 @@ export class Chat {
   /** Something has happened: it is written about when its turn comes, if there is still something unsaid for it. `item` is the kind of thing wrecked. */
   cue(cue: ChatCue, item?: string): void {
     // Once in the line is enough: a second fall while the first is waiting says nothing more.
-    if (this.queue.some((p) => p.cue === cue)) return;
+    // (Two things found are two things to say, though.)
+    if (this.queue.some((p) => p.cue === cue && (cue !== 'found' || p.item === item))) return;
     const own = cue === 'destroyed' && item !== undefined && this.pick(this.customer.wrecked[item]) !== null;
     if (!own && Math.random() >= (CHANCE[cue] ?? 1)) return;
-    this.queue.push({ cue, item, left: WAIT });
+    this.queue.push({ cue, item, left: cue === 'found' ? FOUND_WAIT : WAIT });
   }
 
   /** Coming into one of the level's places: its word, when its turn comes. */
@@ -155,6 +158,11 @@ export class Chat {
       return this.used.has(spot.talk) ? null : { from: spot.from ?? 'customer', talk: spot.talk };
     }
     const cue = p.cue;
+    // Something of the customer's found along the way: theirs to say, or nothing.
+    if (cue === 'found') {
+      const talk = p.item ? this.pick(this.customer.found?.[p.item]) : null;
+      return talk ? { from: 'customer', talk } : null;
+    }
     if (cue === 'destroyed' && p.item) {
       const talk = this.pick(this.customer.wrecked[p.item]);
       if (talk) return { from: 'customer', talk };

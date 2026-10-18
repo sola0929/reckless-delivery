@@ -34,6 +34,8 @@ export class ChaseCamera {
   private fov = CAMERA.fov;
   /** Extra zoom while following the driver on foot, eased in and out. */
   private closeUp = 1;
+  /** How far into the view on foot it has come: 0 behind the truck, 1 over the driver. */
+  private footness = 0;
   private readonly focus = new THREE.Vector3();
   private wasOnFoot = false;
   private glide = 0;
@@ -44,6 +46,7 @@ export class ChaseCamera {
   private lookDrag = 0;
   private lookHeld = false;
   private lookStick = 0;
+  private footTurn = 0;
   /** How far the road drops away ahead, metres, eased: the camera rises to see down it. */
   private drop = 0;
   /** And how far it climbs ahead: the camera aims up it. */
@@ -56,14 +59,20 @@ export class ChaseCamera {
     return this.yaw + this.look;
   }
 
+  /** On foot, for this frame: Q and E, -1 to 1, turning the view round: plus to the right. */
+  turnOnFoot(turn: number): void {
+    // A larger yaw looks further to the left (+X is to the left of +Z), so a turn to the right takes it down.
+    this.footTurn = -turn;
+  }
+
   /**
-   * Look round while driving, for this frame: pixels dragged across with the right button and whether it is held,
-   * and the controller's stick across, -1 to 1.
+   * Look round, for this frame: pixels dragged across with the right button and whether it is held, and the controller's
+   * stick across (or Q and E), -1 to 1. Dragged or pushed to the right, the view turns to the right, as in most games.
    */
   lookAround(drag: number, holding: boolean, stick: number): void {
-    this.lookDrag += drag;
+    this.lookDrag -= drag;
     this.lookHeld = holding;
-    this.lookStick = stick;
+    this.lookStick = -stick;
   }
 
   addZoom(wheelDelta: number): void {
@@ -80,6 +89,7 @@ export class ChaseCamera {
     this.yaw = heading;
     this.speed = this.lastSpeed = this.surge = 0;
     this.closeUp = 1;
+    this.footness = 0;
     this.glide = 0;
     this.wasOnFoot = false;
     this.look = this.lookDrag = this.drop = this.rise = 0;
@@ -93,10 +103,13 @@ export class ChaseCamera {
   update(dt: number, position: THREE.Vector3, heading: number | null, speed: number, boosting: boolean): void {
     const onFoot = heading === null;
     if (!onFoot) this.yaw += angleDelta(this.yaw, heading) * ease(CAMERA.yawFollow, dt);
-    // Looking round: on foot the view is held as it is, the look taken into it, so the screen's "up" stays put.
+    // On foot the view is held as it is, the look taken into it, so the screen's "up" stays put: turned only by Q and E,
+    // or by dragging with the right button. (It no longer follows them round as they walk: two ways at once was too much.)
     if (onFoot) {
       this.yaw += this.look;
       this.look = 0;
+      if (this.lookHeld) this.yaw += this.lookDrag * CAMERA.lookPerPixel;
+      this.yaw += this.footTurn * CAMERA.footTurn * dt;
     } else if (this.lookHeld) this.look += this.lookDrag * CAMERA.lookPerPixel;
     else if (this.lookStick) this.look += (this.lookStick * CAMERA.lookMax - this.look) * ease(CAMERA.lookStickFollow, dt);
     else this.look -= this.look * ease(CAMERA.lookReturn, dt);
@@ -104,6 +117,7 @@ export class ChaseCamera {
     this.lookDrag = 0;
     this.speed += ((onFoot ? 0 : Math.abs(speed)) - this.speed) * ease(CAMERA.speedFollow, dt);
     this.closeUp += ((onFoot ? CAMERA.footZoom : 1) - this.closeUp) * ease(CAMERA.footZoomFollow, dt);
+    this.footness += ((onFoot ? 1 : 0) - this.footness) * ease(CAMERA.footZoomFollow, dt);
     // Glide between the truck and the driver when the view changes hands, rather than cutting.
     if (onFoot !== this.wasOnFoot) this.glide = CAMERA.handoverSeconds;
     this.wasOnFoot = onFoot;
@@ -147,11 +161,12 @@ export class ChaseCamera {
     // Halved under braking, or the truck slides off the bottom of the screen.
     const lag = this.surge * CAMERA.surgeDistance * (this.surge < 0 ? 0.5 : 1) * Math.min(1, zoom);
     const distance = (this.view.distance + this.speed * CAMERA.distancePerSpeed) * zoom + lag;
-    const height = (this.view.height + this.speed * CAMERA.heightPerSpeed) * zoom + lift;
+    const height = (this.view.height + this.speed * CAMERA.heightPerSpeed) * zoom * (1 + this.footness * CAMERA.footRise) + lift;
     // Zoomed in, the camera sits almost over the tail, so aim at the truck itself rather
     // than the road ahead, or the back of the bed drops out of view.
     const closeness = THREE.MathUtils.clamp((1 - this.zoom) / (1 - CAMERA.minZoom), 0, 1);
-    const ahead = onFoot ? 0 : THREE.MathUtils.lerp(this.view.lookAhead + this.speed * CAMERA.lookAheadPerSpeed, CAMERA.closeLookAhead, closeness);
+    const driving = THREE.MathUtils.lerp(this.view.lookAhead + this.speed * CAMERA.lookAheadPerSpeed, CAMERA.closeLookAhead, closeness);
+    const ahead = THREE.MathUtils.lerp(driving, CAMERA.footLookAhead * zoom, this.footness);
 
     this.camera.position.copy(this.focus).addScaledVector(dir, -distance);
     this.camera.position.y = this.focus.y + height;

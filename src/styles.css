@@ -527,6 +527,59 @@ body {
   background: #6fd08c;
 }
 
+/* More than the whole load: what was found along the way on top of it. */
+#result-value .fill.over {
+  background: linear-gradient(90deg, #6fd08c, #ffd166);
+  box-shadow: 0 0 12px rgba(255, 209, 102, 0.6);
+}
+
+/* The things hidden along the way that were brought in. */
+#result-hidden {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(255, 209, 102, 0.1);
+  font-size: 14px;
+}
+
+#result-hidden:empty {
+  display: none;
+}
+
+#result-hidden b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+#result-hidden em {
+  font-style: normal;
+  color: #ffd166;
+  font-weight: 700;
+}
+
+#result-hidden i {
+  margin-left: auto;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: #ffd166;
+  color: #1c222b;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+/* Found along the way: said large in the middle of the view. */
+.popup.found {
+  font-size: 30px;
+  font-weight: 900;
+  color: #ffd166;
+  text-shadow: 0 0 16px rgba(255, 209, 102, 0.6), 0 2px 4px rgba(0, 0, 0, 0.6);
+  animation-duration: 2.2s;
+}
+
 #result-value .mark {
   position: absolute;
   top: -4px;
