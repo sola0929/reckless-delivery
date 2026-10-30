@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { GROUP, TRUCK, groups } from '../config';
 import { OBJECT_KINDS, POLE_SPACING, type ObjectDesc, type ObjectKind } from '../levels/objects';
+import type { Rigs } from './rigs';
 import type { Truck } from './truck';
 
 export interface LooseObject {
@@ -12,6 +13,10 @@ export interface LooseObject {
   near: boolean;
   /** Whether it has been knocked yet. Until then it stands asleep where it was put. */
   knocked: boolean;
+  /** Let go by a gust: from then on the wind's and the solver's, not tossed as though the truck had hit it, and solid to the truck. */
+  blown?: boolean;
+  /** Let fall from where it hung (`letGoWithin`): until it comes to rest, solid to the truck, light as it may be. */
+  falling?: boolean;
   /** How tall it stands, metres. */
   height: number;
   /** Whether it was hit hard enough to be left in pieces, if it is the kind of thing that can be. */
@@ -38,6 +43,8 @@ export interface LooseObject {
   afloat?: boolean;
   /** Knocked down far behind the truck and come to rest, or near enough: left lying there, out of the physics. */
   shelved?: boolean;
+  /** On the deck of something afloat and carried by it, not yet come to by the truck: moved with the deck, not by the physics. */
+  riding?: boolean;
   /** For something that walks about: where it is now and which way it faces, where it is going, and how long it stands pecking first. */
   walk?: { x: number; z: number; yaw: number; tx: number; tz: number; pause: number; peck: number };
 }
@@ -68,6 +75,12 @@ export interface KnockEvent {
   at: { x: number; y: number; z: number };
 }
 
+/** A stack of heavy stock coming down with the truck within this many metres comes down onto it: going over at whatever
+ * speed takes it to the truck's middle in so long, seconds, no faster than so much, m/s. */
+const ONTO_TRUCK_WITHIN = 4.5;
+const ONTO_SECONDS = 0.7;
+const ONTO_MOST = 4;
+
 /** Faster than this and it counts as knocked, m/s. */
 const KNOCK_SPEED = 1.5;
 /** Things this heavy, kg, rolling, go through cars and small things in their way rather than stop at them. */
@@ -85,6 +98,8 @@ const LAND_CHANGE = 3;
 /** And isn't reported again for this long: one landing is several steps of contact. */
 const LAND_HUSH = 0.25;
 const STEP = 1 / 60;
+/** Things on a deck this near one another, metres across, are one stack: the truck coming to one lets go of them all. */
+const STACK_REACH = 0.9;
 const q = new Quaternion();
 const e = new Euler();
 const v = new Vector3();
@@ -111,6 +126,8 @@ const FLAT = groups(GROUP.prop, GROUP.all & ~GROUP.prop);
 const solidOf = (kind: ObjectKind) => (kind.underfoot ? FLAT : SOLID);
 /** On ground that is not level: how near the truck must come, metres, before something that has stirred is left to itself. */
 /** How near the truck's body, metres, a held thing must be to be let go. */
+/** How fast something hung on a wall goes over as it is let go, the way it leans, rad/s; its middle goes out at this times about its height to its middle. */
+const TORN_OFF = 1.6;
 const HELD_MARGIN = 1.2;
 /** What something caught beneath the truck becomes: solid to everything but the truck. */
 const PASSING_UNDER = groups(GROUP.prop, GROUP.all & ~GROUP.truck);
@@ -125,6 +142,10 @@ const UNDER_DROP = 0.42;
 const MEET_SPEED = 2;
 /** Lighter than this, kg, a thing that has been knocked is never left to wedge beneath the truck or against it. */
 const UNDER_MASS = 150;
+/** Something blown along faster than this, m/s, is still on its way: not let under the truck. */
+const BLOWN_SPEED = 3;
+/** And something let fall, faster than this either way. */
+const FALLING_SPEED = 1.5;
 /** The whole of the truck, and a little more: half extents, and how far above its centre. */
 const AROUND_HALF = { x: 1.5, y: 1.1, z: 4.0 };
 const AROUND_RISE = 0.4;
@@ -153,6 +174,12 @@ function roundedBox(a: number, b: number, c: number): RAPIER.ColliderDesc {
 }
 
 /** Whether an object has gone over: tipped more than half way to the ground. */
+/** Going fast enough across the ground to be still on its way, not come to rest. */
+function flying(object: LooseObject): boolean {
+  const v = object.body.linvel();
+  return Math.hypot(v.x, v.z) > BLOWN_SPEED;
+}
+
 function lying(object: LooseObject): boolean {
   const r = object.body.rotation();
   return 1 - 2 * (r.x * r.x + r.z * r.z) < 0.5;
@@ -181,6 +208,8 @@ export class ObjectSystem {
   private readonly noseShape = new RAPIER.Cuboid(NOSE_HALF.x, NOSE_HALF.y, NOSE_HALF.z);
   private readonly cabShape = new RAPIER.Cuboid(TRUCK.cab.half[0] - CAB_SKIN, TRUCK.cab.half[1] - CAB_SKIN, TRUCK.cab.half[2] - CAB_SKIN);
   private riding = new Set<LooseObject>();
+  /** The rigs, for what rides on the decks of what floats. */
+  private rigs?: Rigs;
   private seed = 3;
 
   /**
@@ -191,20 +220,20 @@ export class ObjectSystem {
   constructor(private readonly world: RAPIER.World, descs: ObjectDesc[], private readonly held = false) {
     for (const desc of descs) {
       const kind: ObjectKind = OBJECT_KINDS[desc.kind];
-      q.setFromEuler(e.set(desc.tilt ?? 0, desc.rotY ?? 0, 0, 'YXZ'));
+      q.setFromEuler(e.set(desc.tilt ?? 0, desc.rotY ?? 0, desc.roll ?? 0, 'YXZ'));
       const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.dynamic()
+        (desc.deck !== undefined ? RAPIER.RigidBodyDesc.kinematicPositionBased() : RAPIER.RigidBodyDesc.dynamic())
           .setTranslation(...desc.pos)
           .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
           // Light things don't roll on and on: a barrel or a can slows as if the road dragged at it.
           // Heavy ones are left alone, to fall as they should.
           .setLinearDamping(kind.mass < ROLLS_BELOW ? 0.25 : 0)
           .setAngularDamping(kind.mass < ROLLS_BELOW ? 1.8 : 0)
-          .setSleeping(true),
+          .setSleeping(desc.deck === undefined),
       );
       const solid = kind.parts.filter((p) => !p.ghost);
       const height = Math.max(...solid.map((p) => p.pos[1] + p.size[1]));
-      const object: LooseObject = { desc, kind, body, near: false, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1, cut: 0 };
+      const object: LooseObject = { desc, kind, body, near: false, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1, cut: 0, riding: desc.deck !== undefined };
       const shares = solid.reduce((sum, p) => sum + (p.weight ?? 1), 0);
       for (const part of solid) {
         const [a, b, c] = part.size;
@@ -220,7 +249,8 @@ export class ObjectSystem {
             .setTranslation(...part.pos)
             .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
             .setMass((kind.mass * (part.weight ?? 1)) / shares)
-            .setFriction(0.7)
+            .setFriction(kind.slippery ? 0.03 : 0.7)
+            .setFrictionCombineRule(kind.slippery ? RAPIER.CoefficientCombineRule.Min : RAPIER.CoefficientCombineRule.Average)
             .setRestitution(0.15)
             .setCollisionGroups(solidOf(kind)),
           body,
@@ -238,7 +268,7 @@ export class ObjectSystem {
     this.blasts = [];
     // Firecrackers on the ground: set off by the truck rolling over them, and each sets off those beside it a moment later.
     for (const object of this.objects) {
-      if (object.fallIn !== undefined && (object.fallIn -= STEP) <= 0) this.fall(object);
+      if (object.fallIn !== undefined && (object.fallIn -= STEP) <= 0) this.fall(object, truck);
       if (object.afloat && !object.rolling) this.settle(object);
       // Hens about their doorsteps, while the truck is near enough to see them. Further off they stand still, asleep: every
       // one awake is another body for the physics to keep against the ground, step after step.
@@ -277,12 +307,34 @@ export class ObjectSystem {
     }
     for (const object of this.objects) {
       if (object.fuse >= 0 && (object.fuse -= STEP) < 0) this.explode(object);
-      if (truck && (object.knocked || object.pace !== undefined) && this.leftBehind(object, truck)) continue;
+      // Something hung up that comes down once the truck is near enough under it: a shop sign hanging by one corner.
+      const letGo = object.desc.letGoWithin;
+      if (letGo !== undefined && !object.near && truck) {
+        const p = object.body.translation(), t = truck.body.translation();
+        if (Math.hypot(p.x - t.x, p.z - t.z) < letGo) {
+          object.near = true;
+          object.falling = true;
+          object.body.wakeUp();
+          // Torn off a wall, it goes over the way it leans, top first, as it drops.
+          const lean = object.desc.lean;
+          if (lean) {
+            // Turning about its foot on the wall, not through it: its middle goes out as it turns.
+            object.body.setAngvel({ x: lean[1] * TORN_OFF, y: 0, z: -lean[0] * TORN_OFF }, true);
+            object.body.setLinvel({ x: lean[0] * TORN_OFF * 0.8, y: 0, z: lean[1] * TORN_OFF * 0.8 }, true);
+          }
+        }
+      }
+      if (object.riding) continue;
+      if (truck && (object.knocked || object.pace !== undefined) && object.desc.deck === undefined && this.leftBehind(object, truck)) continue;
       if (object.body.isSleeping()) {
         object.was = null;
         continue;
       }
-      if (object.knocked) {
+      // What the wind has carried is the wind's while it flies, and lying where it came down, until the truck comes into
+      // it, or it is going along with the truck, shoved in front of it: then it is hit like anything else, tossed aside
+      // and, light, let through. Left solid, it would be pushed along in a heap ahead of the truck, the gust pushing it
+      // back the while. Flying into the truck, it is still the wind's: it strikes it.
+      if (object.knocked || (object.blown && !(truck && this.against(truck, object.body.translation()) && this.withTruck(object, truck)))) {
         this.listen(object);
         continue;
       }
@@ -292,7 +344,7 @@ export class ObjectSystem {
         if (!this.meets(object)) continue;
         object.rolling = false;
       }
-      const v = object.body.linvel();
+      const v = this.velocity(object);
       const speed = Math.hypot(v.x, v.y, v.z);
       // A scaffold is tied together and to the house: something flung at it does not bring it down. Only the truck does,
       // or the pieces next to it going.
@@ -302,12 +354,16 @@ export class ObjectSystem {
         const t = truck?.body.translation();
         const tv = truck?.body.linvel();
         const hard = !object.kind.sturdy || (tv !== undefined && Math.hypot(tv.x, tv.z) >= object.kind.sturdy);
-        if (t && truck && this.against(truck, p) && hard) object.near = true;
-        else {
+        if (t && truck && this.against(truck, p) && hard) {
+          object.near = true;
+          if (object.kind.stacked) this.letGoOfPile(object);
+        } else {
           this.stand(object);
           continue;
         }
       }
+      // Rolling or sliding about a deck by itself is not being knocked: only the truck knocks it.
+      if (object.desc.free && !object.knocked && !(truck && this.against(truck, object.body.translation()))) continue;
       if (speed < KNOCK_SPEED) {
         if (this.held && !object.near) {
           const p = object.body.translation();
@@ -327,7 +383,7 @@ export class ObjectSystem {
       // Something light that the truck has just hit is tossed up, below; and it is not to
       // come up under the truck's nose and toss the truck. It stops being solid to the
       // truck here and now, not a step later.
-      if (truck && object.kind.mass < UNDER_MASS && !this.under.has(object)) {
+      if (truck && object.kind.mass < UNDER_MASS && !object.kind.crushes && !this.under.has(object)) {
         const t = truck.body.translation();
         const p = object.body.translation();
         if (Math.hypot(p.x - t.x, p.z - t.z) < 6) {
@@ -472,13 +528,14 @@ export class ObjectSystem {
       { x: t.x + tv.x * ahead, y: t.y + AROUND_RISE, z: t.z + tv.z * ahead }, truck.body.rotation(), this.aroundShape,
       (collider) => {
         const object = this.byCollider.get(collider.handle);
-        if (object && !object.knocked && object.kind.mass < UNDER_MASS && !this.under.has(object) && !met.includes(object) && (!object.kind.sturdy || speed >= object.kind.sturdy)) met.push(object);
+        if (object && !object.knocked && object.kind.mass < UNDER_MASS && !object.kind.crushes && !this.under.has(object) && !met.includes(object) && (!object.kind.sturdy || speed >= object.kind.sturdy)) met.push(object);
         return true;
       },
       undefined, groups(GROUP.all, GROUP.prop),
     );
     const mass = truck.body.mass();
     for (const object of met) {
+      this.onMeet?.(object, speed);
       const own = object.body.mass();
       object.body.setLinvel({ x: tv.x * 1.05, y: 0, z: tv.z * 1.05 }, true);
       this.setGroups(object, this.letThrough(object));
@@ -515,8 +572,16 @@ export class ObjectSystem {
     // or not. A scooter is taller than the frame is high, but once the nose has been lifted
     // by the first of a row the next goes under it still standing, the truck climbs onto
     // them, and over it goes.
+    const beneath = new Set<LooseObject>();
     touching(this.underShape, -UNDER_DROP, (object) => {
-      if (object.height < UNDER_HEIGHT || lying(object) || object.kind.mass < UNDER_MASS) found.add(object);
+      // Not something the wind is still flinging at the truck: that hits it.
+      if (object.blown && flying(object)) return;
+      // Nor something coming down on it: that lands on it.
+      if (object.falling && Math.hypot(object.body.linvel().x, object.body.linvel().y, object.body.linvel().z) > FALLING_SPEED) return;
+      if (object.height < UNDER_HEIGHT || lying(object) || object.kind.mass < UNDER_MASS) {
+        found.add(object);
+        beneath.add(object);
+      }
     });
     // And anything light is done with the truck once the truck has sent it flying: from
     // then until it is clear, the truck goes through it rather than be lifted or tripped
@@ -526,7 +591,8 @@ export class ObjectSystem {
     });
     // Something thin hit fast can end up inside the cab before the physics has caught it.
     // It is not left there: it is let out the way it came.
-    touching(this.cabShape, TRUCK.cab.pos[1], (object) => found.add(object), TRUCK.cab.pos[2]);
+    const inCab = new Set<LooseObject>();
+    touching(this.cabShape, TRUCK.cab.pos[1], (object) => (found.add(object), inCab.add(object)), TRUCK.cab.pos[2]);
 
     // A pole or a barrier arm caught across the nose and pushed along for as long as the
     // truck keeps going: after a moment of that it is let through, to drop where it is.
@@ -559,6 +625,10 @@ export class ObjectSystem {
     // Nor is a coil rolled down a hill: on its side it reads as something fallen flat, small enough to go under the frame,
     // and let through it went through the cab and into the load.
     for (const object of found) if (object.pace !== undefined) found.delete(object);
+    // Nor heavy stock while it stands or comes down: it is pushed, and it comes down on the truck and its load, as it would.
+    // Lying still on the floor in under the truck it is driven over like anything else; got out of the cab if it has ended
+    // up inside it, and out of the way of a truck jammed against it.
+    for (const object of found) if (object.kind.crushes && !stalled && !inCab.has(object) && !(beneath.has(object) && !flying(object))) found.delete(object);
     for (const object of found) if (!this.under.has(object)) this.setGroups(object, this.letThrough(object));
     for (const object of this.under) if (!found.has(object)) this.setGroups(object, solidOf(object.kind));
     this.under = found;
@@ -717,18 +787,38 @@ export class ObjectSystem {
   }
 
   /** A piece of a scaffold letting go: no longer held, pushed over the way the scaffold falls, and those beside it to follow. */
-  private fall(object: LooseObject): void {
+  private fall(object: LooseObject, truck?: Truck): void {
     object.fallIn = undefined;
     this.spread(object);
     if (object.knocked) return;
     object.near = true;
-    const [lx, lz] = object.desc.lean ?? [this.random() - 0.5, this.random() - 0.5];
+    let [lx, lz] = object.desc.lean ?? [this.random() - 0.5, this.random() - 0.5];
     const m = object.body.mass();
-    const push = m * (1.2 + this.random() * 0.8);
+    let push = m * (1.2 + this.random() * 0.8);
+    // Heavy stock stacked up, the truck beside it having knocked its foot away from it: the top comes over onto the truck,
+    // as far as to its middle by the time it is down.
+    const t = truck?.body.translation(), p = object.body.translation();
+    if (t && object.kind.stacked && object.kind.crushes) {
+      const dx = t.x - p.x, dz = t.z - p.z, away = Math.hypot(dx, dz);
+      if (away < ONTO_TRUCK_WITHIN && away > 0.1) {
+        [lx, lz] = [dx / away, dz / away];
+        push = m * Math.min(ONTO_MOST, Math.max(1.2, away / ONTO_SECONDS));
+      }
+    }
     object.body.wakeUp();
     object.body.applyImpulse({ x: lx * push + (this.random() - 0.5) * m * 0.6, y: 0, z: lz * push + (this.random() - 0.5) * m * 0.6 }, true);
     // Toppled about the line across its fall, top first.
     object.body.applyTorqueImpulse({ x: lz * m * 0.5, y: (this.random() - 0.5) * m * 0.2, z: -lx * m * 0.5 }, true);
+  }
+
+  /** Something put back into the world at a place and sent off at this velocity, tumbling: a thing come off a roof in a gust. */
+  send(object: LooseObject, at: { x: number; y: number; z: number }, velocity: { x: number; y: number; z: number }): void {
+    if (this.under.delete(object)) this.setGroups(object, solidOf(object.kind));
+    object.shelved = false;
+    object.body.setEnabled(true);
+    object.body.setTranslation(at, true);
+    Object.assign(object, { rolling: false, knocked: false, near: true, wrecked: false, carried: 0, was: null, hush: 0, fuse: -1 });
+    this.launch(object, velocity, 5);
   }
 
   /** Something thrown up from below, as a manhole cover by the water under it: let go and sent off at this velocity, tumbling. */
@@ -741,6 +831,8 @@ export class ObjectSystem {
 
   /** How high the ground is, where the level has height in it: for things that walk about on it. */
   ground?: (x: number, z: number) => number;
+  /** Told of each light thing the truck runs into fast, and how fast it was going. */
+  onMeet?: (object: LooseObject, speed: number) => void;
 
   /** A step of a hen's day: over toward somewhere near her doorstep, turning as she goes; there, a while pecking; then off again. */
   private stroll(object: LooseObject): void {
@@ -787,7 +879,34 @@ export class ObjectSystem {
     }
   }
 
+  /**
+   * A stack let go: all of it that it stands in and against, together, pieces touching pieces. Held one by one, those
+   * still held lie in the physics' sleep while those let go beside them stir it awake, and so held they would sink
+   * through the floor unseen; let go together, a stack stands as it was put until something knocks it.
+   */
+  private letGoOfPile(first: LooseObject): void {
+    const pile = [first];
+    for (let k = 0; k < pile.length; k++) {
+      const [x, , z] = pile[k].desc.pos;
+      for (const other of this.objects) {
+        if (other.near || !other.kind.stacked) continue;
+        const [ox, , oz] = other.desc.pos;
+        if (Math.abs(ox - x) < 1 && Math.abs(oz - z) < 1) {
+          other.near = true;
+          other.body.wakeUp();
+          pile.push(other);
+        }
+      }
+    }
+  }
+
   /** Whether a place is within reach of the truck's body: inside it, or within a little of it all round. */
+  /** Whether something is going no faster than the truck, near enough: lying still before it, or being shoved by it. */
+  private withTruck(object: LooseObject, truck: Truck): boolean {
+    const a = object.body.linvel(), b = truck.body.linvel();
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < BLOWN_SPEED || !flying(object);
+  }
+
   private against(truck: Truck, p: { x: number; y: number; z: number }): boolean {
     const t = truck.body.translation();
     const r = truck.body.rotation();
@@ -831,13 +950,67 @@ export class ObjectSystem {
     const [x, y, z] = object.desc.pos;
     const p = object.body.translation();
     if (Math.abs(p.x - x) + Math.abs(p.y - y) + Math.abs(p.z - z) > 0.01) {
-      q.setFromEuler(e.set(object.desc.tilt ?? 0, object.desc.rotY ?? 0, 0, 'YXZ'));
+      q.setFromEuler(e.set(object.desc.tilt ?? 0, object.desc.rotY ?? 0, object.desc.roll ?? 0, 'YXZ'));
       object.body.setTranslation({ x, y, z }, false);
       object.body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, false);
     }
     object.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
     object.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
     object.body.sleep();
+  }
+
+  /**
+   * What is set down on the decks of what floats: carried as the deck moves until the truck comes up to it, then let go
+   * on the deck going as the deck goes, and the rest of its stack with it. Call each step after the decks have been moved
+   * for it, before the world steps.
+   */
+  ride(truck: Truck | undefined, rigs: Rigs): void {
+    this.rigs = rigs;
+    for (const object of this.objects) {
+      if (!object.riding) {
+        // Loose on a deck that is moving: kept awake, as the deck going from under it does not wake it.
+        if (object.desc.free && object.body.isSleeping() && rigs.list[object.desc.deck!].time > 0) object.body.wakeUp();
+        continue;
+      }
+      const deck = object.desc.deck!;
+      const [x, y, z] = object.desc.pos;
+      // Not lashed down: loose from the first moment the deck moves.
+      if (object.desc.free && rigs.list[deck].time > 0) {
+        this.disembark(object, rigs);
+        continue;
+      }
+      if (truck && this.against(truck, object.body.translation())) {
+        this.disembark(object, rigs);
+        if (object.kind.stacked)
+          for (const other of this.objects)
+            if (other.riding && other.desc.deck === deck && Math.hypot(other.desc.pos[0] - x, other.desc.pos[2] - z) < STACK_REACH) this.disembark(other, rigs);
+        continue;
+      }
+      const at = rigs.carried(deck, { x, y, z });
+      q.setFromEuler(e.set(object.desc.tilt ?? 0, object.desc.rotY ?? 0, object.desc.roll ?? 0, 'YXZ'));
+      const turn = rigs.turned(deck, q);
+      object.body.setNextKinematicTranslation({ x: at.x, y: at.y, z: at.z });
+      object.body.setNextKinematicRotation({ x: turn.x, y: turn.y, z: turn.z, w: turn.w });
+    }
+  }
+
+  /** Off the deck's hands: loose on it, going as the deck under it goes. */
+  private disembark(object: LooseObject, rigs: Rigs): void {
+    object.riding = false;
+    object.near = true;
+    object.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    const p = object.body.translation();
+    const going = rigs.deckVelocity(object.desc.deck!, p, STEP);
+    object.body.setLinvel({ x: going.x, y: going.y, z: going.z }, true);
+    object.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
+  /** How fast something is going: on a deck afloat, against the deck under it, which it would be still on. */
+  private velocity(object: LooseObject): { x: number; y: number; z: number } {
+    const v = object.body.linvel();
+    if (object.desc.deck === undefined || !this.rigs) return v;
+    const going = this.rigs.deckVelocity(object.desc.deck, object.body.translation(), STEP);
+    return { x: v.x - going.x, y: v.y - going.y, z: v.z - going.z };
   }
 
   /** Stand everything back up where it started. */
@@ -863,7 +1036,7 @@ export class ObjectSystem {
       object.walk = undefined;
       if (!object.knocked && !object.rolling && !going && !walked && object.body.isSleeping()) continue;
       const [x, y, z] = object.desc.pos;
-      q.setFromEuler(e.set(object.desc.tilt ?? 0, object.desc.rotY ?? 0, 0, 'YXZ'));
+      q.setFromEuler(e.set(object.desc.tilt ?? 0, object.desc.rotY ?? 0, object.desc.roll ?? 0, 'YXZ'));
       object.body.setTranslation({ x, y, z }, false);
       object.body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, false);
       object.body.setLinvel(zero, false);
@@ -874,11 +1047,17 @@ export class ObjectSystem {
       object.fallIn = undefined;
       object.rolling = false;
       object.near = false;
+      object.falling = false;
       object.wrecked = false;
       object.carried = 0;
       object.was = null;
       object.hush = 0;
       object.fuse = -1;
+      // Back on its deck, the deck's again.
+      if (object.desc.deck !== undefined && !object.riding) {
+        object.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
+        object.riding = true;
+      }
     }
     this.blasts = [];
     this.landings = [];

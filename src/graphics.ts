@@ -99,7 +99,7 @@ export class Graphics {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
     camera.far = level.far;
     camera.updateProjectionMatrix();
-    if (scene.fog instanceof THREE.Fog) [scene.fog.near, scene.fog.far] = level.fog;
+    if (scene.fog instanceof THREE.Fog) [scene.fog.near, scene.fog.far] = level.fog.map((d) => d * this.view.fogScale);
     sun.castShadow = level.shadow > 0;
     if (level.shadow > 0 && sun.shadow.mapSize.x !== level.shadow) {
       sun.shadow.mapSize.set(level.shadow, level.shadow);

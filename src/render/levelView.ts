@@ -79,7 +79,7 @@ function slickMesh(slicks: SlickDesc[]): THREE.Group {
     group.add(mesh);
   };
   for (const { pos, half, y, look } of slicks) {
-    if (look === 'gravel') continue;
+    if (look === 'gravel' || look === 'ice') continue;
     ground = y ?? 0;
     const count = Math.round((half[0] * half[1]) / 7);
     const inside = (radius: number): [number, number] => [
@@ -302,6 +302,29 @@ function nameTexture(text = '山城國小', ground = '#1f4f9a', rim = '#d9a62e',
   return texture;
 }
 
+/** A shop's sign stood on end: its name down it, a word under another, in its rim. */
+function tallNameTexture(text: string, ground: string, rim: string, ink: string): THREE.Texture {
+  const chars = [...text].filter((c) => c.trim() !== '');
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 512;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = rim;
+  g.fillRect(0, 0, 128, 512);
+  g.fillStyle = ground;
+  g.fillRect(8, 8, 112, 496);
+  g.fillStyle = ink;
+  const step = 480 / Math.max(1, chars.length), size = Math.min(92, step * 0.86);
+  g.font = `bold ${size}px sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  chars.forEach((c, k) => g.fillText(c, 64, 16 + step * (k + 0.5)));
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
 function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -359,19 +382,42 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
 function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
   const group = new THREE.Group();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
-  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'concert' ? nameTexture('熱音社 成果發表會', '#2a3a6a', '#ffd166') : kind === 'aYu' ? nameTexture('阿玉豆花', '#2f6fb0', '#f2efe6') : arrowTexture(kind) }));
+  const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'concert' ? nameTexture('熱音社 成果發表會', '#2a3a6a', '#ffd166') : kind === 'aYu' ? nameTexture('阿玉豆花', '#2f6fb0', '#f2efe6') : arrowTexture(kind as 'uturn' | 'detour' | 'ahead') }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
+  // A 'name' sign's face is its own words: one material for each that reads alike.
+  const named = new Map<string, THREE.Material>();
+  const nameOf = (sign: SignDesc) => {
+    const [ground, ink, rim] = sign.colors ?? ['#c8262a', '#f2efe6', '#f2efe6'];
+    const key = `${sign.text}|${ground}|${ink}|${rim}|${sign.tall ? 'tall' : ''}`;
+    let face = named.get(key);
+    if (!face) named.set(key, (face = new THREE.MeshBasicMaterial({ map: sign.tall ? tallNameTexture(sign.text ?? '', ground, rim, ink) : nameTexture(sign.text ?? '', ground, rim, ink) })));
+    return face;
+  };
   for (const sign of signs) {
     const root = new THREE.Group();
     root.position.set(...sign.pos);
     root.rotation.y = sign.rotY;
-    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight' || sign.kind === 'canteen' || sign.kind === 'bento' || sign.kind === 'concert' || sign.kind === 'aYu') {
+    if (sign.kind === 'schoolName' || sign.kind === 'gasShop' || sign.kind === 'loadOut' || sign.kind === 'safety' || sign.kind === 'pondWorks' || sign.kind === 'pumpStation' || sign.kind === 'floodGate' || sign.kind === 'unload' || sign.kind === 'brokenBridge' || sign.kind === 'freight' || sign.kind === 'canteen' || sign.kind === 'bento' || sign.kind === 'concert' || sign.kind === 'aYu' || sign.kind === 'name') {
       // Upright, its middle where it is put: over a gate, on a wall. A shop's is smaller than a school's, a shed's larger.
-      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : sign.kind === 'canteen' ? 4.4 : sign.kind === 'bento' ? 3 : sign.kind === 'concert' ? 7 : sign.kind === 'aYu' ? 2 : 6;
+      const wide = sign.kind === 'gasShop' ? 3 : sign.kind === 'loadOut' ? 9 : sign.kind === 'pondWorks' ? 4.5 : sign.kind === 'safety' ? 4 : sign.kind === 'pumpStation' ? 3.6 : sign.kind === 'floodGate' ? 4.4 : sign.kind === 'unload' ? 2.6 : sign.kind === 'brokenBridge' ? 4.2 : sign.kind === 'canteen' ? 4.4 : sign.kind === 'bento' ? 3 : sign.kind === 'concert' ? 7 : sign.kind === 'aYu' ? 2 : sign.kind === 'name' ? (sign.wide ?? 2) : 6;
       // One that fades has materials of its own.
-      const [back, face] = sign.fadeZone ? [steel.clone(), faceOf(sign.kind).clone()] : [steel, faceOf(sign.kind)];
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);
-      root.add(plate);
+      const own = sign.kind === 'name' ? nameOf(sign) : faceOf(sign.kind);
+      const [back, face] = sign.fadeZone ? [steel.clone(), own.clone()] : [steel, own];
+      const plate = sign.tall
+        ? new THREE.Mesh(new THREE.BoxGeometry(wide * 0.25, wide, 0.12), [back, back, back, back, face, face])
+        : new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);
+      if (sign.lie !== undefined) {
+        // Come down face up, its far end raised.
+        const laid = new THREE.Group();
+        laid.rotation.z = sign.lie;
+        plate.rotation.x = -Math.PI / 2;
+        laid.add(plate);
+        root.add(laid);
+      } else if (sign.lean !== undefined) {
+        // Come down the other way, leant back on what it fell on, its top edge raised.
+        plate.rotation.x = -sign.lean;
+        root.add(plate);
+      } else root.add(plate);
       if (sign.fadeZone) faders.push({ materials: [back, face], box: new THREE.Box3(new THREE.Vector3(...sign.fadeZone[0]), new THREE.Vector3(...sign.fadeZone[1])), opacity: 1, mesh: plate, overhead: true, zone: true });
       group.add(root);
       continue;
@@ -578,14 +624,82 @@ function riverStreaks(down = false, deep = false): THREE.CanvasTexture {
   return map;
 }
 
+/** How fine the grid a sea's waves are drawn on, metres. */
+const SEA_CELL = 2.5;
+
+/**
+ * A sea in a storm, for a pool that has waves: its surface heaved up and down by a few long swells and shorter chop
+ * across them, each running before the wind at the speed waves that long go; the light caught on their slopes, and
+ * their crests broken white in patches. Only drawn.
+ */
+function seaWaves(material: THREE.MeshStandardMaterial, high: number, time: { value: number }): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.seaTime = time;
+    shader.uniforms.seaHigh = { value: high };
+    const waves = `
+      uniform float seaTime;
+      uniform float seaHigh;
+      varying float vCrest;
+      varying vec2 vSea;
+      // One train of waves: its height, and how it slopes across and along.
+      vec3 seaTrain(vec2 p, vec2 d, float len, float share) {
+        float k = 6.2832 / len, w = sqrt(9.81 * k), ph = dot(d, p) * k - w * seaTime;
+        float a = seaHigh * share;
+        return vec3(a * sin(ph), a * k * cos(ph) * d);
+      }
+      vec3 seaAt(vec2 p) {
+        return seaTrain(p, vec2(0.894, 0.447), 17.0, 0.42) + seaTrain(p, vec2(0.555, 0.832), 10.0, 0.27)
+          + seaTrain(p, vec2(0.97, -0.243), 6.3, 0.18) + seaTrain(p, vec2(0.196, 0.981), 3.6, 0.11) + seaTrain(p, vec2(0.707, 0.707), 2.1, 0.05);
+      }`;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+${waves}`)
+      // The plane lies flat: its own x is east, its y north turned south, its z up.
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+vec4 seaWorld = modelMatrix * vec4(position, 1.0);
+vec3 sea = seaAt(seaWorld.xz);
+objectNormal = normalize(vec3(-sea.y, sea.z, 1.0));`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+transformed.z += sea.x;
+vCrest = sea.x / max(seaHigh, 0.001);
+vSea = seaWorld.xz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform float seaTime;
+varying float vCrest;
+varying vec2 vSea;
+float seaHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float seaNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(seaHash(i), seaHash(i + vec2(1.0, 0.0)), f.x), mix(seaHash(i + vec2(0.0, 1.0)), seaHash(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+float seaFoam = seaNoise(vSea * 0.3 + vec2(seaTime * 0.25, seaTime * 0.1)) * 0.6 + seaNoise(vSea * 1.4 - seaTime * 0.2) * 0.4;
+float seaWhite = smoothstep(0.5, 0.95, vCrest + (seaFoam - 0.5) * 0.7);
+diffuseColor.rgb = mix(diffuseColor.rgb * (0.82 + 0.22 * clamp(vCrest * 0.5 + 0.5, 0.0, 1.0)), vec3(0.8, 0.85, 0.86), seaWhite * 0.8);
+diffuseColor.a = max(diffuseColor.a, seaWhite * 0.9);`);
+  };
+}
+
 /** Still water in a pond: its colour, a little clear, with faint ripples here and there. */
-function poolRipples(tint: number): THREE.CanvasTexture {
+function poolRipples(tint: number, rain = false): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 128;
   const g = canvas.getContext('2d')!;
   const c = new THREE.Color(tint);
   g.fillStyle = `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},0.88)`;
   g.fillRect(0, 0, 128, 128);
+  // Rain falling on it: the sky's grey caught in patches across it. Not the rings where the drops come down: drawn into the
+  // surface they only drift along with it, and the splashes round the truck are the drops.
+  if (rain) {
+    for (let k = 0; k < 9; k++) {
+      const x = (k * 53) % 128, y = (k * 37 + 11) % 128, r = 18 + ((k * 13) % 20);
+      for (const [dx, dy] of [[0, 0], [-128, 0], [0, -128], [-128, -128], [128, 0], [0, 128]]) {
+        const sheen = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        sheen.addColorStop(0, 'rgba(214,220,222,0.22)');
+        sheen.addColorStop(1, 'rgba(214,220,222,0)');
+        g.fillStyle = sheen;
+        g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+    }
+  }
   for (let k = 0; k < 14; k++) {
     const x = (k * 47) % 128, y = (k * 71 + (k % 3) * 17) % 128, long = 10 + ((k * 23) % 22);
     g.strokeStyle = `rgba(235,240,232,${0.1 + (k % 4) * 0.05})`;
@@ -608,6 +722,8 @@ export class LevelView {
   /** Each vehicle's brake lights, to light while it brakes. */
   private readonly brakes: { car: Sim['traffic']['cars'][number]; mesh: THREE.Mesh }[] = [];
   private readonly faders: Fader[] = [];
+  /** The roofs over halls, and what is drawn on top of each. */
+  private lids: { desc: { area: [number, number, number, number]; below: number }; group: THREE.Group }[] = [];
   private readonly finishGlow: THREE.Mesh | null = null;
   /** The save point's frame on the ground and posts at its corners: blue and pulsing until passed, grey after. */
   private readonly saveMark: THREE.MeshBasicMaterial | null = null;
@@ -624,6 +740,8 @@ export class LevelView {
   private readonly fires: { body: Sim['objects']['objects'][number]; glow: THREE.Sprite; sparks: THREE.Sprite[] }[] = [];
   /** Running water's surfaces, carried along. */
   private readonly rivers: { map: THREE.Texture; flow: [number, number] }[] = [];
+  /** The time the sea's waves are at, seconds. */
+  private readonly seaTime = { value: 0 };
   /** Birds about the water, if the level has any. */
   private readonly birds: Birds | null;
 
@@ -632,13 +750,29 @@ export class LevelView {
     this.birds = sim.level.birds?.length ? new Birds(scene, sim.level.birds) : null;
 
     // A level may have none of these: adding nothing is an error to three.
-    for (const mesh of staticProps(props.filter((p) => p.mass === undefined && !p.fade && !p.cutaway && !p.paving))) scene.add(mesh);
+    // What stands on top of a roof over a hall goes in that roof's own group, not drawn while the truck is in under it.
+    const lidOf = (p: PropDesc) => (sim.level.lids ?? []).findIndex((l) => p.pos[0] > l.area[0] && p.pos[0] < l.area[2] && p.pos[2] > l.area[1] && p.pos[2] < l.area[3] && p.pos[1] > l.below);
+    this.lids = (sim.level.lids ?? []).map((desc) => ({ desc, group: new THREE.Group() }));
+    for (const lid of this.lids) scene.add(lid.group);
+    const plain = props.filter((p) => p.mass === undefined && !p.fade && !p.cutaway && !p.paving && !p.vehicle);
+    for (const mesh of staticProps(plain.filter((p) => lidOf(p) < 0))) scene.add(mesh);
+    this.lids.forEach((lid, k) => { for (const mesh of staticProps(plain.filter((p) => lidOf(p) === k))) lid.group.add(mesh); });
+    for (const p of props) {
+      if (!p.vehicle) continue;
+      // A vehicle come to grief, left where it is.
+      const over = !!p.rot && (Math.abs(p.rot[0]) > 0.3 || Math.abs(p.rot[2]) > 0.3);
+      const mesh = vehicleMesh(p.vehicle, p.vehicle === 'sng' ? p.color : 0xe8e6de, 0, over);
+      mesh.position.set(...p.pos);
+      if (p.rot) mesh.rotation.set(...p.rot);
+      scene.add(mesh);
+    }
     const paved = props.filter((p) => p.paving);
     if (paved.length) scene.add(pavedMesh(paved));
     for (const desc of props) {
       if (!desc.fade && !desc.cutaway) continue;
       const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
-      scene.add(mesh);
+      const lid = lidOf(desc);
+      (lid < 0 ? scene : this.lids[lid].group).add(mesh);
       this.faders.push(this.fader(mesh, desc));
     }
     for (const prop of sim.props) {
@@ -673,15 +807,23 @@ export class LevelView {
       this.gates.push({ desc, pivot, angle: GATE_UP, broken: false });
     }
     if (sim.level.slicks?.length) scene.add(slickMesh(sim.level.slicks));
-    if (sim.level.signs?.length) scene.add(signMeshes(sim.level.signs, this.faders));
+    // A sign up on a roof that lifts away goes with it.
+    const lidOfSign = (s: SignDesc) => lidOf({ pos: s.pos } as PropDesc);
+    const loose = (sim.level.signs ?? []).filter((s) => lidOfSign(s) < 0);
+    if (loose.length) scene.add(signMeshes(loose, this.faders));
+    this.lids.forEach((lid, k) => { const on = (sim.level.signs ?? []).filter((s) => lidOfSign(s) === k); if (on.length) lid.group.add(signMeshes(on, this.faders)); });
 
     if (decals.length) scene.add(this.decalMesh(sim));
     // Still water over the ponds, its ripples drifting.
     for (const pool of sim.level.pools ?? []) {
       const [x0, z0, x1, z1] = pool.area;
-      const map = poolRipples(pool.tint);
+      const map = poolRipples(pool.tint, pool.rain);
       map.repeat.set((x1 - x0) / 14, (z1 - z0) / 14);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), new THREE.MeshStandardMaterial({ map, transparent: true, depthWrite: false, roughness: 0.3, metalness: 0 }));
+      // The open sea in a storm: its surface in waves, a grid fine enough to carry them.
+      const cells = pool.waves ? [Math.min(300, Math.ceil((x1 - x0) / SEA_CELL)), Math.min(300, Math.ceil((z1 - z0) / SEA_CELL))] : [1, 1];
+      const material = new THREE.MeshStandardMaterial({ map, transparent: true, depthWrite: false, roughness: pool.waves ? 0.2 : 0.3, metalness: 0 });
+      if (pool.waves) seaWaves(material, pool.waves, this.seaTime);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0, cells[0], cells[1]), material);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set((x0 + x1) / 2, pool.surface, (z0 + z1) / 2);
       mesh.receiveShadow = true;
@@ -793,8 +935,21 @@ export class LevelView {
       // Not like the bay's glowing box: a dashed frame painted on the road, and a thin post at each corner.
       this.saveMark = new THREE.MeshBasicMaterial({ color: SAVE_COLOR, transparent: true, opacity: 0.8, depthWrite: false });
       const [x0, z0, x1, z1] = save.zone;
-      const ground = (x: number, z: number) => save.y ?? heightAt(sim.level.terrain, x, z);
+      // On whatever is there to be driven on: the ground, or up on a roof, what is drawn of the roof, its slopes and all.
+      const solid = scene.children.filter((o) => o instanceof THREE.Mesh || o instanceof THREE.Group);
+      const down = new THREE.Raycaster(), from = new THREE.Vector3();
+      const ground = (x: number, z: number) => {
+        if (save.y === undefined) return heightAt(sim.level.terrain, x, z);
+        down.set(from.set(x, save.y + 4, z), new THREE.Vector3(0, -1, 0));
+        down.far = 9;
+        const hit = down.intersectObjects(solid, true).find((h) => h.object instanceof THREE.Mesh && !(h.object.material as THREE.Material).transparent);
+        return hit ? hit.point.y : save.y;
+      };
       const dash = new THREE.BoxGeometry(1.4, 0.08, 0.55);
+      // Up on a hall's roof, it goes with the roof: not seen from inside the hall, where the roof is not drawn.
+      const [mx, mz] = [(x0 + x1) / 2, (z0 + z1) / 2];
+      const lid = save.y === undefined ? -1 : (sim.level.lids ?? []).findIndex((l) => mx > l.area[0] && mx < l.area[2] && mz > l.area[1] && mz < l.area[3] && save.y! > l.below);
+      const onto = lid < 0 ? scene : this.lids[lid].group;
       const corners: [number, number][] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
       corners.forEach(([ax, az], k) => {
         const [bx, bz] = corners[(k + 1) % 4];
@@ -806,13 +961,13 @@ export class LevelView {
           const mesh = new THREE.Mesh(dash, this.saveMark!);
           mesh.position.set(x, ground(x, z) + 0.08, z);
           mesh.rotation.y = -Math.atan2(bz - az, bx - ax);
-          scene.add(mesh);
+          onto.add(mesh);
         }
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6), this.saveMark!);
         post.position.set(ax, ground(ax, az) + 1.6, az);
         const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), this.saveMark!);
         lamp.position.set(ax, ground(ax, az) + 3.4, az);
-        scene.add(post, lamp);
+        onto.add(post, lamp);
       });
     }
   }
@@ -843,8 +998,18 @@ export class LevelView {
   }
 
   /** Fade out whatever stands between the camera and the truck, and animate the delivery bay. */
+  /** Whether a place is in under one of the roofs over halls. */
+  underLid(p: { x: number; y: number; z: number }): boolean {
+    return this.lids.some(({ desc: { area, below } }) => p.x > area[0] && p.x < area[2] && p.z > area[1] && p.z < area[3] && p.y < below);
+  }
+
   update(dt: number, camera: THREE.Camera, truck: THREE.Vector3): void {
+    for (const lid of this.lids) {
+      const { area, below } = lid.desc;
+      lid.group.visible = !(truck.x > area[0] && truck.x < area[2] && truck.z > area[1] && truck.z < area[3] && truck.y < below);
+    }
     this.time += dt;
+    this.seaTime.value = this.time;
     this.birds?.update(dt, truck, this.sim.lastHonk);
     for (const { map, flow } of this.rivers) {
       map.offset.x -= (flow[0] * dt) / RIVER_TILE;
@@ -936,6 +1101,18 @@ export class LevelView {
           material.needsUpdate = true;
         }
       }
+    }
+  }
+
+  /**
+   * Make everything that fades see-through, or put it back, for a frame drawn while loading: so that its see-through
+   * shaders are made then, not the first time each is faded on the way.
+   */
+  seeThrough(on: boolean): void {
+    for (const f of this.faders) for (const material of f.materials) {
+      material.transparent = on || f.opacity < 1;
+      material.depthWrite = !material.transparent;
+      material.needsUpdate = true;
     }
   }
 

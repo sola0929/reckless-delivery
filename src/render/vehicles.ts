@@ -139,6 +139,44 @@ function van(s: Shapes): void {
   ends(s, 1.15, 3.7, 0.95);
 }
 
+/**
+ * A television station's satellite van, out to a story: white, in its channel's colours, a band down each side and round
+ * the cab; its side door slid back on the side it was parked to show the racks inside lit up, its back doors shut with a
+ * ladder up beside them to the platform on its roof, where the dish stands.
+ */
+function sng(s: Shapes, livery: number): void {
+  const white = 0xf2f0ea, steel = 0x8e9499;
+  wheels(s, 1.05, 2.5, -2.2, 0.48);
+  s.box(0, 0.72, 0, 1.08, 0.2, 3.7, DARK);
+  s.box(0, 1.55, 2.95, 1.12, 0.72, 0.75, white);
+  s.box(0, 1.85, 3.71, 0.98, 0.32, 0.02, GLASS);
+  for (const x of [-1.13, 1.13]) s.box(x, 1.85, 3.0, 0.02, 0.28, 0.45, GLASS);
+  s.box(0, 1.2, 3.715, 1.0, 0.1, 0.015, livery);
+  s.box(0, 2.0, -0.75, 1.15, 1.08, 2.95, white);
+  for (const side of [-1, 1]) {
+    s.box(side * 1.175, 1.25, -0.75, 0.025, 0.16, 2.9, livery);
+    s.box(side * 1.175, 1.48, -0.75, 0.025, 0.03, 2.9, 0xc8ccd0);
+    s.box(side * 1.135, 1.2, 2.95, 0.02, 0.12, 0.7, livery);
+  }
+  // The side door slid back, the racks inside: monitors lit, the desk under them.
+  s.box(-1.162, 2.2, 1.45, 0.014, 0.64, 0.55, 0x1f2124);
+  for (const [y, z, c] of [[2.6, 1.2, 0x8fd0ff], [2.6, 1.7, 0x6fa8d8], [2.2, 1.2, 0x6fa8d8], [2.2, 1.7, 0xa8e0c0]] as [number, number, number][]) s.box(-1.19, y, z, 0.006, 0.13, 0.19, c);
+  s.box(-1.18, 1.8, 1.45, 0.01, 0.04, 0.5, 0x5a5f66);
+  s.box(-1.21, 2.15, 0.5, 0.02, 0.68, 0.4, white);
+  // The back: its doors shut, the ladder up its right-hand side.
+  s.box(0.45, 2.0, -3.725, 0.008, 1.0, 0.012, 0xc8ccd0);
+  for (const x of [0.82, 1.08]) s.box(x, 2.1, -3.75, 0.015, 1.0, 0.02, steel);
+  for (let y = 1.3; y < 3.1; y += 0.3) s.box(0.95, y, -3.75, 0.13, 0.012, 0.02, steel);
+  // On the roof: the platform aft, its rail; the air conditioner forward.
+  s.box(0, 3.12, -1.9, 1.0, 0.03, 1.55, steel);
+  for (const x of [-0.97, 0.97]) {
+    s.box(x, 3.36, -1.9, 0.02, 0.02, 1.55, steel);
+    for (const z of [-3.4, -1.9, -0.4]) s.box(x, 3.25, z, 0.02, 0.1, 0.02, steel);
+  }
+  s.box(0, 3.2, 0.5, 0.45, 0.12, 0.45, 0xd8dcde);
+  ends(s, 1.15, 3.7, 0.95);
+}
+
 /** A gravel lorry, waiting its turn at the quarry: the cab in its firm's colour, a steel tub heaped with sand behind it. */
 function dumpTruck(s: Shapes, cab: number): void {
   const tub = 0xb5622e;
@@ -170,7 +208,7 @@ const BUSES = [0x3f8f5f, 0x2f6fb0, 0xd06a2a, 0xb33a3a];
 
 /** One vehicle of the traffic, drawn about the middle of its body, which is where the physics has it. */
 /** Where each kind's lamps are: half its width, half its length, and their height off the road. */
-const LAMPS: Record<VehicleKind, [number, number, number]> = { car: [0.9, 2.1, 0.62], taxi: [0.9, 2.1, 0.62], pickup: [0.9, 2.2, 0.66], bus: [1.25, 5.2, 0.9], garbage: [1.2, 3.3, 1.05], float: [1.2, 5.2, 0.9], palanquin: [0.3, 0.95, 1.2], van: [1.15, 3.7, 0.95], dumpTruck: [1.2, 4.5, 1.0] };
+const LAMPS: Record<VehicleKind, [number, number, number]> = { car: [0.9, 2.1, 0.62], taxi: [0.9, 2.1, 0.62], pickup: [0.9, 2.2, 0.66], bus: [1.25, 5.2, 0.9], garbage: [1.2, 3.3, 1.05], float: [1.2, 5.2, 0.9], palanquin: [0.3, 0.95, 1.2], van: [1.15, 3.7, 0.95], sng: [1.15, 3.7, 0.95], dumpTruck: [1.2, 4.5, 1.0] };
 const brakeMaterial = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
 
 /** A vehicle's brake lights, lit: bright red over its tail lamps, a little bigger than them. To be shown while it brakes. */
@@ -185,8 +223,14 @@ export function brakeLights(kind: VehicleKind): THREE.Mesh {
   return mesh;
 }
 
-export function vehicleMesh(kind: VehicleKind, color: number, n: number): THREE.Mesh {
+export function vehicleMesh(kind: VehicleKind, color: number, n: number, over = false): THREE.Mesh {
   const shapes = new Shapes();
+  // Gone over, its underside is to be seen: what is drawn is open underneath, every box of it, as nothing standing on
+  // its wheels shows its bottom. Closed off by its floor pan, dark, the width and length of it.
+  if (over) {
+    const { width, length } = VEHICLES[kind].half, y = CLEARANCE + 0.02;
+    shapes.quad([-width, y, -length], [width, y, -length], [width, y, length], [-width, y, length], DARK);
+  }
   if (kind === 'taxi') car(shapes, 0xf2c12e, true);
   else if (kind === 'pickup') pickup(shapes, 0x2f62a8);
   else if (kind === 'bus') bus(shapes, BUSES[n % BUSES.length]);
@@ -194,6 +238,7 @@ export function vehicleMesh(kind: VehicleKind, color: number, n: number): THREE.
   else if (kind === 'float') float(shapes);
   else if (kind === 'palanquin') palanquin(shapes);
   else if (kind === 'van') van(shapes);
+  else if (kind === 'sng') sng(shapes, color);
   else if (kind === 'dumpTruck') dumpTruck(shapes, CABS[n % CABS.length]);
   else car(shapes, color, false);
   const geometry = shapes.geometry();

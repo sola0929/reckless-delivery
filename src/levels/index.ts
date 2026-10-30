@@ -13,11 +13,13 @@ import { reliefShow } from './reliefShow';
 import { sandbox } from './sandbox';
 import { slopes } from './slopes';
 import { quarryLab } from './quarryLab';
+import { harbourLab } from './harbourLab';
+import { harbour } from './harbour';
 import { quarry } from './quarry';
 import type { CargoTypeId } from '../sim/cargo-types';
 import type { LevelDef } from './types';
 
-export const LEVELS: Record<string, () => LevelDef> = { city, hilltown, battlefield, sandbox, range, hills, steps, bends, relief: reliefShow, jiufen, hillcity, slopes, uptown, quarrylab: quarryLab, quarry, tutorial };
+export const LEVELS: Record<string, () => LevelDef> = { city, hilltown, battlefield, sandbox, range, hills, steps, bends, relief: reliefShow, jiufen, hillcity, slopes, uptown, quarrylab: quarryLab, harbourlab: harbourLab, harbour, quarry, tutorial };
 
 export const FIRST_LEVEL = 'hillcity';
 
@@ -46,6 +48,7 @@ export const LEVEL_LIST: LevelEntry[] = [
   { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true, previews: ['市場小路', '機車車陣', '平交道', '路邊辦桌'], load: [18, 4000], hidden: ['amp', 'bicycle', 'aircon'] },
   { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500], hidden: ['stockpot', 'riceCooker', 'lightbox'] },
   { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000], hidden: ['megaphone', 'toolbox', 'radio'] },
+  { id: 'harbour', name: '風雨漁港', badge: '4', note: '颱風天的漁港：繞過翻覆的漁船、穿過停電的市場、翻上屋頂，從製冰廠出港，跳過並排的漁船，送上冷凍運搬船', ready: true, previews: ['颱風天的老街', '停電的市場', '市場屋頂', '並排的漁船'] },
 ];
 
 /** The tutorial: before the deliveries, never in the way of them. */
@@ -54,6 +57,7 @@ export const TUTORIAL: LevelEntry = { id: 'tutorial', name: '新手上路', badg
 /** Places to drive about with nothing at stake. Always open, and they keep no record. */
 export const FREE_PLAY: LevelEntry[] = !DEV ? [] : [
   { id: 'sandbox', name: '測試場', badge: '∞', note: '沒有目標，隨便開、隨便撞', ready: true },
+  { id: 'harbourlab', name: '第四關試驗場', badge: '4?', note: '颱風天的漁港：會晃的浮動碼頭、並排漁船、大船甲板、會被浪打斷的木棧道，按 1～5 跳到各站', ready: true },
   { id: 'quarrylab', name: '第三關試驗場', badge: '3?', note: '料堆、輸送帶落石、堤道機具、河床便橋、施工中大樓，按 1～6 跳到各站', ready: true },
   { id: 'slopes', name: '坡道試驗場', badge: '⟋', note: '大斜坡上閃車流和滾下來的瓦斯桶、鐵桶；再繞著高塔開上塔頂', ready: true },
   { id: 'city', name: '平地城市（舊版第一關）', badge: '平', note: '第一關搬上山坡以前的樣子：同樣的街道，沒有高低差', ready: true },

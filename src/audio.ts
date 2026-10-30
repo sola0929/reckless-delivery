@@ -48,10 +48,16 @@ const FILES = {
   // Stones coming down and clattering; a tyre struck.
   rock: ['rock-fall-0.wav', 'rock-fall-1.wav'],
   tyre: ['tyre-hit-0.wav', 'tyre-hit-1.wav'],
+  // Ice struck: laid quietly over the stones' clatter for a block of ice.
+  ice: ['ice-hit-0.mp3', 'ice-hit-1.mp3'],
+  // The power going off in a building.
+  powerCut: ['power-cut-0.mp3'],
   skid: 'skid-loop.wav',
   train: 'train-loop.wav',
   bell: 'bell-loop.wav',
   river: 'river-loop.wav',
+  // A storm's rain drumming on a tin roof, heard from under it.
+  roof: 'rain-roof-loop.mp3',
 };
 /** For each looping sound: where in its recording the loop starts, how long it is, and how long the join is blended over, seconds. */
 const LOOPS = {
@@ -60,14 +66,71 @@ const LOOPS = {
   train: { from: 0.5, seconds: 5, blend: 0.45 },
   bell: { from: 0.5, seconds: 3.6, blend: 0.3 },
   river: { from: 0.2, seconds: 10, blend: 1 },
+  roof: { from: 5, seconds: 24, blend: 2 },
 };
+/**
+ * A storm's sounds, for a level out in one: fetched only when such a level asks for them. Wind, rain and the sea the whole
+ * way; afloat, hulls creaking, and something heavy sliding over a deck.
+ */
+const STORM_FILES = {
+  wind: 'storm-wind-loop.mp3',
+  rain: 'storm-rain.mp3',
+  sea: 'storm-sea-loop.mp3',
+  hull: 'hull-creak-loop.mp3',
+} as const;
+type StormLoop = keyof typeof STORM_FILES;
+/** Where each loop is cut from its recording, as LOOPS; cut shorter where the recording is. */
+const STORM_LOOPS: Record<StormLoop, { from: number; seconds: number; blend: number }> = {
+  // A minute and a half of it, for its gusts not to come round too often.
+  wind: { from: 3, seconds: 90, blend: 4 },
+  // Only the rain, from before the recording's first thunder: what is kept of it ends there.
+  rain: { from: 1.5, seconds: 14.5, blend: 1.5 },
+  sea: { from: 3, seconds: 60, blend: 3 },
+  hull: { from: 2, seconds: 60, blend: 2 },
+};
+/** How loud each storm loop is brought to, on the whole (RMS), before the mix's own share of it. */
+const STORM_EVEN = 0.08;
+/**
+ * Single sounds, each a stretch of a recording, seconds: thunder near, a crack hard on the flash, and far, a low roll,
+ * from the first of it, evened out at their loudest; and a run of scrapes of something heavy pushed over a floor, cut
+ * apart, evened out on the whole.
+ */
+const STORM_TAKES = {
+  thunderNear: { even: 'loudest', parts: [['thunder-near-0.mp3', 0.55, 14], ['thunder-near-1.mp3', 1.75, 15.6]] },
+  thunderFar: { even: 'loudest', parts: [['thunder-far-0.mp3', 0, 18.5], ['thunder-far-1.mp3', 0, 10]] },
+  slide: { even: 'steady', parts: (
+    [[0, 3.3], [5.8, 7.7], [8.2, 10.7], [12.6, 16.2], [17.5, 23.4], [25.1, 28.7], [29.7, 31.1], [32.4, 33.8], [39.1, 41.9]] as const
+  ).map(([from, to]) => ['deck-slide.mp3', from, to] as const) },
+} as const;
+/** From how near, 0 to 1, a flash's thunder is a near one's crack rather than a far one's roll. */
+const THUNDER_NEAR = 0.5;
+type StormTake = keyof typeof STORM_TAKES;
+
+/** What the storm sounds like where the truck is, each 0 to 1. */
+export interface StormState {
+  /** Under a roof: the rain and the wind are heard through it. */
+  indoors: number;
+  /** How hard a gust is blowing here, over the storm's steady wind: the wind's recording has its own gusts, this brings it up. */
+  gust: number;
+  /** How near the open water is. */
+  sea: number;
+  /** How near something afloat is, 1 on its deck. */
+  afloat: number;
+  /** How hard what is afloat nearby is rolling. */
+  rolling: number;
+  /** How fast something heavy is sliding over a deck nearby. */
+  sliding: number;
+  /** How hard a squall is pouring down, 0 to 1. */
+  pour?: number;
+}
+
 /** The lists of one-shot recordings in FILES, as against the single looping ones. */
 type Group = { [K in keyof typeof FILES]: (typeof FILES)[K] extends string[] ? K : never }[keyof typeof FILES];
 /** Seconds to skip at the start of a recording, where it opens with something other than the crash. */
 const LEAD_IN: Record<string, number> = { 'crash-hard-1.mp3': 0.38 };
 
 /** What a thing by the roadside is made of, as far as the noise it makes goes. */
-export type Material = 'tree' | 'wood' | 'metal' | 'barrel' | 'soft' | 'ceramic' | 'melon' | 'bone' | 'heavy' | 'rubber' | 'stone';
+export type Material = 'tree' | 'wood' | 'metal' | 'barrel' | 'soft' | 'ceramic' | 'melon' | 'bone' | 'heavy' | 'rubber' | 'stone' | 'ice';
 
 export interface EngineState {
   /** Along the truck's nose, m/s. */
@@ -85,6 +148,10 @@ export interface EngineState {
   bell: boolean;
   /** How close running water is, 0 out of earshot to 1 at its edge. */
   river: number;
+  /** How far under a tin roof in the rain, 0 out in it to 1 under it. */
+  roof: number;
+  /** Out in a storm: what it sounds like here. */
+  storm?: StormState;
 }
 
 interface Clip {
@@ -96,7 +163,7 @@ interface Clip {
 }
 
 /** The things by the roadside: their recordings are evened out, so one take isn't twice as loud as the next. */
-const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'flap', 'rock', 'tyre']);
+const EVENED = new Set(['tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'flap', 'rock', 'tyre', 'ice']);
 /** The loudness they are brought to, at their loudest moment. */
 const EVEN_TO = 0.3;
 
@@ -108,9 +175,18 @@ export class GameAudio {
   private engine: AudioBufferSourceNode | null = null;
   private engineGain!: GainNode;
   private engineFilter!: BiquadFilterNode;
-  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [], cracker: [], crackers: [], flap: [], rock: [], tyre: [] };
+  private readonly clips: Record<Group, Clip[]> = { mid: [], hard: [], tree: [], woodBig: [], woodSmall: [], metal: [], barrel: [], soft: [], potBreak: [], potClink: [], splat: [], splash: [], cracker: [], crackers: [], flap: [], rock: [], tyre: [], ice: [], powerCut: [] };
   /** The sounds that run on and on, each with its own volume: tyres, trains, the crossing bell. */
-  loops: Record<'skid' | 'train' | 'bell' | 'river', { source: AudioBufferSourceNode; gain: GainNode } | null> = { skid: null, train: null, bell: null, river: null };
+  loops: Record<'skid' | 'train' | 'bell' | 'river' | 'roof', { source: AudioBufferSourceNode; gain: GainNode } | null> = { skid: null, train: null, bell: null, river: null, roof: null };
+
+  /** The storm's loops and the sounds cut from its takes, once fetched; and whether the level wants them. */
+  private storm: Record<StormLoop, { source: AudioBufferSourceNode; gain: GainNode; level: number }> | null = null;
+  private readonly stormTakes: Record<StormTake, Clip[]> = { thunderNear: [], thunderFar: [], slide: [] };
+  private stormWanted = false;
+  private stormFetching = false;
+  /** When the scrape now playing ends, and which it is. */
+  private slideUntil = 0;
+  private lastSlide: Clip | undefined;
 
   private lastBump = 0;
   private lastKnock = 0;
@@ -178,7 +254,7 @@ export class GameAudio {
       return ctx.decodeAudioData(await response.arrayBuffer());
     };
     try {
-      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash', 'cracker', 'crackers', 'flap', 'rock', 'tyre'] as const;
+      const groups = ['mid', 'hard', 'tree', 'woodBig', 'woodSmall', 'metal', 'barrel', 'soft', 'potBreak', 'potClink', 'splat', 'splash', 'cracker', 'crackers', 'flap', 'rock', 'tyre', 'ice', 'powerCut'] as const;
       const [idle, ...sets] = await Promise.all([
         fetchBuffer(FILES.engine),
         ...groups.map((group) => Promise.all(FILES[group].map(fetchBuffer))),
@@ -200,7 +276,7 @@ export class GameAudio {
       this.loaded = true;
 
       // The rest can come in a moment later without anyone noticing.
-      for (const name of ['skid', 'train', 'bell', 'river'] as const) {
+      for (const name of ['skid', 'train', 'bell', 'river', 'roof'] as const) {
         const recording = await fetchBuffer(FILES[name]);
         const source = ctx.createBufferSource();
         const { from, seconds, blend } = LOOPS[name];
@@ -212,10 +288,75 @@ export class GameAudio {
         source.start();
         this.loops[name] = { source, gain };
       }
+      if (this.stormWanted) void this.loadStorm(ctx);
     } catch (error) {
       // No sound is no reason to stop the game.
       console.warn('[audio] could not load the recordings', error);
     }
+  }
+
+  /** For a level out in a storm: fetch its sounds, now or as soon as there is sound at all. */
+  wantStorm(): void {
+    this.stormWanted = true;
+    if (this.ctx && this.loaded) void this.loadStorm(this.ctx);
+  }
+
+  private async loadStorm(ctx: AudioContext): Promise<void> {
+    if (this.stormFetching) return;
+    this.stormFetching = true;
+    const fetchBuffer = async (file: string): Promise<AudioBuffer> => {
+      const response = await fetch(`${import.meta.env.BASE_URL}audio/${file}`);
+      return ctx.decodeAudioData(await response.arrayBuffer());
+    };
+    // Each file fetched once, though the deck's scrapes are all cut from one.
+    const fetched = new Map<string, Promise<AudioBuffer>>();
+    const fetchOnce = (file: string): Promise<AudioBuffer> => {
+      if (!fetched.has(file)) fetched.set(file, fetchBuffer(file));
+      return fetched.get(file)!;
+    };
+    try {
+      const loops = {} as Record<StormLoop, { source: AudioBufferSourceNode; gain: GainNode; level: number }>;
+      for (const name of Object.keys(STORM_FILES) as StormLoop[]) {
+        const recording = await fetchOnce(STORM_FILES[name]);
+        const { from, seconds, blend } = STORM_LOOPS[name];
+        const long = Math.max(0.5, Math.min(seconds, recording.duration - from - 0.05));
+        const source = ctx.createBufferSource();
+        source.buffer = seamless(ctx, recording, from, long, Math.min(blend, long / 3));
+        source.loop = true;
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        source.connect(gain).connect(this.master);
+        // From anywhere in it, so that two levels' starts don't sound the same.
+        source.start(0, Math.random() * long);
+        // Evened out: one recording made twice as loud as the next must not change the mix.
+        loops[name] = { source, gain, level: clamp(STORM_EVEN / steady(source.buffer), 0.2, 12) };
+      }
+      for (const name of Object.keys(STORM_TAKES) as StormTake[]) {
+        const { even, parts } = STORM_TAKES[name];
+        this.stormTakes[name] = await Promise.all(parts.map(async ([file, from, to]) => {
+          const buffer = cut(ctx, await fetchOnce(file), from, to);
+          // A far roll recorded faintly is brought right up: it is all rumble, nothing in it to be made harsh.
+          return { buffer, from: 0, level: even === 'loudest' ? clamp(EVEN_TO / loudest(buffer), 0.25, 24) : clamp(STORM_EVEN / steady(buffer), 0.2, 12) };
+        }));
+      }
+      this.storm = loops;
+    } catch (error) {
+      console.warn('[audio] could not load the storm', error);
+    }
+  }
+
+  /**
+   * Thunder after lightning, `near` 0 far off to 1 overhead: the far rumble low and dull, the near crack loud; dulled
+   * again under a roof.
+   */
+  thunder(near: number, indoors: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.storm || this.paused || ctx.state !== 'running') return;
+    const n = clamp(near, 0, 1);
+    const close = n >= THUNDER_NEAR;
+    // Each as loud as it is near, within its own kind: the far roll never as loud as a crack.
+    const volume = close ? 0.45 + 0.3 * ((n - THUNDER_NEAR) / (1 - THUNDER_NEAR)) : 0.2 + 0.3 * (n / THUNDER_NEAR);
+    this.play(pick(close ? this.stormTakes.thunderNear : this.stormTakes.thunderFar), volume * (indoors ? 0.6 : 1), 0.94 + Math.random() * 0.1, indoors ? { muffle: 700 } : {});
   }
 
   /**
@@ -237,7 +378,7 @@ export class GameAudio {
     this.engineGain.gain.setTargetAtTime(volume, t, 0.2);
 
     // Tyres squeal quickly and stop quickly; a train swells and fades as it goes by.
-    const { skid, train, bell, river } = this.loops;
+    const { skid, train, bell, river, roof } = this.loops;
     if (skid) {
       skid.gain.gain.setTargetAtTime(clamp(state.skid, 0, 1) * 0.42, t, 0.06);
       skid.source.playbackRate.setTargetAtTime(0.9 + pace * 0.25, t, 0.2);
@@ -245,6 +386,31 @@ export class GameAudio {
     if (train) train.gain.gain.setTargetAtTime(clamp(state.train, 0, 1) ** 2 * 0.9, t, 0.12);
     if (bell) bell.gain.gain.setTargetAtTime(state.bell ? 0.3 : 0, t, 0.08);
     if (river) river.gain.gain.setTargetAtTime(clamp(state.river, 0, 1) ** 2 * 0.45, t, 0.4);
+    // A squall heard drumming the harder on a roof overhead.
+    if (roof) roof.gain.gain.setTargetAtTime(clamp(state.roof, 0, 1) * 0.4 * (1 + 0.8 * (state.storm?.pour ?? 0)), t, 0.6);
+
+    // The storm: the wind and rain heard through a roof when under one, the sea nearer the water, and afloat the hulls
+    // and whatever is sliding about on them.
+    const storm = this.storm, st = state.storm;
+    if (storm && st) {
+      const out = 1 - clamp(st.indoors, 0, 1);
+      storm.wind.gain.gain.setTargetAtTime(storm.wind.level * (0.14 + 0.24 * clamp(st.gust, 0, 1)) * (0.35 + 0.65 * out) * (1 + 0.35 * (st.pour ?? 0)), t, 0.5);
+      storm.rain.gain.gain.setTargetAtTime(storm.rain.level * 0.16 * out * (1 + 1.5 * (st.pour ?? 0)), t, 0.6);
+      storm.sea.gain.gain.setTargetAtTime(storm.sea.level * clamp(st.sea, 0, 1) ** 1.5 * 0.4 * (0.3 + 0.7 * out), t, 0.6);
+      const afloat = clamp(st.afloat, 0, 1), rolling = clamp(st.rolling, 0, 1);
+      storm.hull.gain.gain.setTargetAtTime(storm.hull.level * afloat * (0.12 + 0.28 * rolling), t, 0.3);
+      // Something sliding over a deck: one scrape after another while it goes on, never the same one twice running.
+      const sliding = clamp(st.sliding, 0, 1);
+      if (sliding > 0.1 && t > this.slideUntil - 0.15) {
+        const choices = this.stormTakes.slide.filter((clip) => clip !== this.lastSlide);
+        const clip = pick(choices), rate = 0.9 + Math.random() * 0.2;
+        if (clip) {
+          this.play(clip, sliding * 0.5, rate);
+          this.lastSlide = clip;
+          this.slideUntil = t + clip.buffer.duration / rate;
+        }
+      }
+    }
   }
 
   /**
@@ -323,6 +489,11 @@ export class GameAudio {
         // Rock, brick or concrete: stones clattering down. Only the start of it for something small.
         this.play(pick(this.clips.rock), volume, 1 + (Math.random() - 0.5) * 0.16, weight < 0.3 ? { seconds: 0.9 } : {});
         break;
+      case 'ice':
+        // A block of ice: the stones' clatter, quieter and cut short, with a little of ice struck over it.
+        this.play(pick(this.clips.rock), volume * 0.45, 1.05 + (Math.random() - 0.5) * 0.16, { seconds: 0.5 });
+        this.play(pick(this.clips.ice), volume * 0.3, 1 + (Math.random() - 0.5) * 0.12, { seconds: 0.5 });
+        break;
       default:
         // Not something that stands by the road; but if it is hit, it sounds as it would landing.
         this.thud(material, strength, weight);
@@ -370,6 +541,10 @@ export class GameAudio {
         break;
       case 'stone':
         this.play(pick(this.clips.rock), v * 0.85, 1.05 + wobble, weight < 0.3 ? { seconds: 0.7 } : {});
+        break;
+      case 'ice':
+        this.play(pick(this.clips.rock), v * 0.4, 1.1 + wobble, { seconds: 0.35 });
+        this.play(pick(this.clips.ice), v * 0.25, 1 + wobble, { seconds: 0.35 });
         break;
       case 'melon':
         // A dull, wet knock.
@@ -509,10 +684,16 @@ export class GameAudio {
   }
 
   /** Something has gone into the water: the truck with a great splash, anything less with a smaller one. */
-  splash(big: boolean): void {
+  splash(big: boolean, loud = 1): void {
     if (!this.ctx || !this.loaded || this.paused || this.ctx.state !== 'running') return;
-    // The same splash for both, the lesser one quieter and a little higher.
-    this.play(this.clips.splash[0], big ? 1 : 0.45, (big ? 0.95 : 1.25) + Math.random() * 0.15);
+    // The same splash for both, the lesser one quieter and a little higher; `loud` for how near and how big, 0 to 1.
+    this.play(this.clips.splash[0], (big ? 1 : 0.45) * clamp(loud, 0, 1), (big ? 0.95 : 1.25 + 0.3 * (1 - clamp(loud, 0, 1))) + Math.random() * 0.15);
+  }
+
+  /** The power has gone off around the truck: the clunk of it. */
+  powerCut(): void {
+    if (!this.ctx || !this.loaded || this.paused || this.ctx.state !== 'running') return;
+    this.play(this.clips.powerCut[0], 0.9, 1);
   }
 
   setPaused(paused: boolean): void {
@@ -574,6 +755,14 @@ export class GameAudio {
   }
 }
 
+/** How loud a recording is on the whole: its RMS over all of it. */
+function steady(buffer: AudioBuffer): number {
+  const samples = buffer.getChannelData(0);
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  return Math.max(0.0001, Math.sqrt(sum / samples.length));
+}
+
 /** How loud a recording is at its loudest: the highest average over any twentieth of a second. */
 function loudest(buffer: AudioBuffer): number {
   const samples = buffer.getChannelData(0);
@@ -585,6 +774,25 @@ function loudest(buffer: AudioBuffer): number {
     top = Math.max(top, Math.sqrt(sum / window));
   }
   return top;
+}
+
+/** One sound cut out of a take of several, seconds, eased in and out over a hundredth of a second so as not to click. */
+function cut(ctx: AudioContext, source: AudioBuffer, from: number, to: number): AudioBuffer {
+  const rate = source.sampleRate;
+  const start = Math.floor(from * rate);
+  const length = Math.max(1, Math.min(Math.floor(to * rate), source.length) - start);
+  const ease = Math.min(Math.floor(rate * 0.01), length >> 1);
+  const part = ctx.createBuffer(source.numberOfChannels, length, rate);
+  for (let channel = 0; channel < source.numberOfChannels; channel++) {
+    const input = source.getChannelData(channel);
+    const output = part.getChannelData(channel);
+    for (let i = 0; i < length; i++) output[i] = input[start + i];
+    for (let i = 0; i < ease; i++) {
+      output[i] *= i / ease;
+      output[length - 1 - i] *= i / ease;
+    }
+  }
+  return part;
 }
 
 function pick<T>(list: T[]): T | undefined {

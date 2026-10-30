@@ -1,5 +1,5 @@
-import { Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
-import { DRIVER, PHYSICS } from './config';
+import { Plane, Quaternion, Raycaster, SpotLight, Vector2, Vector3, type Object3D } from 'three';
+import { DRIVER, PHYSICS, TRUCK } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
 import { bumpControls } from './controls';
@@ -8,7 +8,7 @@ import { Input } from './input';
 import { LessonGuide } from './lessons';
 import { Chat } from './chat';
 import { finishLoading, setStage, settle } from './loading';
-import { GameAudio, type Material } from './audio';
+import { GameAudio, type Material, type StormState } from './audio';
 import { saveBest } from './best';
 import { playMusic, uiSound, wakeMusic } from './jukebox';
 import { FIRST_LEVEL, LEVEL_LIST, LEVELS } from './levels';
@@ -24,6 +24,14 @@ import { ObjectsView, PedestriansView } from './render/objectsView';
 import { RidersView } from './render/ridersView';
 import { MachinesView } from './render/machinesView';
 import { RigsView } from './render/rigsView';
+import { RainView } from './render/rainView';
+import { StormView } from './render/stormView';
+import { WavesView } from './render/wavesView';
+import { WindView } from './render/windView';
+import { LampsView } from './render/lampsView';
+import { OutageView } from './render/outageView';
+import { SkylightsView } from './render/skylightsView';
+import { sheltered } from './sim/waves';
 import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
 import { heightAt } from './levels/terrain';
@@ -50,7 +58,8 @@ const input = new Input(canvas);
 const hud = new Hud(level);
 // On ground that rises and falls, the view is from lower and further back, looking further ahead: from high above, a hill looks flat.
 const terrain = level.terrain;
-const chase = new ChaseCamera(view.camera, terrain ? { height: 9, distance: 13, lookAhead: 7, ground: (x, z, reach = 3) => heightAt(terrain, x, z, sim.truck.body.translation().y + reach) } : undefined);
+// Lower and further back where there is height to see: on terrain, and on decks afloat (their ground, the quay, is flat).
+const chase = new ChaseCamera(view.camera, terrain || level.decks ? { height: 9, distance: 13, lookAhead: 7, ground: terrain ? (x, z, reach = 3) => heightAt(terrain, x, z, sim.truck.body.translation().y + reach) : undefined } : undefined);
 const graphics = new Graphics(view);
 // The switch in the pause menu: one of four, the one in force lit. On automatic it says what it has settled on.
 const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('#gfx-quality button')];
@@ -117,8 +126,86 @@ const ridersView = new RidersView(view.scene, sim.riders.list);
 const machinesView = new MachinesView(view.scene, sim.machines.list);
 const lampTruck = new Vector3();
 const rigsView = new RigsView(view.scene, sim.rigs.list, sim.droppers.rocks, sim.droppers.holes);
+const wavesView = sim.waves.list.length ? new WavesView(view.scene, sim.waves.list) : null;
+const windView = sim.wind.list.length ? new WindView(view.scene, sim.wind.list) : null;
+const lampsView = level.lamps?.length ? new LampsView(view.scene, level.lamps) : null;
+// After everything else in the hall is made: what glows of itself in there goes dark with it.
+const outageView = level.outage ? new OutageView(view.scene, level.outage, truckMesh.root) : null;
+const skylightsView = sim.skylights.lights.length ? new SkylightsView(view.scene, sim.skylights) : null;
+/** How fast a gust drives the rain across, metres a second, at its hardest. */
+const GUST_RAIN = 22;
+/** On a level in a storm, the rain. */
+const rain = level.light === 'storm' ? new RainView(view.scene) : null;
+/** The top of whatever water is lying over a place on ground so high: the sea, a flood, a puddle on a roof; none, none. */
+function waterOver(x: number, z: number, ground: number): number | undefined {
+  let top: number | undefined;
+  for (const { area: [x0, z0, x1, z1], surface } of level.pools ?? []) if (x > x0 && x < x1 && z > z0 && z < z1 && surface > ground && (top === undefined || surface > top)) top = surface;
+  return top;
+}
+/** Where the rain comes down near the truck: the ground, or the water over it. */
+function rainOn(x: number, z: number): number {
+  const ground = heightAt(level.terrain, x, z, sim.truck.body.translation().y + 3);
+  return waterOver(x, z, ground) ?? ground;
+}
+/** And the rest of the storm: the splashes, the surf, the sheets of rain, the lightning; and the thunder still to come. */
+const storm = level.light === 'storm' ? new StormView({ hemi: view.hemi, scene: view.scene }, level.surf ?? [], rainOn) : null;
+const thunders: { in: number; near: number }[] = [];
+/** A news crew's lights, each on its stand: really lit, onto whoever is speaking, and going over with the stand if it is knocked. */
+const crewLights = sim.objects.objects.filter((o) => o.desc.kind === 'lightStand').map((o) => {
+  const light = new SpotLight(0xfff4e2, 40, 11, 0.5, 0.55, 2);
+  view.scene.add(light, light.target);
+  return { o, light };
+});
+const LIGHT_FACE = new Vector3(0, 2.32, 0.1), LIGHT_ON = new Vector3(0, 1.0, 3.2);
+function aimCrewLights(): void {
+  for (const { o, light } of crewLights) {
+    const p = o.body.translation(), r = o.body.rotation(), q = new Quaternion(r.x, r.y, r.z, r.w);
+    light.position.copy(LIGHT_FACE).applyQuaternion(q).add(p as Vector3);
+    light.target.position.copy(LIGHT_ON).applyQuaternion(q).add(p as Vector3);
+  }
+}
+/**
+ * On a level that has them, a squall now and then: how hard it is pouring (0 to 1), how long the level has gone on, when
+ * the next comes; how far it is hidden by a roof overhead; the fog as it was before the squall closed it in this frame,
+ * and as the squall left it, so that it can be put back before anything else looks at it.
+ */
+const squalls = level.light === 'storm' ? level.squalls : undefined;
+const squall = { k: 0, t: 0, next: squalls ? squalls.every[0] * 0.6 : Infinity, cover: 0, base: { near: 0, far: 0 }, set: null as { near: number; far: number } | null };
+function squallUndo(): void {
+  const fog = view.scene.fog as { near: number; far: number } | null;
+  if (fog && squall.set && fog.near === squall.set.near && fog.far === squall.set.far) [fog.near, fog.far] = [squall.base.near, squall.base.far];
+  squall.set = null;
+}
+function squallUpdate(dt: number, indoors: boolean): void {
+  if (!squalls) return;
+  const { every, last, grow } = squalls, into = (squall.t += dt) - squall.next;
+  // Coming on, at its worst, passing; then a while till the next.
+  let k = into < 0 ? 0 : into < grow ? into / grow : into < grow + last ? 1 : 1 - (into - grow - last) / grow;
+  if (k < 0) {
+    squall.next = squall.t + every[0] + Math.random() * (every[1] - every[0]);
+    k = 0;
+  }
+  squall.k = k * k * (3 - 2 * k);
+  // Under a roof it is only heard on it; out from under one the fog it brings is seen again over a moment.
+  squall.cover += ((indoors ? 1 : 0) - squall.cover) * Math.min(1, dt * 2);
+  const seen = squall.k * (1 - squall.cover), fog = view.scene.fog as { near: number; far: number } | null;
+  if (fog && seen > 0) {
+    squall.base = { near: fog.near, far: fog.far };
+    fog.near *= 1 - 0.75 * seen;
+    fog.far *= 1 - 0.6 * seen;
+    squall.set = { near: fog.near, far: fog.far };
+  }
+  rain?.pour(seen);
+  if (storm) storm.pour = seen;
+}
 /** Whether the level has a building to drive up through, seen in section. */
 const cutaway = sim.level.props.some((p) => p.cutaway);
+const lidded = !!sim.level.lids?.length;
+/** What is on top of a roof over a hall, while the truck or the driver is in under it. */
+function lidHides(p: { x: number; y: number; z: number }): boolean {
+  const at = sim.driver.mode === 'driving' ? sim.truck.body.translation() : sim.driver.pos;
+  return (sim.level.lids ?? []).some(({ area, below }) => at.x > area[0] && at.x < area[2] && at.z > area[1] && at.z < area[3] && at.y < below && p.x > area[0] && p.x < area[2] && p.z > area[1] && p.z < area[3] && p.y > below);
+}
 /** Testing tools: only when run locally from the dev server. The published build has none of it. */
 const TESTING = import.meta.env.DEV;
 if (TESTING && sim.level.checkpoints?.length) {
@@ -161,7 +248,7 @@ playMusic('level');
 let knockedWeight = -1;
 /** Where each frame's time goes, added up until a script reads and clears it: physics, everything else, drawing. */
 const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0 };
-const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input };
+const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input, levelView, storm, squall: () => { squall.next = squall.t; } };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
 let last = performance.now();
@@ -198,6 +285,61 @@ function riverNearness(): number {
   let nearest = Infinity;
   for (const [x0, z0, x1, z1] of RUNNING) nearest = Math.min(nearest, Math.hypot(Math.max(0, x0 - at.x, at.x - x1), Math.max(0, z0 - at.z, at.z - z1)));
   return Math.max(0, 1 - nearest / RIVER_EARSHOT);
+}
+
+// Out in a storm, its sounds: what they need to know of where the truck is.
+const stormy = level.light === 'storm';
+if (stormy) audio.wantStorm();
+/** The sea is heard from this far off, metres; the level is measured for it in squares this big. */
+const SEA_EARSHOT = 45, SEA_CELL = 4;
+/** How far it is from each square of the level to open water, metres: worked out once, two passes over the squares. */
+const seaFar = stormy && level.bounds && level.terrain?.surface ? (() => {
+  const [[x0, z0], [x1, z1]] = level.bounds!;
+  const w = Math.ceil((x1 - x0) / SEA_CELL) + 1, h = Math.ceil((z1 - z0) / SEA_CELL) + 1;
+  const far = new Float32Array(w * h).fill(Infinity);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (level.terrain!.surface!(x0 + i * SEA_CELL, z0 + j * SEA_CELL)?.tag === 'water') far[j * w + i] = 0;
+  const step = (i: number, j: number, di: number, dj: number) => {
+    const a = i + di, b = j + dj;
+    if (a < 0 || b < 0 || a >= w || b >= h) return;
+    far[j * w + i] = Math.min(far[j * w + i], far[b * w + a] + Math.hypot(di, dj) * SEA_CELL);
+  };
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { step(i, j, -1, 0); step(i, j, 0, -1); step(i, j, -1, -1); step(i, j, 1, -1); }
+  for (let j = h - 1; j >= 0; j--) for (let i = w - 1; i >= 0; i--) { step(i, j, 1, 0); step(i, j, 0, 1); step(i, j, 1, 1); step(i, j, -1, 1); }
+  return (x: number, z: number) => {
+    const i = Math.round((x - x0) / SEA_CELL), j = Math.round((z - z0) / SEA_CELL);
+    return i < 0 || j < 0 || i >= w || j >= h ? 0 : far[j * w + i];
+  };
+})() : null;
+/** What floats, for the hulls' creaking: not the boardwalks on piles, nor a boat up on land. */
+const afloat = sim.rigs.list.filter((rig) => rig.desc.kind === 'float' && rig.desc.half && rig.desc.hull !== 'walk' && (rig.desc.heave || rig.desc.roll));
+/** What the storm sounds like at a place. */
+function stormAt(at: { x: number; y: number; z: number }, indoors: boolean): StormState {
+  // The nearest thing afloat, measured from its sides; how fast it is turning, its roll and pitch together.
+  let near = Infinity, rolling = 0, sliding = 0;
+  for (const rig of afloat) {
+    const pose = rig.pose, was = rig.was, half = rig.desc.half!, yaw = rig.desc.yaw ?? 0;
+    const cx = pose?.x ?? rig.desc.pos[0], cz = pose?.z ?? rig.desc.pos[2];
+    const dx = at.x - cx, dz = at.z - cz;
+    const across = Math.abs(dx * Math.cos(yaw) - dz * Math.sin(yaw)), along = Math.abs(dx * Math.sin(yaw) + dz * Math.cos(yaw));
+    const d = Math.hypot(Math.max(0, across - half[0]), Math.max(0, along - half[2]));
+    if (pose && was) {
+      const dot = Math.abs(pose.rot.x * was.rot.x + pose.rot.y * was.rot.y + pose.rot.z * was.rot.z + pose.rot.w * was.rot.w);
+      const turning = 2 * Math.acos(Math.min(1, dot)) * 60;
+      if (d < near) { near = d; rolling = turning / 0.1; }
+    } else near = Math.min(near, d);
+    // Containers loose on its deck, sliding.
+    if (rig.desc.loose) for (const part of rig.parts.slice(1)) {
+      const p = part.body.translation(), v = part.body.linvel();
+      const off = Math.hypot(p.x - at.x, p.z - at.z);
+      if (off < 35) sliding = Math.max(sliding, (Math.hypot(v.x, v.z) / 1.5) * (1 - off / 35));
+    }
+  }
+  const [wx, wz] = sim.wind.at(at.x, at.z), gust = Math.min(1, Math.hypot(wx, wz));
+  return {
+    indoors: indoors ? 1 : 0, gust,
+    sea: seaFar ? Math.max(0, 1 - seaFar(at.x, at.z) / SEA_EARSHOT) : 0,
+    afloat: Math.max(0, 1 - near / 25), rolling, sliding, pour: squall.k,
+  };
 }
 
 function trainNearness(): number {
@@ -277,6 +419,54 @@ function toScreen(point: { x: number; y: number; z: number }, above: number): { 
   return { x: (screen.x * 0.5 + 0.5) * window.innerWidth, y: (-screen.y * 0.5 + 0.5) * window.innerHeight };
 }
 
+/** What people in the market say once the power has gone: now and then one of those near the truck, not all of them;
+ * the first two first, the rest in no order, none twice. */
+const DARK_SAYS = ['停電了？', '好黑喔……', '颱風把電線桿吹倒了嗎', '誰有手電筒？', '台電什麼時候來修啊', '看不到啦', '快收一收，回家了啦', '手機的燈打開啦'];
+const DARK_MOST = 6;
+const dark = { said: 0, next: 0, left: [] as string[] };
+/** Each frame in the dark: when it is time, someone standing near the truck, in sight, says something. */
+function murmur(dt: number, gone: number): void {
+  if (gone < 0) {
+    dark.said = 0;
+    dark.next = 1.8;
+    return;
+  }
+  if (dark.said >= DARK_MOST || (dark.next -= dt) > 0) return;
+  const t = sim.truck.body.translation();
+  const near = sim.pedestrians.list.filter((p) => p.state !== 'down' && p.state !== 'flee' && Math.hypot(p.pos.x - t.x, p.pos.z - t.z) < 12);
+  for (const person of near.sort(() => Math.random() - 0.5)) {
+    const spot = toScreen(person.pos, 2.1);
+    if (!spot || spot.x < 60 || spot.x > window.innerWidth - 60 || spot.y < 60 || spot.y > window.innerHeight - 60) continue;
+    if (dark.said === 0) dark.left = DARK_SAYS.slice(2).sort(() => Math.random() - 0.5);
+    const words = dark.said < 2 ? DARK_SAYS[dark.said] : dark.left.pop()!;
+    hud.popup(words, spot.x, spot.y, 'say');
+    dark.said++;
+    dark.next = 5 + Math.random() * 5;
+    return;
+  }
+  // Nobody to say it: look again in a moment.
+  dark.next = 0.5;
+}
+
+/** Those who have something to say as the truck comes near, a news crew's reporter to the camera: each line in turn,
+ * while it is near and they are on their feet and in sight, until they have said it all. */
+const talkers = sim.pedestrians.list.filter((p) => p.crowd.says?.length).map((p) => ({ p, said: 0, next: 0 }));
+const TALK_NEAR = 38, TALK_GAP = 2.6;
+function talk(dt: number): void {
+  const t = sim.truck.body.translation();
+  for (const talker of talkers) {
+    const { p } = talker, lines = p.crowd.says!;
+    if (talker.said >= lines.length || p.state === 'down' || Math.hypot(p.pos.x - t.x, p.pos.z - t.z) > TALK_NEAR || (talker.next -= dt) > 0) continue;
+    const spot = toScreen(p.pos, 2.1);
+    if (!spot || spot.x < 60 || spot.x > window.innerWidth - 60 || spot.y < 60 || spot.y > window.innerHeight - 60) {
+      talker.next = 0.4;
+      continue;
+    }
+    hud.popup(lines[talker.said++], spot.x, spot.y, 'say');
+    talker.next = TALK_GAP;
+  }
+}
+
 /** What people shout when they are sent flying. */
 const SHOUTS = ['喂！', '啊啊啊！', '看路啊！', '哎唷！', '搞什麼！'];
 const RIDER_SHOUTS = ['我的車！', '會不會開車啊！', '哎唷喂！', '啊啊啊！', '長眼睛沒有！'];
@@ -299,7 +489,9 @@ const SPOUT_SECONDS = 2.5;
 const splashAt = new Vector3();
 const fallCarry = new Vector3();
 /** Broken hydrants, still spouting where they stood. */
-const geysers: { at: Vector3; left: number; strong?: boolean }[] = [];
+const geysers: { at: Vector3; left: number; strong?: boolean; style?: 'water' | 'ice' | 'spill'; from?: { translation(): { x: number; y: number; z: number } } }[] = [];
+/** How long a tank burst open pours, seconds. */
+const SPILL_SECONDS = 1.4;
 const CRACKLE_SECONDS = 6;
 /** Strings of firecrackers going off where they fell, and how long until each one's next bang. */
 const crackles: { at: Vector3; left: number; next: number; laid?: boolean }[] = [];
@@ -313,9 +505,13 @@ const SPLASH_REACH = 7;
 /** Things that sound of neither wood nor metal when hit. */
 const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa',
   // Sacks, plastic and straw.
-  'sandbag', 'cementBag', 'jerrycan', 'rallyPole', 'delineator', 'barrier', 'flagOrange', 'flagPurple', 'flagTeal', 'haystack']);
+  'sandbag', 'cementBag', 'jerrycan', 'rallyPole', 'delineator', 'barrier', 'flagOrange', 'flagPurple', 'flagTeal', 'haystack',
+  // The harbour's: polystyrene, plastic baskets and chests, bags of ice, nets, floats, tarpaulins.
+  'foamBox', 'fishBox', 'basketBlue', 'basketYellow', 'basketRed', 'basketGreen', 'iceBag', 'iceChest', 'netHeap', 'tarpHeap', 'buoy',
+  // Rope, and cartons of frozen fish.
+  'ropeCoil', 'frozenCarton']);
 /** Rubber: a dull bounce. */
-const RUBBER = new Set(['tyre', 'tyreStack']);
+const RUBBER = new Set(['tyre', 'tyreStack', 'yokohamaFender']);
 /** Hollow metal: a boom rather than a ring. */
 const HOLLOW = new Set(['barrel', 'bin']);
 /** Rock. */
@@ -334,6 +530,7 @@ function materialOfObject(object: KnockEvent['object']): Material {
   if (HOLLOW.has(desc.kind)) return 'barrel';
   // Stone: no ring to it; stones clattering down.
   if (STONE.has(desc.kind)) return 'stone';
+  if (desc.kind === 'iceBlock') return 'ice';
   if (WEIGHT.has(desc.kind)) return 'heavy';
   if (RUBBER.has(desc.kind)) return 'rubber';
   return SOFT.has(desc.kind) ? 'soft' : 'metal';
@@ -369,6 +566,12 @@ function worksite(): void {
     tellHeard = now;
     audio.thud('stone', 0.1 + tellNear * 0.2, 0.1);
   }
+  // A skylight gone under a wheel: its sheet in bits, and the roof round it tearing as it goes down.
+  for (const at of sim.skylights.breaks) {
+    bursts.emit(splashAt.set(at.x, at.y + 0.2, at.z), 'shards', 30, 3, 0.6, 0xd9e2d2);
+    audio.smash('ceramic', 0.5);
+    audio.crunch(0.9);
+  }
   for (const rock of sim.droppers.breaks) {
     bursts.emit(splashAt.set(rock.x, rock.y, rock.z), 'dust', 26, 3.5, 1);
     bursts.emit(splashAt, 'shards', 18, 4.5, 1.4, 0x8b8880);
@@ -383,6 +586,13 @@ function worksite(): void {
     bursts.emit(splashAt.set(slam.x, slam.y, slam.z), 'dust', 30, 4, 0.6, 0x8a7a5e);
     const near = hearing(Math.hypot(slam.x - t.x, slam.z - t.z));
     if (near > 0) audio.thud('heavy', Math.min(1, slam.speed / 18) * (0.5 + near * 0.5), 0.7);
+  }
+  // A boat taken up by a wave and thrown down on the boardwalk: the sea coming over as it goes up, and as it lands.
+  for (const surge of sim.rigs.surges) {
+    bursts.emit(splashAt.set(surge.x, surge.y + 1, surge.z), 'water', surge.down ? 160 : 120, surge.down ? 12 : 10, 3);
+    if (surge.down) bursts.emit(splashAt.set(surge.x, surge.y + 0.5, surge.z), 'splinters', 40, 7, 1.4);
+    audio.splash(true);
+    if (surge.down) audio.thud('heavy', 1, 0.9);
   }
   for (const mud of sim.rigs.mud) {
     bursts.emit(splashAt.set(mud.x, mud.y, mud.z), 'juice', 10, 1.5, 0.2, 0x5a4a38);
@@ -412,10 +622,29 @@ function worksite(): void {
     const speed = Math.hypot(v.x, v.z);
     const r = sim.truck.body.rotation();
     const q = new Quaternion(r.x, r.y, r.z, r.w);
-    if (speed > 1.5 && Math.random() < 0.6) {
-      for (const side of [-1.3, 1.3]) {
-        const at = new Vector3(side, -0.6, 2.2 * (Math.random() < 0.5 ? 1 : -1)).applyQuaternion(q).add(new Vector3(t.x, t.y, t.z));
-        bursts.emit(at, 'water', Math.round(4 + speed), 1 + speed * 0.35, 1.6);
+    // Thrown up by the wheels, each its own, the more the faster it goes: off its tyre at the water, up and out, carried
+    // on a little after the truck; and while it goes on forward, a wave pushed out from under its bumper either side. In
+    // a storm's flood the water is brown with what it has washed out of the streets; a river's is clear.
+    if (speed > 1.2) {
+      const surface = waterOver(t.x, t.z, t.y - 1.2) ?? ford.surface ?? t.y - 0.6;
+      const style = level.light === 'storm' ? 'flood' : 'water';
+      const fore = new Vector3(0, 0, 1).applyQuaternion(q), right = new Vector3(1, 0, 0).applyQuaternion(q);
+      fordSpray += speed * PHYSICS.dt * FORD_SPRAY;
+      for (; fordSpray >= 1; fordSpray--) {
+        const [wx, , wz] = TRUCK.wheel.positions[Math.floor(Math.random() * 4)];
+        const at = new Vector3(t.x, surface, t.z).addScaledVector(right, wx * 1.05).addScaledVector(fore, wz + (Math.random() - 0.5) * 0.5);
+        const carry = new Vector3(v.x * 0.35, 0, v.z * 0.35).addScaledVector(right, Math.sign(wx) * (0.6 + speed * 0.12));
+        bursts.emit(at, style, Math.round(2 + speed * 0.38), 0.7 + speed * 0.21, 1.7, undefined, carry);
+      }
+      const ahead = v.x * fore.x + v.z * fore.z;
+      if (ahead > 2.5) {
+        bowWave += ahead * PHYSICS.dt * BOW_WAVE;
+        for (; bowWave >= 1; bowWave--) {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const at = new Vector3(t.x, surface, t.z).addScaledVector(right, side * 1.25).addScaledVector(fore, 3.9);
+          const carry = new Vector3(v.x * 0.6, 0, v.z * 0.6).addScaledVector(right, side * ahead * 0.35);
+          bursts.emit(at, style, 3, 0.55 + ahead * 0.1, 0.8, undefined, carry);
+        }
       }
     }
     // Running water breaking against the truck's side that faces upstream: thrown up white along it and carried on over
@@ -438,6 +667,10 @@ function worksite(): void {
     }
   }
 }
+
+/** What is owed of the wheels' spray in a ford and of the wave off the bumper, bursts; and how many to the metre gone. */
+let fordSpray = 0, bowWave = 0;
+const FORD_SPRAY = 2.2, BOW_WAVE = 1.3;
 
 /** When grit trickling and a rock landing were last heard, and how long before the next of each may be. */
 let tellHeard = 0, rockHeard = 0;
@@ -535,7 +768,8 @@ function showKnock(knock: KnockEvent): void {
     const awning = kind.parts[kind.parts.length - 1].color;
     wreckage.stall(knock.at, awning, away < 12 ? push : { x: 0, z: 0 });
   }
-  if (kind.geyser) geysers.push({ at: new Vector3(knock.at.x, knock.at.y + 0.2, knock.at.z), left: GEYSER_SECONDS });
+  if (kind.geyser) geysers.push({ at: new Vector3(knock.at.x, knock.at.y + 0.2, knock.at.z), left: GEYSER_SECONDS, style: kind.effect === 'ice' ? 'ice' : 'water' });
+  else if (kind.spills) geysers.push({ at: new Vector3(knock.at.x, knock.at.y + 0.6, knock.at.z), left: SPILL_SECONDS, style: 'spill', from: knock.object.body });
 }
 
 function spoutGeysers(dt: number): void {
@@ -549,8 +783,15 @@ function spoutGeysers(dt: number): void {
       bursts.emit(g.at, 'water', 12, 9 + 6 * f, 4);
       if (Math.random() < 0.3) smoke.emit(splashAt.set(g.at.x, g.at.y + 4 + Math.random() * 6, g.at.z), RISING);
     }
-    // A column of water, weakening as the pressure drops.
-    else bursts.emit(g.at, 'water', 3, 5 + 5 * (g.left / GEYSER_SECONDS), 3);
+    // A tank burst open, as it goes over: what was in it pouring out of it, a little steam off it, hot.
+    else if (g.style === 'spill') {
+      const p = g.from?.translation();
+      if (p) g.at.set(p.x, p.y + 0.5, p.z);
+      bursts.emit(g.at, 'spray', 2, 1.2 + 1.6 * (g.left / SPILL_SECONDS), 0.6);
+      if (Math.random() < 0.15) smoke.emit(splashAt.set(g.at.x, g.at.y + 0.3, g.at.z), RISING);
+    }
+    // A column of water, weakening as the pressure drops; or of crushed ice, still coming down a pipe knocked off its stand.
+    else bursts.emit(g.at, g.style ?? 'water', g.style === 'ice' ? 6 : 3, 5 + 5 * (g.left / GEYSER_SECONDS), 3);
   }
 }
 
@@ -610,6 +851,27 @@ function arcWires(dt: number): void {
     bursts.emit(splashAt, 'sparks', 8, 4);
     const near = hearing(Math.hypot(arc.at.x - truckAt.x, arc.at.z - truckAt.z));
     if (near > 0) audio.thud('bone', (0.6 + Math.random() * 0.4) * near, 0.1);
+  }
+}
+
+/** Live wire down in the storm, where the level has it lying: its loose ends spitting a few sparks at a time, then quiet a while. */
+const liveEnds = (level.sparks ?? []).map((at) => ({ at: new Vector3(...at), next: Math.random() * 2 }));
+/** Further from the truck than this, metres, none of it is worth showing. */
+const LIVE_SEEN = 70;
+function sparkLive(dt: number): void {
+  if (!liveEnds.length) return;
+  const truckAt = sim.truck.body.translation();
+  for (const end of liveEnds) {
+    if ((end.next -= dt) > 0) continue;
+    // In runs of a few flashes close together, a pause between.
+    end.next = Math.random() < 0.6 ? 0.05 + Math.random() * 0.12 : 0.9 + Math.random() * 2.6;
+    const far = Math.hypot(end.at.x - truckAt.x, end.at.z - truckAt.z);
+    if (far > LIVE_SEEN) continue;
+    splashAt.set(end.at.x + (Math.random() - 0.5) * 0.2, end.at.y, end.at.z + (Math.random() - 0.5) * 0.2);
+    bursts.emit(splashAt, 'arc', 6, 3, 0.8);
+    bursts.emit(splashAt, 'sparks', 7, 3.5, 1.2);
+    const near = hearing(far);
+    if (near > 0) audio.thud('bone', (0.3 + Math.random() * 0.3) * near, 0.1);
   }
 }
 
@@ -842,6 +1104,8 @@ function resetRun(toSave = false): void {
   truckSync.apply(1);
   chase.snap(truckMesh.root.position, truckHeading());
   smoke.clear();
+  storm?.clear();
+  thunders.length = 0;
   engineSmoke.clear();
   wreckSmoke.clear();
   bursts.clear();
@@ -900,6 +1164,7 @@ function footInput(first: boolean): FootInput {
       grabPressed: first && input.take('KeyF'),
       jumpPressed: first && input.take('Space'),
       aim,
+      aimByStick: true,
       charging: input.charging(),
       cancelPressed: first && input.takeRightClick(),
     };
@@ -933,10 +1198,10 @@ function updatePrompt(): void {
   if (driver.mode === 'driving') {
     if (sim.level.wet && sim.wetAt(truck.body.translation())) return hud.setPrompt('水泥還沒乾，開不快', true);
     if (truck.grip < 1 && !sim.fordAt(truck.body.translation())) {
-      // Oil, unless what it is on is gravel spilt from a lorry.
+      // Oil, unless what it is on is gravel spilt from a lorry, or crushed ice.
       const at = truck.body.translation();
-      const gravel = sim.level.slicks?.some((k) => k.look === 'gravel' && Math.abs(at.x - k.pos[0]) < k.half[0] && Math.abs(at.z - k.pos[1]) < k.half[1]);
-      return hud.setPrompt(gravel ? '路面有砂石，小心打滑' : '路面有油，小心打滑', true);
+      const look = sim.level.slicks?.find((k) => Math.abs(at.x - k.pos[0]) < k.half[0] && Math.abs(at.z - k.pos[1]) < k.half[1])?.look;
+      return hud.setPrompt(look === 'gravel' ? '路面有砂石，小心打滑' : look === 'ice' ? '路面結冰，小心打滑' : '路面有油，小心打滑', true);
     }
     const slow = Math.abs(truck.forwardSpeed()) < DRIVER.exitSpeed;
     // Something found lying along the way is only worth getting out for once it is close.
@@ -1161,15 +1426,47 @@ function frame(now: number): void {
       if (at) hud.popup('被火車撞飛！', at.x, at.y, 'big');
       chat?.cue('train');
     }
+    // A wave breaking over a sea wall: spray all along it, where it is near enough to be seen and heard.
+    for (const { desc, big } of sim.waves.drainBreaks()) {
+      const t = sim.truck.body.translation();
+      const long = Math.hypot(desc.to[0] - desc.from[0], desc.to[1] - desc.from[1]);
+      let heard = false;
+      for (let d = 2; d < long; d += 5) {
+        if (desc.lee?.some(([a, b]) => d > a && d < b)) continue;
+        const x = desc.from[0] + ((desc.to[0] - desc.from[0]) * d) / long, z = desc.from[1] + ((desc.to[1] - desc.from[1]) * d) / long;
+        if (Math.hypot(x - t.x, z - t.z) > 80) continue;
+        heard = true;
+        bursts.emit(splashAt.set(x, (desc.y ?? 0) + 0.4, z), 'water', big ? 40 : 22, big ? 10 : 7, 2);
+      }
+      // Over the boardwalk low enough for it: up over its seaward side and across it.
+      for (const { pos, half, yaw } of desc.wash ?? []) {
+        if (Math.hypot(pos[0] - t.x, pos[1] - t.z) > 80 || sheltered(desc, pos[0], pos[1])) continue;
+        heard = true;
+        const c = Math.cos(yaw), s = Math.sin(yaw);
+        for (let d = -half[1]; d <= half[1]; d += 4) for (const across of [half[0], 0]) {
+          const side = Math.sign(-desc.inland[0] * c + desc.inland[1] * s) * across;
+          bursts.emit(splashAt.set(pos[0] + side * c + d * s, (desc.y ?? 0) + 0.5, pos[1] - side * s + d * c), 'water', big ? 30 : 16, big ? 8 : 5, 2);
+        }
+      }
+      if (heard) audio.splash(true);
+    }
     for (const splash of sim.drainSplashes()) {
       // Something knocked into a settling pond far off by a machine, unseen: unheard too.
       const at = sim.truck.body.translation();
       if (splash.muddy && Math.hypot(splash.x - at.x, splash.z - at.z) > 70) continue;
       const big = splash.mass > 400;
+      if (splash.still) {
+        // Into standing water, where things lie about in it to be knocked in one after another: heard as near as it is and
+        // as big as it was, a polystyrene box a plop, the far ones not at all; thrown up as much.
+        const near = hearing(Math.hypot(splash.x - at.x, splash.z - at.z)), size = Math.min(1, Math.max(0.15, splash.mass / 120));
+        bursts.emit(splashAt.set(splash.x, splash.y + 0.1, splash.z), splash.muddy ? 'mud' : level.light === 'storm' ? 'flood' : 'water', big ? 40 : Math.round(4 + 10 * size), big ? 6 : 2 + 2 * size, 2);
+        if (near > 0) audio.splash(big, (0.45 + 0.55 * near) * (big ? 1 : 0.55 + 0.45 * size));
+        continue;
+      }
       bursts.emit(splashAt.set(splash.x, splash.y + 0.2, splash.z), splash.muddy ? 'mud' : 'water', big ? 90 : 24, big ? 9 : 5, 2);
       audio.splash(big);
     }
-    for (const person of sim.drainPedestrianHits()) showHit(person.pos, SHOUTS, false);
+    for (const person of sim.drainPedestrianHits()) showHit(person.pos, person.crowd.shouts ?? SHOUTS, false);
     // Water up out of the road: a column, for a while, and the sound of it.
     for (const spout of sim.drainSpouts()) {
       geysers.push({ at: new Vector3(spout.x, spout.y + 0.1, spout.z), left: SPOUT_SECONDS, strong: true });
@@ -1214,7 +1511,9 @@ function frame(now: number): void {
   cargoViews.apply(alpha);
   cargoViews.update(dt);
   // In a building driven up through, what is on the storeys above the truck is not drawn, as the storeys are not.
-  objectsView.update(cutaway ? sim.truck.body.translation().y + 2.7 : undefined);
+  // Under a roof over a hall, what is up on top of it is not drawn either.
+  objectsView.update(cutaway ? sim.truck.body.translation().y + 2.7 : undefined, lidded ? lidHides : undefined);
+  skylightsView?.update(lidded ? lidHides : undefined);
   {
     const t = sim.truck.body.translation();
     rigsView.apply(alpha, now / 1000, view.camera.position, lampTruck.set(t.x, t.y, t.z));
@@ -1225,6 +1524,7 @@ function frame(now: number): void {
   spoutGeysers(dt);
   crackle(dt);
   arcWires(dt);
+  sparkLive(dt);
   battleView.update(dt, truckMesh.root.position, level.battle);
   // The truck's horn: from the cab only, and not again until it has finished. Whoever is near on foot runs.
   hornWait -= dt;
@@ -1279,15 +1579,51 @@ function frame(now: number): void {
   audio.update(dt, {
     speed, throttle: sim.result ? 0 : drive.throttle, boosting: sim.truck.boosting, driving: !onFoot,
     skid: onFoot ? 0 : skidding(drive, speed), train: trainNearness(), bell: bellRinging(), river: riverNearness(),
+    roof: outageView?.under(focus) ? 1 : 0,
+    storm: stormy ? stormAt(focus, !!outageView?.under(focus)) : undefined,
   });
   // On foot, the right stick aims rather than zooms or looks round; the right button cancels a throw.
   chase.addZoom(input.takeWheel(!onFoot));
   const lookDrag = input.takeLookDrag();
   // On foot the right button still turns the view, unless a throw is being wound up, when it cancels it; the stick aims.
   // Q and E turn the view as the stick does: held round while driving, turned for good on foot.
-  chase.lookAround(onFoot && driver.charge > 0 ? 0 : lookDrag, input.rightDown && !(onFoot && driver.charge > 0), onFoot ? 0 : input.pad.rightX || input.turnKeys(), !onFoot && !!input.pad.rightX);
-  chase.turnOnFoot(onFoot && driver.charge === 0 ? input.footTurn(!!driver.held) : 0);
+  chase.lookAround(lookDrag, input.rightDown, onFoot ? 0 : input.pad.rightX || input.turnKeys(), !onFoot && !!input.pad.rightX);
+  chase.turnOnFoot(onFoot ? input.footTurn(!!driver.held) : 0);
   if (!debug.freeze) chase.update(dt, focus, onFoot ? null : truckHeading(), speed, sim.truck.boosting);
+  if (rain && windView) {
+    // Out of an alley's mouth in a gust, the rain goes near flat along it.
+    const t = sim.truck.body.translation(), [wx, wz] = sim.wind.at(t.x, t.z);
+    rain.blow(wx * GUST_RAIN, wz * GUST_RAIN, dt);
+  }
+  squallUndo();
+  if (outageView) {
+    const was = outageView.gone;
+    outageView.update(dt, focus);
+    if (was < 0 && outageView.gone >= 0) audio.powerCut();
+    murmur(dt, outageView.gone);
+    // No rain under the hall's roof.
+    rain?.show(!outageView.under(focus));
+  }
+  rain?.update(dt, view.camera.position);
+  if (storm) {
+    const indoors = !!outageView?.under(focus), [wx, wz] = sim.wind.at(focus.x, focus.z);
+    const flash = storm.update(dt, view.camera, view.renderer.domElement.height, focus, indoors, [5 + wx * GUST_RAIN, 2 + wz * GUST_RAIN]);
+    // The thunder as long after as it is far off: a near one hard on the flash, a far one seconds later.
+    if (flash) thunders.push({ in: 0.25 + (1 - flash.near) * 6, near: flash.near });
+    for (let i = thunders.length - 1; i >= 0; i--) if ((thunders[i].in -= dt) <= 0) {
+      audio.thunder(thunders[i].near, indoors);
+      thunders.splice(i, 1);
+    }
+  }
+  squallUpdate(dt, !!outageView?.under(focus));
+  if (crewLights.length) aimCrewLights();
+  if (talkers.length) talk(dt);
+  windView?.update(dt);
+  if (lampsView) {
+    const r = sim.truck.body.rotation();
+    lampsView.update(dt, sim.truck.body.translation(), Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x)), sim.truck.forwardSpeed());
+  }
+  wavesView?.update();
   if (!onFoot) {
     emitSmoke(dt, drive, speed);
     kickRice(dt, speed);
@@ -1346,6 +1682,20 @@ function frame(now: number): void {
 setStage(2, 0.8);
 await settle();
 view.renderer.compile(view.scene, view.camera);
-await finishLoading();
+// And one frame drawn behind the loading screen with everything in it, seen or not, hidden for now or not: the shadow's own
+// shaders, which compiling leaves out, and every shape and picture sent to the graphics card now rather than on the way.
+{
+  const was: [Object3D, boolean, boolean][] = [];
+  view.scene.traverse((o) => { was.push([o, o.visible, o.frustumCulled]); o.visible = true; o.frustumCulled = false; });
+  view.renderer.render(view.scene, view.camera);
+  // Again with what fades faded: its see-through shaders.
+  levelView.seeThrough(true);
+  view.renderer.render(view.scene, view.camera);
+  levelView.seeThrough(false);
+  for (const [o, visible, culled] of was) { o.visible = visible; o.frustumCulled = culled; }
+}
+// Going before the loading screen fades: what it fades off is the game as it is, not the picture drawn to make ready,
+// everything in it, roofs and all, see-through, from wherever the camera began.
 last = performance.now();
 requestAnimationFrame(frame);
+await finishLoading();

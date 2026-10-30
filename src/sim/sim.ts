@@ -27,6 +27,10 @@ import { Trains } from './trains';
 import { Truck, type DriveInput } from './truck';
 import { Afloat } from './afloat';
 import { Water, type Splash } from './water';
+import { Waves } from './waves';
+import { Wind } from './wind';
+import { Hits } from './hits';
+import { Skylights } from './skylights';
 
 export interface PropInstance {
   desc: PropDesc;
@@ -89,6 +93,8 @@ const GROUND_THICKNESS = 5;
 /** The truck this far below the road, for this long, has fallen into a pit. */
 const PIT_DEPTH = 0.6;
 const PIT_SECONDS = 1;
+/** How long after it is down through a roof the run ends: long enough to see it come down. */
+const FALLEN_SECONDS = 1.2;
 /** Height of the truck's chassis above the road when standing on it. */
 const TRUCK_REST = 0.72;
 /** The truck must sit this still, for this long, inside the bay to deliver. */
@@ -149,7 +155,12 @@ export class Sim {
   readonly riders: Riders;
   readonly machines: Machines;
   readonly rigs: Rigs;
+  readonly waves: Waves;
+  readonly wind: Wind;
+  /** Things flung or falling at the truck: what the wind carries off, stock come down off a stall. */
+  readonly hits = new Hits();
   readonly droppers: Droppers;
+  readonly skylights: Skylights;
   readonly driver: Driver;
   readonly trains: Trains;
   readonly water: Water;
@@ -195,6 +206,10 @@ export class Sim {
   private readonly truckVel = { x: 0, y: 0, z: 0 };
   private bumps: number[] = [];
   private stalled = 0;
+  /** For each roof that can be fallen through, whether the truck has been up on it since it was last down outside it. */
+  private upOn: boolean[] = [];
+  /** How long the truck has been down in a hall it was up on the roof of. */
+  private fallen: number[] = [];
   /** Seconds since the burst main under the road was first come near, or -1; when each manhole next blows; water thrown up since the last call. */
   private mainClock = -1;
   private mainNext: number[] = [];
@@ -265,7 +280,11 @@ export class Sim {
       shape.setFriction(desc.friction ?? 0.8).setCollisionGroups(groups(dynamic ? GROUP.prop : GROUP.ground, desc.wheelsOnly ? GROUP.truck : GROUP.all));
       // A slippery one is slippery whatever rests on it, however much grip that has of its own.
       if (desc.friction !== undefined) shape.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
+      // One that stays put has no mass: the physics' vehicle takes a fixed body's mass from its colliders when it brakes and
+      // grips on it, and a slab of roof a few metres square, at the density left as it is, comes to a few kilograms: the
+      // brakes and the tyres would bite on it as on something that gives.
       if (dynamic) shape.setMass(desc.mass!);
+      else shape.setDensity(0);
       this.world.createCollider(shape, body);
       this.props.push({ desc, body });
       if (dynamic) this.startPoses.push({ body, pos: body.translation(), rot: body.rotation() });
@@ -278,7 +297,9 @@ export class Sim {
     this.riders.quietBeyond = level.quietBeyond ?? 0;
     this.machines = new Machines(this.world, level.machines ?? [], (x, z) => (level.terrain ? heightAt(level.terrain, x, z) : 0));
     this.rigs = new Rigs(this.world, level.rigs ?? []);
+    this.waves = new Waves(level.waves ?? []);
     this.droppers = new Droppers(this.world, level.droppers ?? []);
+    this.skylights = new Skylights(this.world, (level.roofFalls ?? []).flatMap((roof) => roof.skylights ?? []));
     this.driver = new Driver(this.world, !!level.terrain);
     this.driver.carryFalls = !!level.carryFalls;
     this.driver.floor = level.footFloor ?? 0;
@@ -287,9 +308,15 @@ export class Sim {
     this.water = new Water(level.pits ?? []);
     this.afloat = new Afloat(level.stillWater ?? []);
     this.trains = new Trains(this.world, level.tracks ?? [], level.bounds[0][0], level.bounds[1][0]);
-    this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? [])], !!level.terrain);
+    this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? []), ...Wind.waiting(level.gusts ?? [])], !!level.terrain);
     if (level.terrain) this.objects.ground = (x, z) => heightAt(level.terrain!, x, z);
     this.rollers = new Rollers(this.objects, level.rollers ?? [], level.objects?.length ?? 0, (x, z) => heightAt(level.terrain, x, z));
+    this.wind = new Wind(level.gusts ?? [], this.objects, (level.objects?.length ?? 0) + Rollers.waiting(level.rollers ?? []).length, this.hits);
+    // Heavy stock stacked at the stalls, and what hangs to come down: followed from the first, to tell when it and the truck meet.
+    for (const object of this.objects.objects) if (object.kind.crushes || object.desc.letGoWithin !== undefined) this.hits.track(object);
+    this.objects.onMeet = (object, speed) => this.hits.ram(object, speed);
+    // Over the roof of a hall, what is on its floor below is not under the wheels.
+    if (level.lids?.length) this.hits.below = 1.5;
     this.follow();
     const terrain = level.terrain;
     this.pedestrians = new Pedestrians(level.crowds ?? [], terrain && ((x, z) => heightAt(terrain, x, z)), level.keepOut);
@@ -331,7 +358,8 @@ export class Sim {
     this.struck -= PHYSICS.dt;
     const train = this.struck <= 0 ? this.trains.striking(this.truck) : null;
     if (train) this.strike(train);
-    if (this.truck.isOverturned(PHYSICS.dt)) this.overturn();
+    // Going in through a skylight nose first, over on its end, it is falling, not overturned: the fall ends it.
+    if (this.truck.isOverturned(PHYSICS.dt) && !this.skylights.falling) this.overturn();
     // Down a hole there is no driving out of.
     // On ground that rises and falls there are no pits to be down: only hollows, which are driven out of.
     const here = this.truck.body.translation();
@@ -343,12 +371,27 @@ export class Sim {
       : this.level.terrain
       ? // What is under it there is the floor of the pit: its rim is the pit's depth above that.
         (this.level.pits ?? []).some((p) => Math.abs(here.x - p.pos[0]) < p.half[0] && Math.abs(here.z - p.pos[1]) < p.half[1] && here.y < heightAt(this.level.terrain, here.x, here.z) + p.depth + TRUCK_REST - PIT_DEPTH)
+      : this.level.decks
+      ? // Over water with decks and gangways on it, below the quay is not down: in the water is.
+        this.water.under({ x: here.x, y: here.y + 0.4, z: here.z })
       : here.y < TRUCK_REST - PIT_DEPTH;
     this.inPit = down ? this.inPit + PHYSICS.dt : 0;
     if (this.inPit > PIT_SECONDS && this.level.finish) {
       const t = this.truck.body.translation();
       // Down from up high: where the level calls the ground under its heights a drop.
       this.fail(this.water.poolAt(t.x, t.z) ? 'water' : under && under.tag === 'drop' ? 'fall' : under && under.tag === 'water' ? 'water' : 'pit');
+    }
+    // Through a roof over a hall: up on it, and then back down inside under it, is through one of its skylights.
+    for (const [k, roof] of (this.level.roofFalls ?? []).entries()) {
+      const [x0, z0, x1, z1] = roof.area;
+      const inside = here.x > x0 && here.x < x1 && here.z > z0 && here.z < z1;
+      if (inside && here.y > roof.below + 1.2) this.upOn[k] = true;
+      else if (!inside && here.y < roof.below - 1) this.upOn[k] = false;
+      // Through it: lower in the hall than it could be on the roof, as it would be stood on its nose; or nose down in a
+      // skylight it has broken, caught by its belly on the edge. A moment more for it to have come down on what is there.
+      const through = inside && this.upOn[k] && (here.y < roof.below - 0.3 || (here.y < roof.below + 0.6 && this.skylights.brokenUnder(here.x, here.z)));
+      this.fallen[k] = through ? (this.fallen[k] ?? 0) + PHYSICS.dt : 0;
+      if (this.fallen[k] > FALLEN_SECONDS && this.level.finish) this.fail('fall');
     }
     const walkers = this.pedestrians.inRoad().map((p) => p.pos);
     this.traffic.update(PHYSICS.dt, this.truck, walkers, this.riders.inTheWay());
@@ -361,13 +404,43 @@ export class Sim {
     this.horns.push(...this.traffic.horns);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
     if (this.machines.list.length) this.machines.update(PHYSICS.dt, this.truck.body.translation());
-    if (this.rigs.list.length) this.rigs.update(PHYSICS.dt, this.truck.body.translation());
+    if (this.rigs.list.length) {
+      this.rigs.update(PHYSICS.dt, this.truck.body.translation());
+      // What is set down on their decks goes with them.
+      this.objects.ride(this.truck, this.rigs);
+      // A boat waiting for a wave to throw it: a big one called for, and taken up on its swell, at the top as it breaks.
+      for (const rig of this.rigs.list) {
+        if (!rig.armed || rig.surge !== undefined) continue;
+        const wave = this.waves.near(rig.desc.pos[0], rig.desc.pos[2]);
+        if (!wave || this.waves.summon(wave) < (rig.desc.surge?.seconds ?? 0) / 2) this.rigs.throw(rig);
+      }
+    }
+    if (this.waves.list.length) {
+      // Waves running in over a sea wall drag the truck and whatever is loose on it: not its load.
+      this.waves.update(PHYSICS.dt);
+      this.waves.push(this.truck.body, PHYSICS.dt, true);
+      for (const object of this.objects.objects) if (object.body.isEnabled() && object.body.isDynamic()) this.waves.push(object.body, PHYSICS.dt, false);
+    }
+    if (this.wind.list.length) {
+      // Gusts out of the alleys: on what is loose, never on the truck.
+      this.wind.update(PHYSICS.dt, this.truck.body.translation(), this.objects.objects);
+      this.wind.blow(this.objects.objects, PHYSICS.dt);
+    }
+    if (this.hits.any) this.hits.before(PHYSICS.dt);
     this.wade();
     this.world.step(this.eventQueue);
+    this.skylights.update(this.truck.controller);
     // A machine's bucket, hammer, ball or boom come against the truck checks it as a car run into it would; the load feels it.
     if (this.rigs.list.length) {
       const struck = this.rigs.struck(this.truck.body);
       if (struck > 0) this.cargoSystem.jolt(struck * RIG_JOLT * JOLT_PER_SPEED_LOST, this.truck);
+    }
+    if (this.hits.any) {
+      // Something the wind has carried, or stock come down, into the truck: the load feels it, by how heavy it was and how fast it came.
+      const load = new Set<number>();
+      for (const item of this.cargoSystem.items) if (item.body) load.add(item.body.handle);
+      const hit = this.hits.struck(this.world, this.truck.body, load);
+      if (hit > 0) this.cargoSystem.jolt(hit, this.truck);
     }
     if (this.droppers.rocks.length) {
       this.droppers.update(PHYSICS.dt, this.truck.body.translation());
@@ -427,6 +500,8 @@ export class Sim {
     const t = this.truck.body.translation();
     const [x0, z0, x1, z1] = save.zone;
     if (t.x < x0 || t.x > x1 || t.z < z0 || t.z > z1) return;
+    // One up on a roof is passed up there, not under it.
+    if (save.y !== undefined && t.y < save.y - 2) return;
     this.saved = { items: this.cargoSystem.snapshot(this.truck), time: this.time, trip: this.trip() };
     this.savedNow = true;
   }
@@ -562,6 +637,7 @@ export class Sim {
     this.truck.body.setLinvel(still, true);
     this.truck.body.setAngvel(still, true);
     this.stalled = 0;
+    this.upOn = [];
   }
 
   /** A main burst under the road: once the truck comes within reach, each manhole in turn throws up water, and the first time its cover. */
@@ -695,7 +771,9 @@ export class Sim {
     this.riders.reset();
     this.machines.reset();
     this.rigs.reset();
+    this.waves.reset();
     this.droppers.reset();
+    this.skylights.reset();
     this.battle.reset();
     this.flung = 0;
     this.battleSounds = [];
@@ -717,17 +795,22 @@ export class Sim {
     this.retries = 0;
     this.objects.reset();
     this.rollers.reset();
+    this.wind.reset();
+    this.hits.reset();
+    for (const object of this.objects.objects) if (object.kind.crushes || object.desc.letGoWithin !== undefined) this.hits.track(object);
     this.pedestrians.reset();
     this.time = 0;
     this.started = !this.level.startLine;
     this.rightings = 0;
     this.dwell = 0;
     this.inPit = 0;
+    this.fallen = [];
     this.struck = 0;
     this.truckWear = 0;
     this.truckVel.x = this.truckVel.y = this.truckVel.z = 0;
     this.bumps = [];
     this.stalled = 0;
+    this.upOn = [];
     this.strikes = [];
     this.blasts = [];
     this.pileups = [];
@@ -911,8 +994,8 @@ export class Sim {
   }
 
   /** The ford the truck is in, if it is in one. */
-  fordAt(p: { x: number; z: number }) {
-    return this.level.fords?.find((f) => Math.abs(p.x - f.pos[0]) < f.half[0] && Math.abs(p.z - f.pos[1]) < f.half[1]);
+  fordAt(p: { x: number; y?: number; z: number }) {
+    return this.level.fords?.find((f) => Math.abs(p.x - f.pos[0]) < f.half[0] && Math.abs(p.z - f.pos[1]) < f.half[1] && (f.y === undefined || p.y === undefined || Math.abs(p.y - f.y) < 1.6));
   }
 
   /**
@@ -981,7 +1064,7 @@ export class Sim {
       const floats = (item: CargoItem) => ['splinters', 'pulp', 'water'].includes(item.type.burst);
       for (const item of this.cargo) if (item.body && !item.held) this.afloat.step(item.body, !floats(item), PHYSICS.dt);
       for (const piece of this.cargoSystem.debris) this.afloat.step(piece.body, !floats(piece.owner), PHYSICS.dt);
-      for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled()) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
+      for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled() && !object.riding) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
       for (const car of this.traffic.cars) if (car.knocked > 0) this.afloat.step(car.body, true, PHYSICS.dt);
     }
     // In the water, or down on ground the level counts as sinking (a pond drawn as its surface, a drop): fished out.

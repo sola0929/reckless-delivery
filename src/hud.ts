@@ -484,7 +484,7 @@ export class Hud {
   }
 
   /** Floating text at a screen position, e.g. money lost. */
-  popup(text: string, x: number, y: number, style: '' | 'big' | 'gain' | 'found' = ''): void {
+  popup(text: string, x: number, y: number, style: '' | 'big' | 'gain' | 'found' | 'say' = ''): void {
     const popup = document.createElement('div');
     popup.className = style ? `popup ${style}` : 'popup';
     popup.textContent = text;

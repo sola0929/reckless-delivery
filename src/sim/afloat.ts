@@ -16,6 +16,10 @@ const FLOAT_SPIN_DRAG = 1.5;
 const SINK_GRAVITY = 0.12;
 const SINK_DRAG = 3;
 const GONE = 1.5;
+/** In deep water: how far down in it what floats lies, metres; how fast it comes up to that, a share of how far it is off a second; how hard it is held there. */
+const FLOAT_DOWN = 0.12;
+const FLOAT_RISE = 2.5;
+const FLOAT_HOLD = 6;
 /** A thing whose middle is less than this above the surface is in the water; above that, or out past its edge, it is out. */
 const WET = 0.6;
 /** How near the outlet what floats turns round in front of it rather than going on into it, metres. */
@@ -61,10 +65,10 @@ export class Afloat {
     let w = this.wet.get(body.handle);
     if (!w) {
       const water = this.waters.find((s) => p.x > s.area[0] && p.x < s.area[2] && p.z > s.area[1] && p.z < s.area[3] && p.y < s.surface + WET);
-      if (!water) return;
+      if (!water || (sinks && water.shallow)) return;
       w = { body, water, sinking: sinks, sensors: [], was: { gravity: body.gravityScale(), drag: body.linearDamping(), spinDrag: body.angularDamping(), grip: [] } };
       this.wet.set(body.handle, w);
-      this.splashes.push({ x: p.x, y: water.surface, z: p.z, mass: body.mass(), muddy: water.muddy });
+      this.splashes.push({ x: p.x, y: water.surface, z: p.z, mass: body.mass(), muddy: water.muddy, still: true });
       if (sinks) {
         for (let i = 0; i < body.numColliders(); i++) {
           const c = body.collider(i);
@@ -84,6 +88,8 @@ export class Afloat {
           c.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
         }
         body.setAngularDamping(FLOAT_SPIN_DRAG);
+        // Deep water holds it up itself.
+        if (water.deep) body.setGravityScale(0, true);
       }
     }
     if (w.sinking) {
@@ -108,7 +114,9 @@ export class Afloat {
       vz = (ux + uz * inward) * s.drift;
     }
     const v = body.linvel(), m = body.mass();
-    body.applyImpulse({ x: (vx - v.x) * TAKE * m * dt, y: 0, z: (vz - v.z) * TAKE * m * dt }, true);
+    // In deep water, borne up to lie in its surface, a little down in it, and bobbing there no more than a moment.
+    const vy = s.deep ? (s.surface - FLOAT_DOWN - p.y) * FLOAT_RISE : v.y;
+    body.applyImpulse({ x: (vx - v.x) * TAKE * m * dt, y: (vy - v.y) * FLOAT_HOLD * m * dt, z: (vz - v.z) * TAKE * m * dt }, true);
     // Something long comes round to lie along the current, as a plank or a pipe does: its long side, end on to the way it goes.
     const shape = body.collider(0)?.shape as { halfExtents?: { x: number; z: number } } | undefined;
     const half = shape?.halfExtents;

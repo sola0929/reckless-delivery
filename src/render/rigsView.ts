@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Hole, Rock } from '../sim/droppers';
-import type { Rig } from '../sim/rigs';
+import type { Rig, RigShape } from '../sim/rigs';
 import { Shapes } from './shapes';
 
 // Machines at work and the rocks falling off the conveyors: each part drawn where the physics has it, part of the
@@ -17,6 +17,57 @@ const warnLamp = new THREE.MeshBasicMaterial({ color: 0xffb020 });
 const fallLamp = new THREE.MeshBasicMaterial({ color: 0xff3020 });
 const lampHousing = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.7 });
 
+/** A box turned, a cylinder, a lofted hull: put into the one mesh of the part they are on, corner by corner. */
+const m4 = new THREE.Matrix4();
+const v3 = new THREE.Vector3();
+type P = [number, number, number];
+function placed(p: P): P {
+  v3.set(...p).applyMatrix4(m4);
+  return [v3.x, v3.y, v3.z];
+}
+function turnedBox(shapes: Shapes, s: RigShape): void {
+  m4.compose(new THREE.Vector3(...s.pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(s.rot ?? [0, 0, 0]))), new THREE.Vector3(1, 1, 1));
+  const [hx, hy, hz] = s.half;
+  const c = (x: number, y: number, z: number) => placed([x * hx, y * hy, z * hz]);
+  shapes.quad(c(1, -1, 1), c(1, -1, -1), c(1, 1, -1), c(1, 1, 1), s.color);
+  shapes.quad(c(-1, -1, -1), c(-1, -1, 1), c(-1, 1, 1), c(-1, 1, -1), s.color);
+  shapes.quad(c(-1, -1, 1), c(1, -1, 1), c(1, 1, 1), c(-1, 1, 1), s.color);
+  shapes.quad(c(1, -1, -1), c(-1, -1, -1), c(-1, 1, -1), c(1, 1, -1), s.color);
+  shapes.quad(c(-1, 1, 1), c(1, 1, 1), c(1, 1, -1), c(-1, 1, -1), s.color);
+  shapes.quad(c(-1, -1, -1), c(1, -1, -1), c(1, -1, 1), c(-1, -1, 1), s.color);
+}
+function cylinder(shapes: Shapes, s: RigShape, sides = 10): void {
+  m4.compose(new THREE.Vector3(...s.pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(s.rot ?? [0, 0, 0]))), new THREE.Vector3(1, 1, 1));
+  const [r, h] = s.half;
+  const rim = (i: number, y: number) => placed([Math.cos((i / sides) * Math.PI * 2) * r, y, Math.sin((i / sides) * Math.PI * 2) * r]);
+  const top = placed([0, h, 0]), foot = placed([0, -h, 0]);
+  for (let i = 0; i < sides; i++) {
+    shapes.quad(rim(i + 1, -h), rim(i, -h), rim(i, h), rim(i + 1, h), s.color);
+    shapes.tri(top, rim(i + 1, h), rim(i, h), s.color);
+    shapes.tri(foot, rim(i, -h), rim(i + 1, -h), s.color);
+  }
+}
+/** A hull: its sides from the outline at its foot up to the one at its top, faced outward; its top closed over. */
+function loft(shapes: Shapes, s: RigShape): void {
+  const lo = s.lo ?? [], hi = s.hi ?? [], y0 = s.y0 ?? 0, y1 = s.y1 ?? 1, n = Math.min(lo.length, hi.length);
+  if (n < 3) return;
+  const cx = hi.reduce((a, p) => a + p[0], 0) / n, cz = hi.reduce((a, p) => a + p[1], 0) / n;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a: P = [lo[i][0], y0, lo[i][1]], b: P = [lo[j][0], y0, lo[j][1]], c: P = [hi[j][0], y1, hi[j][1]], d: P = [hi[i][0], y1, hi[i][1]];
+    // Which way it faces, against the way out from the middle.
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], wx = d[0] - a[0], wy = d[1] - a[1], wz = d[2] - a[2];
+    const nx = uy * wz - uz * wy, nz = ux * wy - uy * wx;
+    const out = nx * ((a[0] + b[0]) / 2 - cx) + nz * ((a[2] + b[2]) / 2 - cz) >= 0;
+    if (out) shapes.quad(a, b, c, d, s.color);
+    else shapes.quad(d, c, b, a, s.color);
+    const t1: P = [cx, y1, cz];
+    const up = (c[0] - t1[0]) * (d[2] - t1[2]) - (c[2] - t1[2]) * (d[0] - t1[0]) < 0;
+    if (up) shapes.tri(t1, c, d, s.color);
+    else shapes.tri(t1, d, c, s.color);
+  }
+}
+
 interface Moving {
   body: { translation(): { x: number; y: number; z: number }; rotation(): { x: number; y: number; z: number; w: number } };
   mesh: THREE.Object3D;
@@ -29,6 +80,9 @@ export class RigsView {
   private readonly lamps: { rig: Rig; mesh: THREE.Mesh }[] = [];
   private readonly cables: { rig: Rig; mesh: THREE.Mesh; from: THREE.Vector3; to: Moving }[] = [];
   private readonly rocks: { rock: Rock; item: Moving }[] = [];
+  /** Ropes from what floats to the quay or to the next boat: each a run of a few pieces, one instance each. */
+  private readonly ropes: { from: THREE.Object3D; at: THREE.Vector3; to: THREE.Vector3; onto?: THREE.Object3D; color: number }[] = [];
+  private ropeMesh?: THREE.InstancedMesh;
   private readonly spots: { hole: Hole; lamps: THREE.Mesh[] }[] = [];
   private readonly line = new THREE.Line3();
   private readonly near = new THREE.Vector3();
@@ -58,7 +112,11 @@ export class RigsView {
         const shapes = new Shapes();
         const group = new THREE.Group();
         for (const s of part.shapes) {
-          if (s.kind === 'ball') {
+          if (s.hidden) continue;
+          if (s.kind === 'loft') loft(shapes, s);
+          else if (s.kind === 'cyl') cylinder(shapes, s);
+          else if (s.rot) turnedBox(shapes, s);
+          else if (s.kind === 'ball') {
             const ball = new THREE.Mesh(new THREE.SphereGeometry(s.half[0], 18, 12), new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.4, metalness: 0.6 }));
             ball.position.set(...s.pos);
             ball.castShadow = true;
@@ -95,6 +153,21 @@ export class RigsView {
         // The crane's cable hangs from its jib's head, which turns with the jib: then it is taken from that part each frame.
         this.cables.push({ rig, mesh, from, to: items[rig.cable.part] });
       }
+    }
+    // The ropes, once every rig is placed: from each to the quay or to another.
+    const first = rigs.map((rig) => this.moving.find((m) => m.body === rig.parts[0]?.body)?.mesh);
+    rigs.forEach((rig, k) => {
+      for (const line of rig.desc.lines ?? []) {
+        const from = first[k];
+        if (!from) continue;
+        this.ropes.push({ from, at: new THREE.Vector3(...line.at), to: new THREE.Vector3(...line.to), onto: line.rig !== undefined ? first[line.rig] : undefined, color: line.color ?? 0xe8e4d8 });
+      }
+    });
+    if (this.ropes.length) {
+      this.ropeMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 5), new THREE.MeshStandardMaterial({ roughness: 0.8 }), this.ropes.length * ROPE_PIECES);
+      this.ropeMesh.frustumCulled = false;
+      this.ropes.forEach((rope, k) => { for (let i = 0; i < ROPE_PIECES; i++) this.ropeMesh!.setColorAt(k * ROPE_PIECES + i, new THREE.Color(rope.color)); });
+      scene.add(this.ropeMesh);
     }
     for (const rock of rocks) {
       const geometry = new THREE.DodecahedronGeometry(1, 0);
@@ -146,6 +219,27 @@ export class RigsView {
       item.mesh.position.lerpVectors(item.was.pos, item.now.pos, alpha);
       item.mesh.quaternion.slerpQuaternions(item.was.rot, item.now.rot, alpha);
     }
+    if (this.ropeMesh) {
+      // Each rope between its two ends as they are now, hanging a little in the middle.
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+      const m = new THREE.Matrix4(), turn = new THREE.Quaternion(), size = new THREE.Vector3();
+      this.ropes.forEach((rope, k) => {
+        a.copy(rope.at).applyQuaternion(rope.from.quaternion).add(rope.from.position);
+        if (rope.onto) b.copy(rope.to).applyQuaternion(rope.onto.quaternion).add(rope.onto.position);
+        else b.copy(rope.to);
+        const sag = a.distanceTo(b) * 0.04;
+        for (let i = 0; i < ROPE_PIECES; i++) {
+          const t0 = i / ROPE_PIECES, t1 = (i + 1) / ROPE_PIECES;
+          p.lerpVectors(a, b, t0).y -= sag * 4 * t0 * (1 - t0);
+          q.lerpVectors(a, b, t1).y -= sag * 4 * t1 * (1 - t1);
+          const long = p.distanceTo(q);
+          turn.setFromUnitVectors(up, q.clone().sub(p).normalize());
+          m.compose(p.clone().add(q).multiplyScalar(0.5), turn, size.set(0.035, long, 0.035));
+          this.ropeMesh!.setMatrixAt(k * ROPE_PIECES + i, m);
+        }
+      });
+      this.ropeMesh.instanceMatrix.needsUpdate = true;
+    }
     for (const { rock, item } of this.rocks) {
       // A rock jumping from where it waited to the belt is not to be seen streaking up.
       item.mesh.visible = rock.falling;
@@ -181,3 +275,6 @@ export class RigsView {
     }
   }
 }
+
+/** How many straight pieces a rope is drawn in. */
+const ROPE_PIECES = 4;

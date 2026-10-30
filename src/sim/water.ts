@@ -13,6 +13,8 @@ export interface Splash {
   mass: number;
   /** Into muddy water. */
   muddy?: boolean;
+  /** Into standing water things float on (`stillWater`), not down a pit. */
+  still?: boolean;
 }
 
 /**

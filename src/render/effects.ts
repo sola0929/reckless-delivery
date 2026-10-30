@@ -89,6 +89,8 @@ interface Bit {
 const BURST_STYLES = {
   splinters: { colors: [0xb98a55, 0x96693c, 0xd9b36c], size: [0.04, 0.09], stretch: 3.5, life: [0.9, 1.6] },
   water: { colors: [0x4aa3e8, 0x7cc4f5, 0x2f7fd0], size: [0.05, 0.1], stretch: 1, life: [0.5, 1.0] },
+  // Flood water in a storm: grey-brown, broken white.
+  flood: { colors: [0xb4ae9c, 0x958d7a, 0xd6d3c8, 0xe8e6de], size: [0.055, 0.115], stretch: 1, life: [0.4, 0.8] },
   // Thrown up out of a settling pond: brown, some of it foam.
   mud: { colors: [0x8a7452, 0x9f8a66, 0x6f5c40, 0xd8d0bc], size: [0.05, 0.11], stretch: 1, life: [0.5, 1.0] },
   /** Fresh concrete, thrown up grey. */
@@ -124,6 +126,8 @@ const BURST_STYLES = {
   paintYellow: { colors: [0xe0b020, 0xf2c94c, 0xc89a18], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
   // A clay pot in pieces, and the earth out of it.
   shards: { colors: [0xb5533c, 0x9a4530, 0x6b4a32, 0x4f8a4a], size: [0.05, 0.11], stretch: 1.4, life: [0.9, 1.5] },
+  // Ice: chips of it, white and the palest blue.
+  ice: { colors: [0xf2f8fa, 0xd6eaf0, 0xbfdce6], size: [0.04, 0.1], stretch: 1.3, life: [0.7, 1.3] },
   // Gold paper money, square and flat, that flutters down slowly.
   paper: { colors: [0xe8b83a, 0xd9a62e, 0xf2cf5a, 0xc8372d], size: [0.1, 0.16], stretch: 0.12, life: [2.8, 4.2] },
 } as const;

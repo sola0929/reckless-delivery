@@ -30,12 +30,13 @@ type Look = 'window' | 'balcony' | 'pair';
 export function terrace(s: Shapes, lot: Lot, rand: Rand): void {
   const { hx, hz, open } = lot;
   // The houses stand side by side along whichever street there is, back to back if the lot is deep.
-  const alongX = open[2] || open[3] || !(open[0] || open[1]);
+  const alongX = lot.front !== undefined ? lot.front >= 2 : open[2] || open[3] || !(open[0] || open[1]);
   const length = (alongX ? hx : hz) * 2;
   const depth = (alongX ? hz : hx) * 2;
   const count = Math.max(1, Math.round(length / span(rand, 4.6, 5.8)));
   const rows = depth > 21 ? 2 : 1;
-  const floors = Math.max(2, Math.round((lot.height - SHOP) / FLOOR) + 1);
+  // A low terrace: one storey, nothing built on top.
+  const floors = lot.low ? 1 : Math.max(2, Math.round((lot.height - SHOP) / FLOOR) + 1);
   const fronts = alongX ? [2, 3] : [0, 1];
   for (let row = 0; row < rows; row++) {
     const onStreet = rows === 2 ? open[fronts[row]] : open[fronts[0]] || open[fronts[1]];
@@ -46,7 +47,7 @@ export function terrace(s: Shapes, lot: Lot, rand: Rand): void {
       const roll = rand();
       let take = 1;
       let build: 'house' | 'flats' | 'temple' = 'house';
-      if (onStreet && left >= 2) {
+      if (onStreet && left >= 2 && !lot.low) {
         if (roll < 0.1) {
           build = 'flats';
           take = left >= 3 && rand() < 0.4 ? 3 : 2;
@@ -66,16 +67,16 @@ export function terrace(s: Shapes, lot: Lot, rand: Rand): void {
       const lower = floors > 2 && rand() < 0.35 ? 1 : 0;
       if (build === 'temple' && street[main]) temple(s, rand, plot, street, main, alongX);
       else if (build === 'flats') flats(s, rand, plot, floors, street, fronts, main, take);
-      else house(s, rand, plot, floors - lower, street, fronts, main);
+      else house(s, rand, plot, floors - lower, street, fronts, main, lot.low);
       i += take;
     }
   }
 }
 
-function house(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[], fronts: number[], main: number): void {
+function house(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[], fronts: number[], main: number, low = false): void {
   const trade = Math.floor(rand() * TRADES.length);
   const roll = rand();
-  if (roll < 0.13) {
+  if (roll < 0.13 && !low) {
     modern(s, rand, p, floors, street, fronts, main, trade);
     return;
   }
@@ -107,7 +108,7 @@ function house(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[]
     pitchedRoof(s, p, top, alongX, Math.min((alongX ? p.hz : p.hx) * 0.4, 2), pick(rand, TILES), body);
   } else {
     s.shell(p, LINTEL, top, faces, floor);
-    s.rim(p, top, 0.9, 0.18, faces, CEMENT, trim);
+    if (!low) s.rim(p, top, 0.9, 0.18, faces, CEMENT, trim);
   }
 
   const look = pick<Look>(rand, ['window', 'window', 'balcony', 'balcony', 'pair']);
@@ -132,7 +133,7 @@ function house(s: Shapes, rand: Rand, p: Plot, floors: number, street: boolean[]
     // On the terrace in front of a top floor that stands back: something growing.
     if (stepped) for (let u = -half + 0.6; u < half - 0.5; u += span(rand, 0.9, 1.8)) s.block(w, u, top - FLOOR + 0.3, -0.5, 0.22, 0.3, 0.22, 0x9a6a4a, pick(rand, PLANTS), true);
   }
-  if (!pitched) rooftop(s, rand, wallOf(attic, main), (main < 2 ? attic.hx : attic.hz) * 2, top, body);
+  if (!pitched && !low) rooftop(s, rand, wallOf(attic, main), (main < 2 ? attic.hx : attic.hz) * 2, top, body);
 }
 
 /**

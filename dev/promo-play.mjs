@@ -34,7 +34,7 @@ const where = await p.evaluate((start) => {
     sim.teleport(c.pos[0], c.pos[1], c.yaw + (start.turn ?? 0), c.y);
     return c.name;
   }
-  if (start.at) { sim.teleport(start.at[0], start.at[1], start.at[2]); return 'at ' + start.at.join(','); }
+  if (start.at) { sim.teleport(start.at[0], start.at[1], start.at[2], start.at[3]); return 'at ' + start.at.join(','); }
   const here = along(start.route);
   if (start.near) {
     const things = sim.objects.objects.filter((o) => o.desc.kind === start.near);

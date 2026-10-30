@@ -95,6 +95,8 @@ export const DRIVER = {
   /** Head to toe. */
   height: 1.7,
   walkSpeed: 4,
+  /** Carrying something to throw: the most they turn round towards where it is aimed, radians a second. */
+  aimTurnRate: 4,
   runSpeed: 7.5,
   /** The truck must be this slow, m/s, to get out. */
   exitSpeed: 1,
@@ -172,7 +174,7 @@ export const CAMERA = {
   footRise: 0.4,
   footLookAhead: 7,
   // Q and E on foot: radians a second the view turns while one is held.
-  footTurn: 0.9,
+  footTurn: 1.15,
   footZoomFollow: 3,
   handoverSeconds: 0.6,
   handoverFollow: 9,
@@ -180,14 +182,14 @@ export const CAMERA = {
   maxZoom: 2.2,
   // Looking round while driving: radians per pixel dragged with the right button, the furthest round it goes
   // (the controller's right stick, pushed all the way, goes that far), and how fast it swings back when let go.
-  lookPerPixel: 0.004,
+  lookPerPixel: 0.005,
   lookMax: 2.7,
   lookStickFollow: 2.2,
   lookReturn: 3,
   // And no faster than these, radians a second, round to the side (Q and E, the stick) and back.
-  lookStickRate: 1.1,
+  lookStickRate: 1.4,
   // The controller's right stick, the same way round, slower: it is held over far more than a key.
-  lookPadRate: 0.65,
+  lookPadRate: 0.85,
   lookReturnRate: 1.8,
   // A drop ahead (on levels with hills): looked for this far ahead, metres; counted from this deep; the camera
   // rises so much per metre of it, up to a limit, and aims this share of the way down it; how fast it eases.

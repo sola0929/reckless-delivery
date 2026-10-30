@@ -126,6 +126,13 @@ body {
   color: #ffd166;
 }
 
+/* Something said by someone standing about: as what people shout when run into, only up long enough to be read. */
+.popup.say {
+  font-size: 22px;
+  color: #ffd166;
+  animation-duration: 2.4s;
+}
+
 @keyframes popup-rise {
   0% { opacity: 0; margin-top: 0; scale: 0.6; }
   12% { opacity: 1; scale: 1.15; }

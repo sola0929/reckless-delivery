@@ -10,14 +10,20 @@ export interface View {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   sun: THREE.DirectionalLight;
+  /** The light from all round: lightning lights it up. */
+  hemi: THREE.HemisphereLight;
   /** Where the sun stands, from whatever it is lighting. */
   sunOffset: THREE.Vector3;
+  /** How near the fog comes, as a share of the usual: less in a storm. */
+  fogScale: number;
 }
 
 /** The light at each time of day: the sky, the light from all round (from above, from below, how much), the sun (its colour, how much), and where it stands. */
 const LIGHT = {
   day: { sky: 0x9fc4e0, above: 0xdcecff, below: 0x5a5648, all: 1.1, sun: 0xfff2dc, strength: 2.2, from: [-25, 45, -18] },
   dusk: { sky: 0xe0b08a, above: 0xffe2c8, below: 0x6a5c50, all: 1.35, sun: 0xffc48a, strength: 2.3, from: [-40, 26, -14] },
+  // A typhoon: a low grey sky, flat light with hardly a shadow, and the far side of things lost in the rain.
+  storm: { sky: 0x737e88, above: 0xa9b3bc, below: 0x3e4247, all: 1.55, sun: 0xd2d8de, strength: 0.75, from: [-20, 50, -10], fog: 0.42 },
 };
 
 /** The way the light comes from, on the flat, for drawing the lie of the land: the same side as the sun stands. */
@@ -188,7 +194,9 @@ export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: loadChoice() !== 'low', powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCF: the soft kind is gone from three.js, which draws this one in its place on the first frame and so makes every
+  // shader again, those made ready at loading thrown away, a second or more of standing still.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   const light = LIGHT[level.light ?? 'day'];
@@ -197,7 +205,8 @@ export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, 0.5, 400);
 
-  scene.add(new THREE.HemisphereLight(light.above, light.below, light.all));
+  const hemi = new THREE.HemisphereLight(light.above, light.below, light.all);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(light.sun, light.strength);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -245,7 +254,8 @@ export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
     // Water: see-through enough to watch things go down into it.
     const surface = new THREE.Mesh(
       new THREE.PlaneGeometry(pit.half[0] * 2, pit.half[1] * 2).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x2f78c4, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false }),
+      // Grey-green and dark under a storm sky; blue on a fine day.
+      new THREE.MeshStandardMaterial({ color: level.light === 'storm' ? 0x3f5a5e : 0x2f78c4, roughness: 0.25, metalness: 0.1, transparent: true, opacity: level.light === 'storm' ? 0.88 : 0.72, depthWrite: false }),
     );
     surface.position.set(pit.pos[0], (pit.base ?? 0) - pit.water, pit.pos[1]);
     surface.receiveShadow = true;
@@ -261,7 +271,7 @@ export function createView(canvas: HTMLCanvasElement, level: LevelDef): View {
   window.addEventListener('resize', resize);
   resize();
 
-  return { renderer, scene, camera, sun, sunOffset: new THREE.Vector3(...light.from) };
+  return { renderer, scene, camera, sun, hemi, sunOffset: new THREE.Vector3(...light.from), fogScale: 'fog' in light ? light.fog : 1 };
 }
 
 /** Keep the shadow frustum centred on the truck. */

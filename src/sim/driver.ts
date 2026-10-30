@@ -20,6 +20,8 @@ export interface FootInput {
   jumpPressed: boolean;
   /** The point on the ground the player is pointing at, if any. */
   aim: { x: number; z: number } | null;
+  /** Whether that is the controller's stick, which turns them round to it at a steady rate, rather than the cursor, which they face at once. */
+  aimByStick?: boolean;
   /** Held down to wind up a throw; letting go throws. */
   charging: boolean;
   /** Abandon a throw being wound up. */
@@ -328,7 +330,13 @@ export class Driver {
 
     this.speed = pace;
     // Carrying, they face where the player points, ready to throw. Otherwise where they walk.
-    if (this.held && input.aim) this.yaw = Math.atan2(input.aim.x - this.pos.x, input.aim.z - this.pos.z);
+    // With the stick, turned round to it no faster than so much a second, so the aim swings round rather than jumping.
+    if (this.held && input.aim) {
+      const want = Math.atan2(input.aim.x - this.pos.x, input.aim.z - this.pos.z);
+      const turn = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+      const most = input.aimByStick ? DRIVER.aimTurnRate * dt : Infinity;
+      this.yaw += Math.max(-most, Math.min(most, turn));
+    }
     else if (pace > 0) this.yaw = Math.atan2(input.moveX, input.moveZ);
   }
 

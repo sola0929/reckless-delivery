@@ -23,20 +23,52 @@ export function approach([x, z]: Vec2, yaw: number, back = 50, ahead = 6, half =
 /** A point or extent on the ground: [x, z]. */
 export type Vec2 = [number, number];
 
+/** A box set somewhere, turned: a piece of a roof. */
+export interface Slab {
+  pos: Vec3;
+  /** Half its sizes: along, through, across. */
+  size: Vec3;
+  rot: Vec3;
+}
+
+/**
+ * A skylight in a roof of sheet: one pane in a slope, or two, one either side of a ridge, over it. A wheel wholly on its
+ * sheet breaks it, all of it, and what is on it goes through; one big enough to take the truck takes it.
+ */
+export interface RoofSkylight {
+  /** Its sheet, solid, flush with the steel round it; local X down the slope and up, Z along. `ridge`: its upper edge is the
+   * ridge, the other pane over it, and not steel. */
+  panes: { slab: Slab; ridge?: boolean }[];
+  /** How far in from its sides a tyre is still on the steel its edges lap, and bears. */
+  edge: number;
+  /** Its lower part already gone, the rest left ragged. */
+  broken?: boolean;
+}
+
 /** How a building is drawn. What is solid of it is still its plain box. */
 export interface BuildingLook {
   /** Terraced shophouses, downtown blocks, or sheet-metal sheds. */
-  style: 'old' | 'tower' | 'shed';
+  style: 'old' | 'tower' | 'shed' | 'addition' | 'gables';
   /** Which sides face a street rather than a neighbour's wall: -X, +X, -Z, +Z. */
   open: [boolean, boolean, boolean, boolean];
   /** Height of the plant room on a tall building's roof; 0 for none. */
   crown: number;
+  /** Old terraced houses of one storey only, their flat roofs left bare: what is on them the level puts there. */
+  low?: boolean;
   /** Everything about it that is left to chance follows from this. */
   seed: number;
+  /** gables: where its sheet is left out for skylights, as [x0, z0, x1, z1] from its middle. */
+  cuts?: [number, number, number, number][];
+  /** old: the side its houses face (-X, +X, -Z, +Z as `open`), where that is not left to which sides are open. */
+  front?: number;
+  /** Its windows taped corner to corner against a typhoon. */
+  taped?: boolean;
 }
 
 export interface PropDesc {
   shape: 'box' | 'cylinder' | 'cone' | 'sphere';
+  /** Drawn as a vehicle of this kind come to grief, its middle where the shape's is, turned as it is; the shape is what is solid. */
+  vehicle?: VehicleKind;
   /** box: half extents. cylinder / cone: [radius, halfHeight, unused]. sphere: [radius, radius, radius]. */
   size: Vec3;
   pos: Vec3;
@@ -148,7 +180,7 @@ export interface DropperDesc {
  *              height at the path's start, `period` seconds a round
  */
 export interface RigDesc {
-  kind: 'slew' | 'pile' | 'clamshell' | 'ball' | 'boom' | 'sway' | 'forklift';
+  kind: 'slew' | 'pile' | 'clamshell' | 'ball' | 'boom' | 'sway' | 'forklift' | 'float' | 'gangway' | 'plate';
   /** Where it stands: on the ground there. */
   pos: Vec3;
   /** Which way its work lies: radians about Y, 0 = toward +Z. For a slew or a clamshell, the middle of its swing; for a boom, the way it pushes out; for a ball, the way it swings. */
@@ -162,6 +194,79 @@ export interface RigDesc {
   /** A forklift's way: the corners it drives between, in the world; and whether it goes along them and back rather than round. */
   path?: Vec2[];
   back?: boolean;
+  /**
+   * Something afloat, its deck driven on: what it is, half its size each way (across, nothing, along: the hull's length is
+   * along its yaw), and how it moves on the water in its round, the deck's top at pos's height when still. Heave in metres
+   * up and down; roll (about its length) and pitch (about its width) in radians each way.
+   */
+  hull?: 'pontoon' | 'boat' | 'ship' | 'walk' | 'vessel';
+  /** A boat's steel plates out each side over the gap to the next boat; false for one only moored. Defaults to true. */
+  planks?: boolean;
+  half?: Vec3;
+  heave?: number;
+  roll?: number;
+  /** How it rolls: 1 smoothly; less, lurching over and hanging there before it lurches back. */
+  lurch?: number;
+  pitch?: number;
+  /** A boat's hull colour. */
+  color?: number;
+  /**
+   * Containers left loose on a ship's deck, each slid across it by its roll, from hatches to rail and back: which side
+   * (-1, 1), how far along from its middle, and how heavy it is, 0 to 1: the heavier, the steeper the deck before it
+   * breaks loose and the slower it goes, but the harder it hits.
+   */
+  loose?: [number, number, number][];
+  /** A ship's ramp down from its stern, metres long, to ground this far below its deck. */
+  ramp?: [number, number];
+  /**
+   * A boat a wave throws up on to the boardwalk: once the truck comes within `reach` of `at`, the next big wave in takes
+   * it, carried over `seconds` up
+   * by `lift` and down to `to`, turned to `yaw`, lying over by `roll`.
+   */
+  surge?: { at: Vec2; reach: number; to: Vec3; yaw: number; roll: number; lift: number; seconds: number };
+  /** A length of boardwalk the boat of this index comes down on: it gives way under it. */
+  breaks?: number;
+  /** A length of boardwalk: how much higher its +Z end stands than its other, metres. */
+  rise?: number;
+  /** A gangway: hinged at pos at the top, running out along yaw `long` metres to rest on the deck of the rig of this index. */
+  rests?: number;
+  /**
+   * A gangway hinged on something afloat, the rig of this index, rather than on the quay: `pos` where its hinge is with that
+   * still. It keeps level across itself as that rolls under it. For a plate, the float it is laid from.
+   */
+  on?: number;
+  /** A gangway resting at its far end on the ground at this height, not on anything afloat. */
+  foot?: number;
+  /**
+   * A steel plate laid across the gap from the deck of one float (`on`) to the next (`rests`), as boats rafted together are
+   * crossed: `pos` the middle of the gap with both still, `yaw` the way across, `half[0]` half its width. `ends`: how far
+   * along that way, from pos, each deck's edge is (the first's behind, so less than nought). It lies from the higher edge
+   * down onto the lower deck, whichever that is as they rise and fall.
+   */
+  ends?: [number, number];
+  /** What something afloat is made of, when it is none of the hulls above (`hull: 'vessel'`): in its own frame. */
+  parts?: FloatPartDesc[];
+  /** A ship's hatch covers' half width, metres, between which and the rail its loose containers slide. */
+  hatch?: number;
+  /** Ropes from points on it (its own frame) to a place in the world, or to a point on another rig (in that one's frame). */
+  lines?: { at: Vec3; to: Vec3; rig?: number; color?: number }[];
+}
+
+/** A piece of a vessel: a box turned by `rot`; a cylinder (radius, half its length) turned the same way, upright if not;
+ * or its hull, lofted from an outline at one height to another at another (`lo` at `y0`, `hi` at `y1`, the same number of
+ * corners, in order round). Felt if `solid` (a box or a cylinder only); `hidden` ones are felt and not drawn. */
+export interface FloatPartDesc {
+  shape: 'box' | 'cyl' | 'loft';
+  half?: Vec3;
+  pos?: Vec3;
+  rot?: Vec3;
+  color: number;
+  solid?: boolean;
+  hidden?: boolean;
+  lo?: Vec2[];
+  hi?: Vec2[];
+  y0?: number;
+  y1?: number;
 }
 
 /** Shallow water running over the road: it holds the truck back, and its current pushes it downstream. */
@@ -182,6 +287,8 @@ export interface FordDesc {
   fall?: number;
   /** Over a truck's height: its surface drawn dark, the bed not seen through it. */
   deep?: boolean;
+  /** How high its bed is, where it is up on something over other ground: only there is it in it. */
+  y?: number;
 }
 
 /** A patch of ground with people wandering about on it. */
@@ -205,8 +312,15 @@ export interface CrowdDesc {
   workers?: boolean;
   /** Dancers: in rows across the patch, facing this way (radians about Y), in step; they do not get out of anyone's way until they are knocked down, and then go back to their places. */
   dance?: number;
-  /** What those standing in place do, if not dance: crouch at a fire, feeding it paper. */
-  motion?: 'toss' | 'carry' | 'cook' | 'perform';
+  /** What those standing in place do, if not dance: crouch at a fire, feeding it paper; talk to a camera, microphone up, braced against the wind. */
+  motion?: 'toss' | 'carry' | 'cook' | 'perform' | 'report';
+  /** Reporting: the colour of the channel's flag on the microphone. */
+  mic?: number;
+  /** Dressed for the rain, as a news crew is: a hooded coat to the knee, or a hooded jacket and a pack on the back; boots. */
+  dress?: 'coat' | 'pack';
+  /** What they say, one line after another, as the truck comes near them; and what they shout if it knocks them down. */
+  says?: string[];
+  shouts?: string[];
   /** What they wear, if not everyday clothes: colours to choose from, and a hat. */
   clothes?: number[];
   hat?: number;
@@ -297,6 +411,10 @@ export interface StillWaterDesc {
   drift: number;
   /** Brown with mud: thrown up brown. */
   muddy?: boolean;
+  /** A flood a foot or so deep over a street: what would go down lies on the bottom where it fell instead. */
+  shallow?: boolean;
+  /** A harbour's, far deeper than anything in it: what floats is held up at its surface by the water, not by the bottom. */
+  deep?: boolean;
 }
 
 /** A bird standing about: up and away when the truck comes near or sounds its horn, and down again at another of the birds' places, away from it. */
@@ -308,6 +426,80 @@ export interface BirdDesc {
 }
 
 /** A hole dug in the ground. Driving into one ends the run. */
+/**
+ * Waves breaking over a stretch of sea wall, one every `period` seconds: over the edge from `from` to `to`, running in
+ * the way `inland` points (a unit across the ground) as far as `reach` metres. Every `big`th is a big one.
+ */
+export interface WaveDesc {
+  from: Vec2;
+  to: Vec2;
+  inland: Vec2;
+  reach: number;
+  period: number;
+  phase: number;
+  big?: number;
+  /** How hard it runs in, against the usual: where they come often, less. */
+  force?: number;
+  /** Stretches of the edge, metres along it from `from`, where something tall stands between it and the sea: no wave comes over. */
+  lee?: [number, number][];
+  /**
+   * Breaking in open water among piles rather than over a wall: no sheet of white water across the top, only over these
+   * lengths of boardwalk low enough for it to come over (their middles, half sizes and yaws). It comes no higher than
+   * a little over `y`: what stands on a higher deck stays dry.
+   */
+  piles?: boolean;
+  wash?: { pos: Vec2; half: Vec2; yaw: number }[];
+  /** The height of the top it runs over, where not nought. */
+  y?: number;
+}
+
+/**
+ * Gusts out of an alley across a street, in a storm: blowing from `from`, deep in the alley, out past its `mouth` to `to`
+ * across the street, `half` metres either side of that line. They come on a beat `period` seconds long, each
+ * [start, length] in it, once the truck first comes within `wakes` metres of the mouth. Each gust takes `take` of what is
+ * piled in its way, those nearest the street first; `force` is how hard it blows on what there is of a thing to catch it.
+ * Its banners at the mouth (`flags`, where each stands) stand out straight before each gust.
+ */
+/**
+ * The power gone off in a building, as the storm brings the lines down: inside `area` ([x0, z0, x1, z1]) once past `from`
+ * (its Z) going in, the lights flicker and go out, and it is dark but for the truck's headlights. Only seen: its emergency
+ * lights come on and its exit signs glow, not lighting anything; each exit sign's arrow points the way out (-1 left, 0 on,
+ * 1 right, to one facing it).
+ */
+export interface OutageDesc {
+  area: [number, number, number, number];
+  from: number;
+  exits: { pos: Vec3; rotY: number; arrow: -1 | 0 | 1 }[];
+  emergency: { pos: Vec3; rotY: number }[];
+  /** The doors out, the daylight seen in them from the dark: the middle of each at the floor, facing in, how wide, how high. */
+  daylight: { pos: Vec3; rotY: number; wide: number; high: number }[];
+  /** How high its roof is: up on top of it, it is day as anywhere else. */
+  below?: number;
+}
+
+export interface GustDesc {
+  from: Vec2;
+  mouth: Vec2;
+  to: Vec2;
+  half: number;
+  /** How far either side it reaches at `to`, spread out from `half` at the mouth; `half` where not given. */
+  spread?: number;
+  period: number;
+  beats: [number, number][];
+  take: number;
+  force: number;
+  wakes?: number;
+  flags: Vec3[];
+  /** How high what it blows over stands, where that is not the ground: a roof. What it carries it lifts so far above that. */
+  floor?: number;
+  /**
+   * More to come: things off the roofs above the alley, each gust `each` more of them, in turn of `kinds`,
+   * from one of the places `at` (behind the roofs' parapets, out of sight), sent off at `push` (m/s) to come over and down;
+   * but no more while `most` of them are still lying about (half as many again as `each` if not given).
+   */
+  feed?: { at: Vec3[]; kinds: ObjectKindId[]; each: number; push: Vec3[]; most?: number };
+}
+
 export interface PitDesc {
   pos: Vec2;
   half: Vec2;
@@ -326,8 +518,8 @@ export interface SlickDesc {
   y?: number;
   /** How much of their usual hold the tyres keep there, 0 to 1. */
   grip: number;
-  /** What it is: spilt oil, drawn as dark pools (the default); or gravel spilt from a lorry, which the level draws itself. */
-  look?: 'oil' | 'gravel';
+  /** What it is: spilt oil, drawn as dark pools (the default); or gravel spilt from a lorry, or crushed ice, which the level draws itself. */
+  look?: 'oil' | 'gravel' | 'ice';
 }
 
 /** A warning sign beside the road. Drawn large and tilted back, to be read from above. */
@@ -357,9 +549,19 @@ export interface SignDesc {
   /** The way it faces: radians about Y, 0 = toward +Z. */
   rotY: number;
   /** Slippery road; a way for people on foot only; turn round here; a diversion to the left; straight on to the temple square; a school ahead; works in the road; the name over a quarry's loading shed. */
-  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight' | 'canteen' | 'bento' | 'concert' | 'aYu';
+  kind: 'slippery' | 'pedestrian' | 'uturn' | 'detour' | 'ahead' | 'school' | 'works' | 'schoolName' | 'gasShop' | 'bends' | 'loadOut' | 'safety' | 'pondWorks' | 'pumpStation' | 'floodGate' | 'unload' | 'brokenBridge' | 'freight' | 'canteen' | 'bento' | 'concert' | 'aYu' | 'name';
   /** As a prop's: faded while the camera's line to the truck passes through this box. Upright name signs only. */
   fadeZone?: [Vec3, Vec3];
+  /** A 'name' sign's own words, its colours (ground, ink, rim) and how wide it is, metres. */
+  text?: string;
+  colors?: [string, string, string];
+  wide?: number;
+  /** A 'name' board come down: lying face up, its right-hand end (as read) raised by this, radians. */
+  lie?: number;
+  /** A 'name' board come down the other way: leant back from upright by this, radians, its top edge the higher. */
+  lean?: number;
+  /** A 'name' board stood on end, out from a shop's front over the pavement: its words down it one under another, on both its faces; `wide` is then how tall it is. */
+  tall?: boolean;
 }
 
 /** A railway track running along X, with trains passing at a steady interval. */
@@ -523,14 +725,45 @@ export interface LevelDef {
   stillWater?: StillWaterDesc[];
   /** Concrete just poured, on a floor at a height: it drags at the truck and gives its tyres little hold. */
   wet?: { area: [number, number, number, number]; y: number; drag: number; grip: number }[];
-  /** Still water drawn over ponds, for the look of it only: where, how high, its colour, and which way and how fast, m/s, its ripples drift (barely, if not given). */
-  pools?: { area: [number, number, number, number]; surface: number; tint: number; flow?: Vec2 }[];
+  /** Still water drawn over ponds, for the look of it only: where, how high, its colour, and which way and how fast, m/s, its ripples drift (barely, if not given); rain on it; and, out at sea in a storm, how high its waves run, metres. */
+  pools?: { area: [number, number, number, number]; surface: number; tint: number; flow?: Vec2; rain?: boolean; waves?: number }[];
   /** Birds that fly up from the truck. */
   birds?: BirdDesc[];
   /** Ground there is no driving out of: a paddy, a canal. Each is [minX, minZ, maxX, maxZ]. A truck that is in one is done for, as it is in a pit. */
   bogs?: [number, number, number, number][];
   /** The time of day, when it is not the middle of it. */
-  light?: 'dusk';
+  light?: 'dusk' | 'storm';
+  /**
+   * Roofs over halls the truck drives through, as [x0, z0, x1, z1] and the height of the roof's underside: while what is
+   * followed is in under one, nothing on top of it is drawn.
+   */
+  lids?: { area: [number, number, number, number]; below: number }[];
+  /**
+   * Roofs that can be fallen through, as [x0, z0, x1, z1] and how high their underside is: once the truck has been up on
+   * one, being back down inside under it, and a moment for it to have come down, ends the run. Their skylights, which give way
+   * under a wheel.
+   */
+  roofFalls?: { area: [number, number, number, number]; below: number; skylights?: RoofSkylight[] }[];
+  /** Where things float on its water, decks and gangways below the quay's height: the truck is down only once in the water. */
+  decks?: boolean;
+  /** Waves breaking in over sea walls. */
+  waves?: WaveDesc[];
+  /** Gusts out of alleys across the street. */
+  gusts?: GustDesc[];
+  /** The power gone off in a building. */
+  outage?: OutageDesc;
+  /** Loose ends of live wire brought down by the storm, lying where they fell: each spits sparks now and then for as long as the level goes on. */
+  sparks?: Vec3[];
+  /** In a storm, the walls the sea breaks against: along each, waves throw spray up off the water (`y`) and over toward `land`. */
+  surf?: { from: Vec2; to: Vec2; y: number; land: Vec2 }[];
+  /**
+   * In a storm, now and then a squall: the rain coming down so hard for a few seconds that the fog closes in round the
+   * truck and what is ahead is hard to see. Every so many seconds, from one to the other; held at its worst so long; so
+   * long coming on and passing. Only seen and heard, out from under a roof.
+   */
+  squalls?: { every: [number, number]; last: number; grow: number };
+  /** Lamps hung on their flexes over the way, where each hangs from: only drawn, swinging when the truck brushes one. */
+  lamps?: Vec3[];
   /** The playable area, for the minimap: [minX, minZ] to [maxX, maxZ]. */
   bounds: [Vec2, Vec2];
   spawn: Vec3;

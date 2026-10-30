@@ -14,6 +14,12 @@ export interface Lot {
   height: number;
   open: readonly boolean[];
   crown: number;
+  /** One storey, its roof bare. */
+  low?: boolean;
+  /** Where a roof's sheet is left out, as [x0, z0, x1, z1] from its middle. */
+  cuts?: [number, number, number, number][];
+  /** The side its houses face, where that is not left to which sides are open. */
+  front?: number;
 }
 
 export const GLASS = [0x2d3f52, 0x364c61, 0x425a70, 0x2a3a4a];
@@ -57,11 +63,23 @@ export function within(p: Plot, inset: number[]): Plot {
   };
 }
 
-/** A window: glass in a frame, now and then with a blind part of the way down. */
+/** Whether the windows now being built are taped across for a typhoon: set for one building at a time. */
+let taping = false;
+export function tapeWindows(on: boolean): void {
+  taping = on;
+}
+
+/** A window: glass in a frame, now and then with a blind part of the way down; taped corner to corner if a typhoon is coming. */
 export function glazing(s: Shapes, rand: Rand, w: Wall, u0: number, y0: number, u1: number, y1: number, frame: number): void {
   s.panel(w, u0 - 0.07, y0 - 0.07, u1 + 0.07, y1 + 0.07, 0.02, frame);
   s.panel(w, u0, y0, u1, y1, 0.04, pick(rand, GLASS));
   if (rand() < 0.22) s.panel(w, u0, y1 - (y1 - y0) * span(rand, 0.3, 0.6), u1, y1, 0.045, pick(rand, BLINDS));
+  if (taping) {
+    for (const [a, b] of [[[u0, y0], [u1, y1]], [[u0, y1], [u1, y0]]]) {
+      const du = b[0] - a[0], dy = b[1] - a[1], long = Math.hypot(du, dy), nu = (-dy / long) * 0.035, ny = (du / long) * 0.035;
+      s.quad(s.at(w, a[0] - nu, a[1] - ny, 0.05), s.at(w, b[0] - nu, b[1] - ny, 0.05), s.at(w, b[0] + nu, b[1] + ny, 0.05), s.at(w, a[0] + nu, a[1] + ny, 0.05), 0xd8ccaa);
+    }
+  }
 }
 
 /** The outdoor half of an air conditioner, hung on a wall with its foot at `y`. */
