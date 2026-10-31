@@ -83,10 +83,32 @@ export class Hud {
   private valueText = '';
   private timerText = '';
   private distanceText = '';
+  routeProgress: number | null = null;
+  private fullText = '';
+  private resultEpoch = 0;
+  private photoUrl = '';
+  private bannerTimer = 0;
+
+  /** A token prevents a delayed photo from appearing on a later delivery. */
+  get photoToken(): number { return this.resultEpoch; }
+  setAccidentPhoto(blob: Blob, token: number, beforeAccident = false): void {
+    if (token !== this.resultEpoch || this.result.hidden) return;
+    if (this.photoUrl) URL.revokeObjectURL(this.photoUrl);
+    this.photoUrl = URL.createObjectURL(blob);
+    (el('accident-image') as HTMLImageElement).src = this.photoUrl;
+    el('accident-place').textContent = `${this.level.name} · ${beforeAccident ? '落水前最後影像' : '現場紀錄'}`;
+    this.result.classList.add('has-photo');
+  }
+  setAccidentPhotoUnavailable(token: number): void {
+    if (token !== this.resultEpoch || this.result.hidden) return;
+    el('accident-place').textContent = '現場受遮擋，未取得清楚影像';
+  }
 
   constructor(private readonly level: LevelDef) {
     const goal = el('value-goal'), goal3 = el('value-goal3');
     const freePlay = !level.finish;
+    el('nav-level').textContent = level.name;
+    el('cargo-thresholds').textContent = freePlay || level.practice ? '' : `★★ ${Math.round(level.stars[1]*100)}%　★★★ ${Math.round(level.stars[2]*100)}%`;
     goal.hidden = goal3.hidden = freePlay;
     // The marks on the value bar are the second and third stars: the first is for arriving at all.
     goal.style.left = `${level.stars[1] * 100}%`;
@@ -135,6 +157,7 @@ export class Hud {
 
   /** The level's name, what each star asks for and what is on the truck: up until the run begins. */
   showBanner(): void {
+    window.clearTimeout(this.bannerTimer);
     // The tutorial has its own line at the top instead.
     if (this.level.practice) {
       this.banner.hidden = true;
@@ -152,9 +175,9 @@ export class Hud {
     el('banner-goals').innerHTML = scored ? goals.map((text, i) => `<div class="goal"><span>${'★'.repeat(i + 1)}</span>${text}</div>`).join('') : '';
     el('banner-list').innerHTML = scored ? this.manifest() : '';
     // Its way out is a button of its own, rather than a word in the corner; the clock starting is said beside it.
+    el('banner-total').innerHTML = `<span>本趟裝車</span><strong>${this.load().length}<small> 件</small></strong><span>出發貨值</span><b>${money(this.loadValue())}</b>`;
     el('banner-foot').innerHTML = scored
-      ? `<span>共 ${this.load().length} 件</span><b>${money(this.loadValue())}</b><em>駛出柵門後開始計時</em><button id="banner-go" type="button">出發<kbd><span class="key-k">Enter</span><span class="key-p" data-pad="A"></span></kbd></button>`
-      : '';
+      ? `<em>駛出起點後開始計時</em><button id="banner-go" type="button">出發<kbd><span class="key-k">Enter</span><span class="key-p" data-pad="A"></span></kbd></button>` : '';
     el('banner-go')?.addEventListener('click', () => this.onBannerClose());
     namePadKeys(this.banner);
     this.banner.classList.toggle('plain', !scored);
@@ -168,6 +191,8 @@ export class Hud {
   /** Fade the banner out: the run has begun. */
   dismissBanner(): void {
     this.banner.classList.add('leaving');
+    window.clearTimeout(this.bannerTimer);
+    this.bannerTimer = window.setTimeout(() => { this.banner.hidden = true; }, 250);
   }
 
   /** Esc in the pause menu while it asks whether to leave: back to its choices, rather than out of it. False when it is not asking. */
@@ -183,13 +208,18 @@ export class Hud {
    */
   private showPage(page: 'info' | 'help' | 'settings', focus = true): void {
     for (const name of ['info', 'help', 'settings'] as const) el(`pause-${name}`).hidden = name !== page;
-    for (const name of ['info', 'help', 'settings'] as const) el(`pause-${name}-open`).classList.toggle('open', name === page);
+    for (const name of ['info', 'help', 'settings'] as const) {
+      const tab = el(`pause-${name}-open`);
+      tab.classList.toggle('open', name === page);
+      tab.setAttribute('aria-selected', String(name === page));
+      tab.tabIndex = name === page ? 0 : -1;
+    }
     if (focus) el(`pause-${page}-open`).focus();
   }
 
   /** Swap the pause menu's choices for the question of whether to really leave, or back again. */
   private askToLeave(asking: boolean): void {
-    el('pause-choices').hidden = asking;
+    for (const panel of el('pause').querySelectorAll<HTMLElement>('.pause-left-leaf,.pause-file')) panel.inert = asking;
     el('pause-confirm').hidden = !asking;
     el(asking ? 'pause-stay' : 'pause-resume').focus();
   }
@@ -249,15 +279,17 @@ export class Hud {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
     const kinds = [...counts].sort(([a], [b]) => b.value - a.value);
-    const swatch = (kind: CargoType) => `#${kind.parts[0].color.toString(16).padStart(6, '0')}`;
-    return kinds
-      .map(([kind, n]) => `<div class="manifest-item"><i style="background:${swatch(kind)}"></i><span>${kind.name}</span><em>× ${n}</em><b>${money(kind.value)}</b></div>`)
-      .join('');
+    return `<table><colgroup><col><col class="dispatch-col-quantity"><col class="dispatch-col-price"></colgroup><thead><tr><th>貨物品項</th><th>數量</th><th>單價</th></tr></thead><tbody>${kinds.map(([kind, n]) =>
+      `<tr><td><img class="cargo-thumbnail" src="${import.meta.env.BASE_URL}ui/cargo/${kind.id}.png" alt=""><span>${kind.name}</span></td><td>× ${n}</td><td>${money(kind.value)}</td></tr>`).join('')}</tbody></table>`;
   }
 
   update(speedMps: number, cargoOnTruck: number, cargoTotal: number, value: number, fullValue: number, seconds: number): void {
     const speed = String(Math.round(Math.abs(speedMps) * 3.6));
-    if (speed !== this.speedText) this.speedEl.textContent = this.speedText = speed;
+    if (speed !== this.speedText) {
+      this.speedEl.textContent = this.speedText = speed;
+      this.speedEl.closest('.analog-speed')?.setAttribute('aria-label', `時速 ${speed} 公里`);
+      el('speed-needle').setAttribute('transform', `rotate(${135 + Math.min(120, Number(speed)) * 2.25} 115 115)`);
+    }
 
     const cargo = `${cargoOnTruck} / ${cargoTotal}`;
     if (cargo !== this.cargoText) {
@@ -266,11 +298,13 @@ export class Hud {
     }
 
     const text = money(value);
-    if (text !== this.valueText) {
+    if (text !== this.valueText || money(fullValue) !== this.fullText) {
+      this.fullText = money(fullValue);
       this.valueEl.textContent = this.valueText = text;
       this.valueFullEl.textContent = `/ ${money(fullValue)}`;
       const kept = fullValue > 0 ? value / fullValue : 0;
-      this.valueFill.style.width = `${kept * 100}%`;
+      this.valueFill.style.width = `${Math.min(100, kept * 100)}%`;
+      el('cargo-percent').textContent = `${Math.floor(kept * 100)}%`;
       const [, two, three] = this.level.stars;
       this.valueFill.style.backgroundColor = kept >= three ? '#6fd08c' : kept >= two ? '#ffd166' : '#ff6b5a';
     }
@@ -351,9 +385,19 @@ export class Hud {
    * became of the rest, and how the run stands against the best on record.
    */
   showResult(result: Result, fullValue: number, records?: RecordsSet): void {
-    if (this.level.practice) return this.showGraduation(result);
+    this.hideResult();
+    if (this.level.practice && !result.failure) return this.showGraduation(result);
     const failed = result.failure !== undefined;
     const passed = !failed && result.stars > 0;
+    this.result.classList.toggle('failed', failed);
+    this.result.classList.add('active');
+    el('receipt-kind').textContent = failed ? '配送事故紀錄' : '配送簽收單';
+    el('result-details-title').textContent = failed ? '本趟配送中止' : '配送明細';
+    el('result-stamp').innerHTML = failed ? '配送失敗<span>DELIVERY FAILED</span>' : passed ? '已簽收<span>DELIVERED</span>' : '未達標<span>INCOMPLETE</span>';
+    el('failure-time').textContent = clock(result.seconds);
+    el('failure-progress').innerHTML = this.routeProgress == null ? '—' : `<strong>${Math.min(99, Math.floor(this.routeProgress * 100))}</strong><small>%</small>`;
+    el('accident-place').textContent = `${this.level.name} · 現場紀錄`;
+    el('result-new-record').hidden = !(records?.value || records?.time);
     const [title, reason] = failed ? FAILURES[result.failure!] : [passed ? '送達！' : '未達標', ''];
     el('result-level').textContent = this.level.name;
     el('result-title').textContent = title;
@@ -374,21 +418,19 @@ export class Hud {
 
     // The worth counts up from nothing as the bar fills, and each star chimes as it comes.
     this.countUp(result.value, result.fraction);
-    for (let n = 0; n < result.stars; n++) window.setTimeout(() => uiSound('confirm'), (0.35 + n * 0.22) * 1000);
+    const epoch = this.resultEpoch;
+    for (let n = 0; n < result.stars; n++) window.setTimeout(() => {
+      if (epoch === this.resultEpoch && !this.result.hidden) uiSound('confirm');
+    }, (0.35 + n * 0.22) * 1000);
 
-    // Two rows: what became of the load, then the time and what the run did on the way.
+    // The delivery's useful figures, kept compact enough for the joined receipt.
     const { intact, damaged, destroyed, lost } = result.tally;
-    const { people, cars, things } = result.trip;
     const tile = (label: string, value: string, look = '') => `<div class="tile${look ? ' ' + look : ''}"><b>${value}</b><span>${label}</span></div>`;
     el('result-rows').innerHTML = [
-      tile('剩餘貨物', `${intact + damaged}<small> / ${intact + damaged + destroyed + lost}</small>`),
+      tile('配送用時', clock(result.seconds)),
+      tile('送達貨物', `${intact + damaged}<small> / ${intact + damaged + destroyed + lost}</small>`),
       tile('受損', String(damaged), damaged > 0 ? 'bad' : ''),
-      tile('全毀', String(destroyed), destroyed > 0 ? 'bad' : ''),
-      tile('遺失', String(lost), lost > 0 ? 'bad' : ''),
-      tile('用時', clock(result.seconds)),
-      tile('撞倒的人', String(people), 'trip'),
-      tile('撞翻車輛', String(cars), 'trip'),
-      tile('撞飛物品', String(things), 'trip'),
+      tile('全毀 / 遺失', `${destroyed} / ${lost}`, destroyed + lost > 0 ? 'bad' : ''),
     ].join('');
 
     // The things hidden along the way, one slot each as on the level page: those brought in this run lit and named, new
@@ -433,6 +475,7 @@ export class Hud {
     const chip = (name: string) => `<kbd class="key-p pad-chip" data-pad="${name}"></kbd>`;
     for (const id of ['result-next', 'result-save', 'result-retry', 'result-menu']) {
       const button = el(id);
+      button.classList.toggle('ui-primary', id === first);
       button.querySelector('.pad-chip')?.remove();
       const name = id === first ? 'A' : id === 'result-menu' ? 'B' : id === 'result-retry' ? 'X' : '';
       if (name) button.insertAdjacentHTML('afterbegin', chip(name));
@@ -447,9 +490,12 @@ export class Hud {
     const figure = el('result-value').querySelector('b')!;
     const fill = el('result-value').querySelector<HTMLElement>('.fill')!;
     const width = `${Math.min(100, fraction * 100)}%`;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const epoch = this.resultEpoch;
     fill.style.width = '0%';
     const began = performance.now();
     const step = (now: number) => {
+      if (epoch !== this.resultEpoch || this.result.hidden) return;
       const t = Math.min(1, (now - began) / 1000);
       const eased = 1 - (1 - t) ** 3;
       figure.textContent = money(value * eased);
@@ -463,6 +509,13 @@ export class Hud {
 
   /** The end of the tutorial: what has been learnt, and on to level 1. */
   private showGraduation(result: Result): void {
+    this.result.classList.add('graduated', 'active');
+    el('receipt-kind').textContent = '配送員訓練紀錄';
+    el('result-details-title').textContent = '準備上路';
+    el('result-new-record').hidden = true;
+    el('result-next').hidden = el('result-save').hidden = true;
+    el('result-retry').classList.add('ui-primary');
+    el('result-retry').textContent = '開始第 1 關';
     el('result-level').textContent = this.level.name;
     el('result-title').textContent = '結業！';
     el('result-title').className = 'passed';
@@ -477,10 +530,16 @@ export class Hud {
     el('result-record').innerHTML = `<div class="record"><span>用時</span><b>${clock(result.seconds)}</b></div>`;
     this.banner.hidden = true;
     this.result.hidden = false;
+    el('result-retry').focus();
   }
 
   hideResult(): void {
+    this.resultEpoch++;
     this.result.hidden = true;
+    this.result.classList.remove('failed', 'graduated', 'active', 'has-photo');
+    (el('accident-image') as HTMLImageElement).removeAttribute('src');
+    if (this.photoUrl) URL.revokeObjectURL(this.photoUrl);
+    this.photoUrl = '';
   }
 
   /** Floating text at a screen position, e.g. money lost. */

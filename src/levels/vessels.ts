@@ -419,7 +419,9 @@ export function reeferShip(o: ShipOptions): Parts {
     }
   }
   // Aft, on the far side: the accommodation, four decks, the bridge over them reaching across with its wings, the funnel
-  // behind; boats in their davits on its side.
+  // behind; boats in their davits on its side. All of it faded when it is between the camera and the truck, as it is from
+  // the stern ramp.
+  const house = parts.length;
   const a0 = -l + 3, a1 = Math.min(first - 2, -l + 17), ax0 = 1.4, ax1 = w - 0.6;
   box(parts, [(ax1 - ax0) / 2, 4.6, (a1 - a0) / 2], [(ax0 + ax1) / 2, 4.6, (a0 + a1) / 2], SUPER, { solid: true });
   for (let deck = 0; deck < 4; deck++) {
@@ -441,6 +443,7 @@ export function reeferShip(o: ShipOptions): Parts {
   box(parts, [1.62, 0.35, 1.92], [(ax0 + ax1) / 2 + 1, 13.2, a0 + 2.2], 0xc8372d);
   box(parts, [0.9, 0.7, 3.2], [ax1 + 0.25, 7.1, (a0 + a1) / 2], 0xe8622a);
   for (const z of [(a0 + a1) / 2 - 2.6, (a0 + a1) / 2 + 2.6]) rod(parts, [ax1 - 0.4, 6.4, z], [ax1 + 0.4, 8.4, z], 0.08, 0x9aa0a6);
+  for (const p of parts.slice(house)) p.fade = true;
   // The stern: the ramp's gantry, a post each side of the opening; the mooring winches and bitts on the near side; the flag.
   for (const x of [-3.9, 3.9]) {
     box(parts, [0.25, 3.2, 0.25], [x, 3.2, -l + 0.6], YELLOW, { solid: true });

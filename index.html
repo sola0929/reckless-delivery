@@ -16,33 +16,29 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="/src/styles.css" />
     <link rel="stylesheet" href="/src/menus.css" />
+    <link rel="stylesheet" href="/src/ui/game-ui.css" />
   </head>
   <body>
     <canvas id="game"></canvas>
     <div id="splats"></div>
     <div id="hud">
-      <div class="panel" id="stats">
-        <div class="stat"><span class="label">時速</span><span class="value" id="speed">0</span><span class="unit">km/h</span></div>
-        <div class="stat"><span class="label">貨物價值</span><span class="value" id="value">$0</span><span class="unit" id="value-full">/ $0</span><div id="value-bar"><div id="value-fill"></div><div id="value-goal"></div><div id="value-goal3"></div></div></div>
-        <div class="stat"><span class="label">車上貨物</span><span class="value" id="cargo">0 / 0</span></div>
-        <div class="stat" id="hidden-stat" hidden><span class="label">隱藏貨物</span><span class="value" id="hidden">0 / 0</span></div>
-        <div class="stat" id="timer-stat"><span class="label">時間</span><span class="value" id="timer">0:00</span></div>
-      </div>
-      <div id="corner">
-        <div class="panel" id="nav" hidden>
-          <div id="nav-arrow"></div>
-          <div><span class="label">卸貨區</span><span class="value" id="nav-distance">0</span><span class="unit">m</span></div>
-        </div>
-        <button id="pause-button" type="button" title="暫停（Esc）" aria-label="暫停"></button>
-      </div>
-      <div id="banner" hidden>
-        <button id="banner-close" type="button" title="關閉（Enter）" aria-label="關閉">✕</button>
-        <div id="banner-title"></div>
-        <div id="banner-brief"></div>
-        <div id="banner-goals"></div>
-        <div id="banner-list"></div>
-        <div id="banner-foot"></div>
-      </div>
+      <div id="ui-instruments" class="ui-stage hud">
+ <div class="cargo-summary" id="stats"><span class="cargo-tape" aria-hidden="true"></span><div class="cargo-caption"><span class="cargo-label">貨物價值</span><span class="cargo-count" id="cargo">0 / 0</span></div><div class="cargo-figure"><b id="value">$0</b><span id="value-full"></span></div><div class="cargo-health"><span>貨值保全</span><b id="cargo-percent">100%</b></div><div class="cargo-track" id="value-bar"><i id="value-fill"></i><span id="value-goal"></span><span id="value-goal3"></span></div><div class="cargo-thresholds" id="cargo-thresholds"></div><div id="hidden-stat" hidden>隱藏貨物 <b id="hidden"></b></div></div>
+ <div class="hud-top-right"><div class="timer" id="timer-stat"><span>配送時間</span><b id="timer">0:00</b></div><button id="pause-button" class="pause" type="button" aria-label="暫停">Ⅱ</button></div>
+ <div class="dashboard">  <div class="speed-module analog-speed" role="img" aria-label="時速 36 公里">
+   <svg class="analog-face" viewBox="0 0 230 230" aria-hidden="true"><defs><radialGradient id="dial-face"><stop stop-color="#24333b"/><stop offset=".78" stop-color="#142229"/><stop offset="1" stop-color="#0b161d"/></radialGradient><linearGradient id="dial-rim" x1="0" y1="0" x2=".4" y2="1"><stop stop-color="#829196"/><stop offset=".45" stop-color="#2f4047"/><stop offset="1" stop-color="#101a21"/></linearGradient><linearGradient id="needle-color"><stop stop-color="#f4b384"/><stop offset="1" stop-color="#ef744c"/></linearGradient></defs>
+   <g class="playful-dial-shell" aria-hidden="true"><path d="M35 6L186 10 223 43 226 184 186 225 40 219 7 183 5 43Z" fill="#e16d3d" stroke="#182d32" stroke-width="6" stroke-linejoin="round"/><path d="M38 13L183 17 211 44" fill="none" stroke="#f4a65d" stroke-width="5" stroke-linecap="round"/><path d="M18 180L45 207 183 213 213 182" fill="none" stroke="#a9472b" stroke-width="6" stroke-linecap="round"/><g fill="#f0c57b" stroke="#283b3c" stroke-width="2"><circle cx="26" cy="29" r="5"/><circle cx="202" cy="193" r="5"/></g><path d="M23 31l6-4m170 169 6-5" stroke="#283b3c" stroke-width="2"/></g>
+   <circle cx="115" cy="115" r="110" fill="url(#dial-rim)"/><circle cx="115" cy="115" r="106" fill="#0a151b"/><circle cx="115" cy="115" r="102" fill="url(#dial-face)" stroke="#6e81863b"/><path d="M47.82 182.18 A95 95 0 1 1 182.18 182.18" fill="none" stroke="#93a7ad22" stroke-width="1"/>
+   <g class="dial-ticks"><line x1="50.65" y1="179.35" x2="58.43" y2="171.57" class="tick-major"/><line x1="39.34" y1="165.56" x2="43.49" y2="162.78" class="tick-minor"/><line x1="30.93" y1="149.82" x2="35.55" y2="147.91" class="tick-minor"/><line x1="25.75" y1="132.75" x2="30.65" y2="131.78" class="tick-minor"/><line x1="24.00" y1="115.00" x2="35.00" y2="115.00" class="tick-major"/><line x1="25.75" y1="97.25" x2="30.65" y2="98.22" class="tick-minor"/><line x1="30.93" y1="80.18" x2="35.55" y2="82.09" class="tick-minor"/><line x1="39.34" y1="64.44" x2="43.49" y2="67.22" class="tick-minor"/><line x1="50.65" y1="50.65" x2="58.43" y2="58.43" class="tick-major"/><line x1="64.44" y1="39.34" x2="67.22" y2="43.49" class="tick-minor"/><line x1="80.18" y1="30.93" x2="82.09" y2="35.55" class="tick-minor"/><line x1="97.25" y1="25.75" x2="98.22" y2="30.65" class="tick-minor"/><line x1="115.00" y1="24.00" x2="115.00" y2="35.00" class="tick-major"/><line x1="132.75" y1="25.75" x2="131.78" y2="30.65" class="tick-minor"/><line x1="149.82" y1="30.93" x2="147.91" y2="35.55" class="tick-minor"/><line x1="165.56" y1="39.34" x2="162.78" y2="43.49" class="tick-minor"/><line x1="179.35" y1="50.65" x2="171.57" y2="58.43" class="tick-major"/><line x1="190.66" y1="64.44" x2="186.51" y2="67.22" class="tick-minor"/><line x1="199.07" y1="80.18" x2="194.45" y2="82.09" class="tick-minor"/><line x1="204.25" y1="97.25" x2="199.35" y2="98.22" class="tick-minor"/><line x1="206.00" y1="115.00" x2="195.00" y2="115.00" class="tick-major"/><line x1="204.25" y1="132.75" x2="199.35" y2="131.78" class="tick-minor"/><line x1="199.07" y1="149.82" x2="194.45" y2="147.91" class="tick-minor"/><line x1="190.66" y1="165.56" x2="186.51" y2="162.78" class="tick-minor"/><line x1="179.35" y1="179.35" x2="171.57" y2="171.57" class="tick-major"/></g><g class="dial-labels"><text x="66.92" y="163.08">0</text><text x="47.00" y="115.00">20</text><text x="66.92" y="66.92">40</text><text x="115.00" y="47.00">60</text><text x="163.08" y="66.92">80</text><text x="183.00" y="115.00">100</text><text x="163.08" y="163.08">120</text></g><text class="dial-title" x="115" y="80">時速</text>
+   <g id="speed-needle" transform="rotate(135 115 115)"><path d="M101 111 L187 115 L101 119Z" fill="url(#needle-color)"/><path d="M115 114L183 115" stroke="#ffe0bc" stroke-width="1"/></g>
+   <circle cx="115" cy="115" r="10" fill="#050e14" stroke="#75868d" stroke-width="2"/><circle cx="115" cy="115" r="5" fill="#a1b1b4"/>
+   </svg><div class="speed-number"><b id="speed">0</b><span>km/h</span></div>
+  </div>
+<div class="navigation-module vehicle-navigation"><div class="nav-device-label"><span>配送導航</span><span class="nav-signal"><i></i> GPS</span></div><div class="nav-screen"><div class="navigation-heading" id="nav"><span class="direction-arrow" id="nav-arrow" aria-hidden="true">↑</span><div><small>目的地</small><span class="label">卸貨區</span></div><b><span id="nav-distance">0</span><small>m</small></b></div><canvas id="minimap"></canvas><div class="navigation-status"><span id="nav-level"></span><span>路線導航</span></div></div></div></div></div>
+      <div id="banner" hidden><div class="ui-stage"><article class="dispatch-board"><div class="dispatch-clip" aria-hidden="true"></div><div class="dispatch-paper">
+ <header class="dispatch-heading"><div><span class="dispatch-brand">胡鬧快遞 ／ 出車點貨單</span><h2 id="banner-title"></h2><p id="banner-brief"></p></div><button id="banner-close" type="button" aria-label="關閉點貨單">×</button></header>
+ <div class="dispatch-body"><div class="dispatch-list" id="banner-list"></div><aside class="dispatch-summary"><div class="dispatch-total" id="banner-total"></div><h3>配送驗收標準</h3><div class="dispatch-goals" id="banner-goals"></div></aside></div><footer class="dispatch-footer" id="banner-foot"></footer>
+ </div></article></div></div>
       <div id="lesson" hidden>
         <div class="lesson-head"><span id="lesson-step"></span><span class="lesson-tag">新手上路</span><button id="lesson-skip" type="button">跳過教學 ›</button></div>
         <div id="lesson-text"></div>
@@ -54,96 +50,80 @@
         <div id="chat-window"><div id="chat-title"></div><div id="chat-body"></div></div>
       </div>
       <div id="fade"></div>
-      <canvas id="minimap"></canvas>
+
       <div id="popups"></div>
-      <div class="panel" id="result" hidden>
-        <div id="result-level"></div>
-        <div id="result-title"></div>
-        <div id="result-stars"></div>
-        <div id="result-reason"></div>
-        <div id="result-verdict"></div>
-        <div id="result-value"></div>
-        <div id="result-rows"></div>
-        <div id="result-hidden"></div>
-        <div id="result-goals"></div>
-        <div id="result-record"></div>
-        <div class="buttons">
-          <button id="result-next" type="button" hidden>下一關</button>
-          <button id="result-save" type="button" hidden>從存檔點重來</button>
-          <button id="result-retry" type="button">再玩一次</button>
-          <button id="result-menu" class="quiet" type="button">回到主選單</button>
-        </div>
-      </div>
-      <div id="pause" hidden>
-        <div id="pause-card">
-          <!-- On the left what can be done; on the right a panel: how the run stands, or the controls, or the settings. -->
-          <div class="pause-side">
-            <div class="pause-head">
-              <div id="pause-title">暫停</div>
-              <div id="pause-level"></div>
-              <div id="pause-pad-lost" hidden>手把已中斷連線，接回後再繼續</div>
-            </div>
-            <div id="pause-choices">
-              <button id="pause-resume" class="menu-item primary" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>繼續<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
-              <button id="pause-save" class="menu-item" type="button" hidden><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 14h8v7H8z"/></svg>回到存檔點</button>
-              <button id="pause-retry" class="menu-item" type="button"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 7.7 10h-2.6A5.5 5.5 0 1 1 12 6.5c1.5 0 2.9.6 3.9 1.6L13 11h8V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg>重新開始</button>
-              <!-- The panel's pages, one button each: the one open is lit. -->
-              <button id="pause-info-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zm2 2v12h12V6zm2 2h8v2H8zm0 3h8v2H8zm0 3h5v2H8z" fill-rule="evenodd"/></svg>詳情</button>
-              <button id="pause-help-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
-              <button id="pause-settings-open" class="menu-item tab" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
-              <button id="pause-menu" class="menu-item leave" type="button"><svg viewBox="0 0 24 24"><path d="M12 3l10 9h-3v9h-5v-6h-4v6H5v-9H2z"/></svg>回到主選單</button>
-            </div>
-            <div id="pause-confirm" hidden>
-              <p>確定要回到主選單嗎？<br />這一趟的進度不會保留。</p>
-              <button id="pause-leave" class="menu-item leave" type="button">回到主選單</button>
-              <button id="pause-stay" class="menu-item" type="button">取消，繼續送貨</button>
-            </div>
-            <!-- With the controller in hand, which of its buttons choose and which go back. -->
-            <div class="pause-foot key-p"><b data-pad="A"></b> 確認　<b data-pad="B"></b> 繼續遊戲</div>
-          </div>
-          <div class="pause-panel">
-            <div class="pause-page" id="pause-info">
-              <div class="pause-page-title">這一趟的詳情</div>
-              <div class="pause-stats">
-                <div><span>時間</span><b id="pause-time">0:00</b></div>
-                <div><span>車上貨物</span><b id="pause-cargo">0 / 0</b></div>
-              </div>
-              <div class="pause-worth">
-                <div class="pw-figure"><span>貨物價值</span><b id="pause-value">$0</b><small id="pause-full"></small><em id="pause-share"></em></div>
-                <div class="pw-bar" id="pause-bar"></div>
-              </div>
-              <div class="pause-hidden" id="pause-hidden-box" hidden>
-                <div class="ph-head"><svg class="crate" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zm2 1.6v7.1l6 2.7v-7.1zm14 0l-6 2.7v7.1l6-2.7zM12 5.2L6.4 7.7 12 10.2l5.6-2.5z"/></svg>隱藏貨物 <b id="pause-hidden">0 / 0</b></div>
-                <div class="ph-slots" id="pause-hidden-slots"></div>
-              </div>
-              <div class="pause-best" id="pause-best"></div>
-            </div>
-            <div class="pause-page" id="pause-help" hidden>
-              <div class="pause-page-title">操作說明</div>
-              <div id="pause-controls"></div>
-            </div>
-            <div class="pause-page" id="pause-settings" hidden>
-              <div class="pause-page-title">設定</div>
-              <div class="pause-sound pause-group">
-                <div class="pause-group-title">音量</div>
-                <label><span>音效</span><input id="vol-sfx" type="range" min="0" max="100" /></label>
-                <label><span>音樂</span><input id="vol-music" type="range" min="0" max="100" /></label>
-                <label class="mute"><span>聲音</span><input id="vol-mute" type="checkbox" /><i class="mute-chip"><svg class="mute-icon" viewBox="0 0 24 24"><path class="body" d="M3 9h4l5-5v16l-5-5H3z"/><path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg><b class="on">開啟</b><b class="off">靜音中</b></i></label>
-              </div>
-              <div class="pause-sound pause-group">
-                <div class="pause-group-title">畫面</div>
-                <div class="quality"><span>畫質</span><div class="segments" id="gfx-quality">
-                  <button type="button" data-quality="auto">自動</button>
-                  <button type="button" data-quality="high">高</button>
-                  <button type="button" data-quality="medium">中</button>
-                  <button type="button" data-quality="low">低</button>
-                </div></div>
-                <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div id="result" class="result" role="dialog" aria-modal="true" aria-label="配送結果" hidden><div class="ui-stage"><div class="result-shade"></div><div class="receipt">
+ <div class="receipt-paper"><div class="receipt-kicker">胡鬧快遞 <span id="receipt-kind">配送簽收單</span></div><div class="receipt-route" id="result-level"></div><h2 id="result-title"></h2>
+ <figure class="accident-photo"><img id="accident-image" alt="本趟事故現場"><figcaption>事故現場<span id="accident-place"></span></figcaption></figure>
+ <div class="stars" id="result-stars"></div><div class="delivery-label">送達貨值</div><div id="result-value"></div><div class="stamp" id="result-stamp">已簽收<span>DELIVERED</span></div><div class="paper-bottom"><span>保證送達，不保證完整。</span><div class="barcode"></div></div></div>
+ <div class="receipt-details"><div class="details-title"><h3 id="result-details-title">本趟配送</h3><span class="record-badge" id="result-new-record" hidden>新紀錄 ↗</span></div>
+ <div class="failure-explanation"><span>發生了什麼</span><p id="result-reason"></p></div><dl class="failure-run-data"><div><dt>本趟用時</dt><dd id="failure-time"></dd></div><div><dt>本關進度</dt><dd class="failure-progress" id="failure-progress"></dd></div></dl>
+ <div id="result-rows" class="stats"></div><div id="result-hidden"></div><blockquote id="result-verdict"></blockquote><div id="result-goals"></div><div id="result-record"></div>
+ <div class="result-actions buttons"><button id="result-next" type="button" hidden>下一關</button><button id="result-save" type="button" hidden>返回存檔點</button><button id="result-retry" type="button">重新配送</button><button id="result-menu" type="button">回主選單</button></div></div>
+ </div></div></div>
+      <div id="pause" class="pause-review" role="dialog" aria-modal="true" aria-label="暫停選單" hidden><div class="ui-stage">
+ <div class="pause-veil"></div>
+ <div class="pause-board">
+  <svg class="pause-folder-cover" viewBox="0 0 1160 660" aria-hidden="true">
+   <path d="M452 11 1142 5 1153 20 1158 636 1145 652 461 658 442 650 442 22Z" fill="#304940" stroke="#172f30" stroke-width="4" stroke-linejoin="round"/>
+   <path d="M479 23 1136 17M1139 35 1144 621M482 643 1129 638" fill="none" stroke="#829578" stroke-opacity=".3" stroke-width="2" stroke-linecap="round"/>
+   <path d="M1107 6l35-1 11 15 1 25-11 1-1-21-8-9-27 1ZM1111 642l27-2 9-11-1-22 11-1 1 30-13 16-34 1Z" fill="#bf6c43"/>
+  </svg>
+  <div class="pause-folder-spine" aria-hidden="true"></div>
+  <svg class="pause-ring-layer pause-ring-front" viewBox="0 0 1160 660" aria-hidden="true"><g data-ring="top"><path class="ring-outline"/><path class="ring-metal"/><path class="ring-shine"/></g><g data-ring="bottom"><path class="ring-outline"/><path class="ring-metal"/><path class="ring-shine"/></g></svg>
+  <div class="pause-left-leaf">
+   <svg class="pause-left-cover" viewBox="0 0 430 660" aria-hidden="true">
+    <g id="pause-left-cover-art">
+    <path d="M18 8 405 2 422 11 422 650 412 650 15 655 3 642 2 24Z" fill="#304940" stroke="#172f30" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M20 20 400 14M18 34 20 625M25 642 400 638" fill="none" stroke="#829578" stroke-opacity=".3" stroke-width="2" stroke-linecap="round"/>
+    <path d="m4 43 1-19 13-16 34-1-1 10-26 2-10 12 1 12ZM3 614l12 1 1 20 10 9 30-1 1 11-42 1-12-13Z" fill="#bf6c43"/>
+    </g>
+   </svg>
+   <div class="pause-cover-back" aria-hidden="true"><svg viewBox="0 0 430 660"><use href="#pause-left-cover-art"/></svg><i class="pause-back-hole pause-back-hole-top"></i><i class="pause-back-hole pause-back-hole-bottom"></i></div>
+   <i class="pause-cover-hole pause-cover-hole-top" data-hole="left-top" aria-hidden="true"></i><i class="pause-cover-hole pause-cover-hole-bottom" data-hole="left-bottom" aria-hidden="true"></i>
+  <aside class="pause-menu-sheet">
+   <div class="pause-brand">胡鬧快遞 <span>隨車工作夾</span></div>
+   <span class="pause-sticker">Ⅱ 配送暫停</span>
+   <h2 id="pause-title">歇一下<span>。</span></h2><p class="pause-route" id="pause-level"></p><p id="pause-pad-lost" hidden>手把已中斷連線，接回後再繼續</p>
+   <div class="pause-menu-actions" id="pause-choices">
+    <button class="pause-resume" id="pause-resume" data-game-action="true"><span>繼續配送</span><span aria-hidden="true">▶</span></button>
+    <button id="pause-save" data-game-action="true"><span>返回存檔點</span><span aria-hidden="true">↶</span></button>
+    <button id="pause-retry" data-game-action="true"><span>重新配送</span><span aria-hidden="true">↻</span></button>
+    <button class="pause-leave" id="pause-menu" data-game-action="true"><span>回主選單</span><span aria-hidden="true">↗</span></button>
+   </div>
+   <p class="pause-menu-foot"><kbd>Esc</kbd> 繼續配送<span>貨物也喘口氣。</span></p>
+  </aside>
+  </div>
+  <div class="pause-file">
+   <div class="pause-tabs" role="tablist" aria-label="隨車工作夾">
+    <button role="tab" id="pause-info-open" data-pause-tab="info" aria-controls="pause-info" aria-selected="true">配送詳情</button>
+    <button role="tab" id="pause-help-open" data-pause-tab="help" aria-controls="pause-help" aria-selected="false" tabindex="-1">操作說明</button>
+    <button role="tab" id="pause-settings-open" data-pause-tab="settings" aria-controls="pause-settings" aria-selected="false" tabindex="-1">設定</button>
+   </div>
+   <div class="pause-file-paper">
+    <i class="pause-paper-hole pause-paper-hole-top" data-hole="right-top" aria-hidden="true"></i><i class="pause-paper-hole pause-paper-hole-bottom" data-hole="right-bottom" aria-hidden="true"></i>
+    <span class="pause-paperclip" aria-hidden="true"></span>
+    <div class="pause-page" id="pause-info" role="tabpanel" aria-labelledby="pause-info-open">
+     <div class="pause-page-kicker">配送紀錄 <span>隨車留存</span></div><h3>本趟配送</h3>
+     <dl class="pause-run-stats"><div><dt>本趟用時</dt><dd id="pause-time">0:00</dd></div><div><dt>車上貨物</dt><dd id="pause-cargo"></dd></div></dl>
+     <div class="pause-value-note"><span>貨物價值</span><div><b id="pause-value"></b><small id="pause-full"></small><em id="pause-share"></em></div></div>
+     <div class="pause-secret" id="pause-hidden-box"><div><span>隱藏貨物</span><b id="pause-hidden"></b></div><div id="pause-hidden-slots" class="pause-secret-boxes" aria-label="尚未找到三件隱藏貨物"><i>?</i><i>?</i><i>?</i></div></div>
+     <div class="pause-best" id="pause-best"></div><div id="pause-bar" hidden></div>
+     <div class="pause-page-foot">保證送達，不保證完整。<span>胡鬧快遞 / 隨車留存</span></div>
+    </div>
+    <div class="pause-page" id="pause-help" role="tabpanel" aria-labelledby="pause-help-open" hidden><div class="pause-page-kicker">司機小抄</div><h3>怎麼開，怎麼搬</h3><div id="pause-controls"></div></div>
+      <div class="pause-page" id="pause-settings" role="tabpanel" aria-labelledby="pause-settings-open" hidden><div class="pause-page-kicker">車內調整</div><h3>調到順手再上路</h3><div class="pause-setting-group"><h4>聲音</h4>
+    <label class="pause-volume"><span>音效</span><span class="pause-slider"><input id="vol-sfx" type="range" min="0" max="100" aria-label="音效音量"></span><output for="vol-sfx">80%</output></label>
+    <label class="pause-volume"><span>音樂</span><span class="pause-slider"><input id="vol-music" type="range" min="0" max="100" aria-label="音樂音量"></span><output for="vol-music">60%</output></label>
+    <label class="pause-mute"><input id="vol-mute" type="checkbox"><span>靜音</span></label></div>
+    <div class="pause-setting-group"><h4>畫面</h4><div class="pause-quality-row"><span>畫質</span><div class="pause-segments segments" id="gfx-quality"><button data-quality="auto">自動</button><button data-quality="high">高</button><button data-quality="medium">中</button><button data-quality="low">低</button></div></div><p class="pause-settings-note">自動：畫面不順時，會自行降低畫質。</p></div></div>
+   </div>
+  </div>
+  <div class="pause-confirm-cover" id="pause-confirm" hidden>
+   <div class="pause-confirm-note" role="dialog" aria-modal="true" aria-labelledby="pause-menu-title" aria-describedby="pause-menu-description"><span>離開前，再確認一下</span><h3 id="pause-menu-title">這趟先不送了？</h3><p id="pause-menu-description">回到主選單後，這一趟的進度不會保留。</p><button id="pause-stay" data-game-action="true">留下，繼續配送</button><button id="pause-leave" data-game-action="true">確認回主選單 ↗</button></div>
+  </div>
+ </div>
+</div></div>
       <div id="prompt" hidden></div>
       <div class="panel" id="help"></div>
     </div>
@@ -196,11 +176,11 @@
         <div class="tagline">保證送達，不保證完整。</div>
 
         <div class="menu-page" id="menu-home">
-          <button class="menu-item primary" id="menu-start" type="button"><svg viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg>開始遊戲</button>
+          <button class="menu-item primary" id="menu-start" type="button"><svg class="home-icon truck-icon" viewBox="0 0 80 50" aria-hidden="true"><path d="M16 7h39l-4 30H9l4-19H3v-4h13zM56 18h13l9 14-2 9H51zM60 22l-1 10h13l-6-10z" fill="currentColor" fill-rule="evenodd"/><path d="M1 24h18M5 31h11" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="22" cy="39" r="7" fill="currentColor"/><circle cx="65" cy="40" r="7" fill="currentColor"/></svg>開始遊戲</button>
           <div class="start-note" id="menu-start-note"></div>
-          <button class="menu-item" data-page="menu-levels" type="button"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>關卡選擇</button>
-          <button class="menu-item" data-page="menu-settings" type="button"><svg viewBox="0 0 24 24"><path d="M3 6h10v2H3zm14 0h4v2h-4zM3 16h4v2H3zm8 0h10v2H11zM14 4h2v6h-2zM8 14h2v6H8z"/></svg>設定</button>
-          <button class="menu-item" data-page="menu-help" type="button"><svg viewBox="0 0 24 24"><path d="M2 6h20v12H2zm3 3v2h2V9zm4 0v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 14v2h12v-2z" fill-rule="evenodd"/></svg>操作說明</button>
+          <button class="menu-item" data-page="menu-levels" type="button"><svg class="home-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M5 10l12-5 14 5 12-5v33l-12 5-14-5-12 5zM17 5v33M31 10v33"/></svg>關卡選擇</button>
+          <button class="menu-item" data-page="menu-settings" type="button"><svg class="home-icon gear-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M19 3h10l2 7 5 3 7-1 4 9-5 5-1 5 3 6-8 7-6-3-5 1-5 5-9-4 1-7-3-5-7-2V19l7-2 3-5-1-7z"/><circle cx="24" cy="24" r="8"/></svg>設定</button>
+          <button class="menu-item" data-page="menu-help" type="button"><svg class="home-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 10c-6-5-13-5-19-3v33c7-2 13-2 19 3 6-5 12-5 19-3V7c-6-2-13-2-19 3zm0 0v33M3 43h42"/></svg>操作說明</button>
           <div class="menu-foot"><b>↑</b> <b>↓</b> 選擇　<b class="key-k">Enter</b><b class="key-p" data-pad="A"></b> 確定　<b class="key-k">Esc</b><b class="key-p" data-pad="B"></b> 返回</div>
         </div>
 
@@ -222,24 +202,12 @@
           <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
         </div>
 
-        <div class="menu-page" id="menu-settings" hidden>
-          <div class="page-title">設定</div>
-          <div class="pause-sound settings-panel">
-            <label><span>音效</span><input id="set-sfx" type="range" min="0" max="100" /></label>
-            <label><span>音樂</span><input id="set-music" type="range" min="0" max="100" /></label>
-            <label class="mute"><span>聲音</span><input id="set-mute" type="checkbox" /><i class="mute-chip"><svg class="mute-icon" viewBox="0 0 24 24"><path class="body" d="M3 9h4l5-5v16l-5-5H3z"/><path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="cross" d="M16 9l6 6M22 9l-6 6"/></svg><b class="on">開啟</b><b class="off">靜音中</b></i></label>
-            <div class="quality"><span>畫質</span><div class="segments" id="set-quality">
-              <button type="button" data-quality="auto">自動</button>
-              <button type="button" data-quality="high">高</button>
-              <button type="button" data-quality="medium">中</button>
-              <button type="button" data-quality="low">低</button>
-            </div></div>
-            <p class="settings-note">「自動」會在畫面不順時自己調低畫質。電腦比較吃力的話，可以直接選「低」。</p>
-          </div>
-          <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>
-        </div>
-
-        <div class="menu-page" id="menu-help" hidden>
+        <div class="menu-page" id="menu-settings" hidden><div class="page-title">調到順手再上路</div><div class="pause-setting-group"><h4>聲音</h4>
+    <label class="pause-volume"><span>音效</span><span class="pause-slider"><input id="set-sfx" type="range" min="0" max="100" aria-label="音效音量"></span><output for="set-sfx">80%</output></label>
+    <label class="pause-volume"><span>音樂</span><span class="pause-slider"><input id="set-music" type="range" min="0" max="100" aria-label="音樂音量"></span><output for="set-music">60%</output></label>
+    <label class="pause-mute"><input id="set-mute" type="checkbox"><span>靜音</span></label></div>
+    <div class="pause-setting-group"><h4>畫面</h4><div class="pause-quality-row"><span>畫質</span><div class="pause-segments segments" id="set-quality"><button data-quality="auto">自動</button><button data-quality="high">高</button><button data-quality="medium">中</button><button data-quality="low">低</button></div></div><p class="pause-settings-note">自動：畫面不順時，會自行降低畫質。</p></div><button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button></div>
+<div class="menu-page" id="menu-help" hidden>
           <div class="page-title">操作說明</div>
           <div id="menu-controls"></div>
           <button class="menu-item back" data-page="menu-home" type="button"><svg viewBox="0 0 24 24"><path d="M11 4l-8 8 8 8v-5h10V9H11z"/></svg>返回<small><span class="key-k">Esc</span><span class="key-p" data-pad="B"></span></small></button>

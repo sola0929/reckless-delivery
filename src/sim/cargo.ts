@@ -90,15 +90,20 @@ function partRotation(part: PartDesc, target: Quaternion): Quaternion {
   return target.setFromEuler(e.set(x, y, z));
 }
 
-function shapeCollider(shape: PartDesc['shape'], size: Vec3): RAPIER.ColliderDesc {
+function shapeCollider(shape: PartDesc['shape'], size: Vec3, flat = 1, scale?: Vec3): RAPIER.ColliderDesc {
   const [a, b, c] = size;
+  // Stretched, the box round it, a little in from its corners.
+  if (scale && shape === 'sphere') return RAPIER.ColliderDesc.cuboid(a * scale[0] * 0.8, a * scale[1] * 0.8, a * scale[2] * 0.8);
+  // Squashed, a drum as wide and as high.
+  if (flat !== 1 && shape === 'sphere') return RAPIER.ColliderDesc.cylinder(a * flat * 0.8, a * 0.9);
   switch (shape) {
     case 'box': return RAPIER.ColliderDesc.cuboid(a, b, c);
     case 'cylinder': return RAPIER.ColliderDesc.cylinder(b, a);
     case 'capsule': return RAPIER.ColliderDesc.capsule(b, a);
     case 'sphere': return RAPIER.ColliderDesc.ball(a);
     // Near enough: a squat drum of the same height, so that it lies on its face or its back.
-    case 'dome': return RAPIER.ColliderDesc.cylinder(a * 0.45, a * 0.9);
+    case 'dome': return RAPIER.ColliderDesc.cylinder(a * 0.45 * flat, a * 0.9);
+    case 'cone': return RAPIER.ColliderDesc.cone(b, a);
   }
 }
 
@@ -235,6 +240,7 @@ export class CargoSystem {
         desc
           .setMass(mass)
           .setFriction(type.friction)
+          .setFrictionCombineRule(type.slick ? RAPIER.CoefficientCombineRule.Min : RAPIER.CoefficientCombineRule.Average)
           .setRestitution(0.1)
           .setCollisionGroups(CARGO_GROUPS)
           .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
@@ -246,8 +252,9 @@ export class CargoSystem {
       if (type.hull) add(shapeCollider(type.hull.shape, type.hull.size), item.mass);
       else {
         type.parts.forEach((part, i) => {
+          if (part.ghost) return;
           partRotation(part, q);
-          const desc = shapeCollider(part.shape, part.size)
+          const desc = shapeCollider(part.shape, part.size, part.flat, part.scale)
             .setTranslation(...part.pos)
             .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
           item.partColliders[i] = add(desc, part.mass);
@@ -329,7 +336,7 @@ export class CargoSystem {
       item.force = 0;
       item.squeeze = item.squeeze * SHOCK_DECAY + Math.max(0, (spike * dt) / item.mass);
 
-      const impact = Math.max(item.knock, item.squeeze * SQUEEZE_WEIGHT);
+      const impact = Math.max(item.knock, item.squeeze * (item.type.crush ?? SQUEEZE_WEIGHT));
       if (this.age > GRACE_SECONDS) {
         item.peakImpact = Math.max(item.peakImpact, impact);
         // Damage grows with how hard the hit was, levelling off for the very hardest.
@@ -693,7 +700,7 @@ export class CargoSystem {
     );
     this.world.createCollider(
       // A bottle, loose: the physics takes it as a capsule, far cheaper to work out against everything than a cylinder.
-      (part.cap !== undefined ? RAPIER.ColliderDesc.capsule(Math.max(0.005, part.size[1] - part.size[0]), part.size[0]) : shapeCollider(part.shape, part.size)).setMass(part.mass).setFriction(0.7).setRestitution(0.2).setCollisionGroups(CARGO_GROUPS),
+      (part.cap !== undefined ? RAPIER.ColliderDesc.capsule(Math.max(0.005, part.size[1] - part.size[0]), part.size[0]) : shapeCollider(part.shape, part.size, part.flat, part.scale)).setMass(part.mass).setFriction(0.7).setRestitution(0.2).setCollisionGroups(CARGO_GROUPS),
       piece,
     );
     const debris = { desc: part, body: piece, owner: item };

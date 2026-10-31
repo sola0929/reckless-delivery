@@ -263,6 +263,8 @@ export interface FloatPartDesc {
   color: number;
   solid?: boolean;
   hidden?: boolean;
+  /** Faded, as a building is, while it stands between the camera and the truck: a ship's accommodation over its deck. */
+  fade?: boolean;
   lo?: Vec2[];
   hi?: Vec2[];
   y0?: number;

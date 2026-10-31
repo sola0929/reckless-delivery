@@ -1,3 +1,5 @@
+import { captureAccidentPhoto } from './ui/accident-photo';
+import { RouteProgress } from './ui/route-progress';
 import { Plane, Quaternion, Raycaster, SpotLight, Vector2, Vector3, type Object3D } from 'three';
 import { DRIVER, PHYSICS, TRUCK } from './config';
 import { Graphics, type QualityChoice } from './graphics';
@@ -56,6 +58,11 @@ await settle();
 const view = createView(canvas, level);
 const input = new Input(canvas);
 const hud = new Hud(level);
+const routeProgress = new RouteProgress(level.route);
+let captureAt = Infinity;
+let photoRun = 0, nextWaterPhoto = 0;
+let recentWaterPhoto: { blob: Blob; at: number; x: number; z: number } | null = null;
+let pendingWaterPhoto: Promise<void> | null = null;
 // On ground that rises and falls, the view is from lower and further back, looking further ahead: from high above, a hill looks flat.
 const terrain = level.terrain;
 // Lower and further back where there is height to see: on terrain, and on decks afloat (their ground, the quay, is flat).
@@ -541,6 +548,7 @@ const CARGO_SOUND: Record<string, Material> = {
   crate: 'wood', smallCrate: 'wood', wardrobe: 'wood', jar: 'ceramic', skeleton: 'bone',
   fridge: 'barrel', safe: 'heavy', watermelon: 'melon',
   washer: 'barrel', sack: 'soft', soda: 'ceramic',
+  tuna: 'ice', anchor: 'heavy', cabbage: 'melon', noodles: 'soft', kingCrab: 'bone', octopus: 'soft', mahi: 'soft',
 };
 /** An item of cargo jolted by less than this, m/s, makes no sound; and one that has just made one waits this long. */
 const CARGO_QUIET = 2;
@@ -1033,11 +1041,12 @@ hud.onMenu = () => {
 };
 // The keyboard in the pause menu and on the result page, as the controller does it: up and down move along the buttons, Enter presses.
 window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
   const page = paused ? document.getElementById('pause') : resultShown ? document.getElementById('result') : null;
   const step = ['ArrowDown', 'KeyS'].includes(e.code) ? 1 : ['ArrowUp', 'KeyW'].includes(e.code) ? -1 : 0;
   if (!page || !step) return;
   // The pause menu's own choices, not the sound and picture settings beside them.
-  const list = [...page.querySelectorAll<HTMLElement>(paused ? '.menu-item:not(:disabled)' : 'button:not(:disabled)')].filter((b) => b.offsetParent !== null);
+  const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled)')].filter((b) => b.offsetParent !== null && !b.closest('[inert]'));
   const at = list.indexOf(document.activeElement as HTMLElement);
   list[at < 0 ? 0 : (at + step + list.length) % list.length]?.focus();
 });
@@ -1076,6 +1085,8 @@ hud.onBackToSave = () => {
 
 /** Put everything back as it was at the start of the run; or, `toSave`, as it was at the save point. */
 function resetRun(toSave = false): void {
+  captureAt = Infinity;
+  photoRun++; recentWaterPhoto = null; pendingWaterPhoto = null; nextWaterPhoto = 0;
   setPaused(false);
   if (toSave) sim.backToSave();
   else {
@@ -1094,6 +1105,8 @@ function resetRun(toSave = false): void {
   hud.hideResult();
   if (!toSave) hud.showBanner();
   resultShown = false;
+  const at = sim.truck.body.translation();
+  routeProgress.reset(at.x, at.z);
   cargoViews.rebuild(sim);
   objectsView.refresh();
   wreckage.clear();
@@ -1226,7 +1239,7 @@ let wasDown = false;
 function padMenu(page: HTMLElement, back?: () => void): void {
   const { pad } = input;
   if (!pad.connected) return;
-  const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled), input')].filter((b) => b.offsetParent !== null);
+  const list = [...page.querySelectorAll<HTMLElement>('button:not(:disabled), input')].filter((b) => b.offsetParent !== null && !b.closest('[inert]'));
   bumpControls(page, pad.take('lb'), pad.take('rb'));
   padNavigate(pad, list);
   const focused = document.activeElement as HTMLElement | null;
@@ -1268,7 +1281,7 @@ function frame(now: number): void {
   // Esc pauses and resumes; asked whether to leave, it goes back to the choices; over the result page, nothing.
   if ((input.take('Escape') || input.take('KeyP')) && !resultShown && !(paused && hud.cancelLeave())) setPaused(!paused);
   // The controller in the pause menu and on the result page: the d-pad or stick moves along the buttons, A presses, B goes on.
-  if (paused) padMenu(document.getElementById('pause')!, () => setPaused(false));
+  if (paused) padMenu(document.getElementById('pause')!, () => { if (!hud.cancelLeave()) setPaused(false); });
   else if (resultShown) {
     // On the result page, besides A for the one chosen: X goes again, B to the menu, as said on them.
     const retry = document.getElementById('result-retry')!;
@@ -1655,11 +1668,14 @@ function frame(now: number): void {
     onFoot ? { x: driver.pos.x, z: driver.pos.z, leash: DRIVER.leash } : null,
     sim.trains.trains,
   );
+  if (!resultShown) routeProgress.update(truckAt.x, truckAt.z);
   if (sim.result && !resultShown) {
     // Only deliveries keep a record.
     const records = level.finish ? saveBest(levelId, sim.result) : undefined;
     uiSound(sim.result.failure || sim.result.stars === 0 ? 'fail' : 'win');
+    hud.routeProgress = routeProgress.fraction;
     hud.showResult(sim.result, sim.fullValue, records);
+    if (sim.result.failure) captureAt = now + 250;
     chat?.clear(false);
     resultShown = true;
   }
@@ -1667,6 +1683,40 @@ function frame(now: number): void {
 
   const drawBegan = performance.now();
   view.renderer.render(view.scene, view.camera);
+  // Keep just one clear thumbnail near water, where the truck can disappear before failure is declared.
+  // No readbacks on ordinary roads; at most one attempt per 750 ms near a river edge.
+  const waterAt = truckMesh.root.position;
+  const nearWater = !sim.result && level.finish && level.pits?.some(pit => pit.water !== undefined
+    && Math.abs(waterAt.x - pit.pos[0]) < pit.half[0] + 4
+    && Math.abs(waterAt.z - pit.pos[1]) < pit.half[1] + 4
+    && waterAt.y > (pit.base ?? 0) - pit.water! - 1.5
+    && waterAt.y < (pit.base ?? 0) + 2.5);
+  if (nearWater && now >= nextWaterPhoto && !pendingWaterPhoto) {
+    nextWaterPhoto = now + 750;
+    const run = photoRun, x = waterAt.x, z = waterAt.z;
+    const pending = captureAccidentPhoto(view.renderer, view.scene, view.camera, truckMesh.root)
+      .then(blob => { if (blob && run === photoRun) recentWaterPhoto = { blob, at: now, x, z }; })
+      .catch(error => console.warn('Recent accident photo unavailable', error))
+      .finally(() => { if (pendingWaterPhoto === pending) pendingWaterPhoto = null; });
+    pendingWaterPhoto = pending;
+  }
+  if (now >= captureAt) {
+    captureAt = Infinity;
+    const token = hud.photoToken;
+    const run = photoRun, x = waterAt.x, z = waterAt.z;
+    const pending = pendingWaterPhoto;
+    void captureAccidentPhoto(view.renderer, view.scene, view.camera, truckMesh.root)
+      .then(async blob => {
+        await pending;
+        if (run !== photoRun) return;
+        const recent = recentWaterPhoto;
+        const fallback = sim.result?.failure === 'water' && recent && now - recent.at < 3500
+          && Math.hypot(recent.x - x, recent.z - z) < 25 ? recent.blob : null;
+        if (blob || fallback) hud.setAccidentPhoto((blob || fallback)!, token, !blob);
+        else hud.setAccidentPhotoUnavailable(token);
+      })
+      .catch(error => { console.warn('Accident photo unavailable', error); hud.setAccidentPhotoUnavailable(token); });
+  }
   const drawn = performance.now();
   timing.render += drawn - drawBegan;
   timing.logic += drawBegan - began;

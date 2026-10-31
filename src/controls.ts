@@ -148,50 +148,60 @@ export type ControlSet = 'keyboard' | 'pad';
  * in most games. Whether one was pressed is asked of the controller by whoever reads it.
  */
 export function bumpControls(root: ParentNode, left: boolean, right: boolean): void {
+  for (const host of root.querySelectorAll<HTMLElement>('.controls')) if (host.dataset.padKind !== padKind()) host.dispatchEvent(new Event('refresh-pad'));
   if (!left && !right) return;
-  const tabs = root.querySelector<HTMLElement>('.pad-set:not([hidden]) .pad-modes');
+  const tabs = root.querySelector<HTMLElement>('.pause-help-mode');
   if (!tabs || tabs.offsetParent === null) return;
   tabs.querySelector<HTMLElement>(`[data-mode="${left ? 'drive' : 'foot'}"]`)?.click();
 }
 
 /**
- * Draw the controls into a box: a choice between keyboard and mouse and the controller above them, where the controller
- * is offered (only in development until it has been tried with a real one); the keyboard's groups in two columns, the
- * controller's drawing with a choice of driving or on foot. Returns how to show one set or the other; the drawing is
+ * Draw the controls with independent device and driving/on-foot choices. Returns how to show one device; the drawing is
  * done again each time, so that it names the buttons of whichever controller is plugged in.
  */
 export function drawControls(host: HTMLElement, compact = false): (set: ControlSet) => void {
   let mode: 'drive' | 'foot' = 'drive';
-  const list = (set: ControlSet, groups: Group[]) =>
-    `<div class="control-set" data-set="${set}">` +
-    groups.map(([title, controls]) =>
-      `<section><h4>${title}</h4><div class="control-grid">` +
-      controls.map(([key, what, more]) => `<div class="control"><kbd>${key}</kbd><span>${what}${more ? `<small>${more}</small>` : ''}</span></div>`).join('') +
-      '</div></section>').join('') +
-    '</div>';
+  let shown: ControlSet = 'keyboard';
   host.classList.add('controls');
-  host.innerHTML =
-    '<div class="segments control-tabs"><button type="button" data-keys="keyboard">鍵盤滑鼠</button><button type="button" data-keys="pad">手把</button></div>' +
-    list('keyboard', KEYBOARD) +
-    '<div class="control-set pad-set" data-set="pad"><div class="pad-modes"><button type="button" data-mode="drive"><kbd data-bumper="LB"></kbd>開車</button><button type="button" data-mode="foot">下車<kbd data-bumper="RB"></kbd></button></div><div class="pad-art"></div></div>';
-  const drawPad = () => {
-    const art = host.querySelector<HTMLElement>('.pad-art');
-    if (!art) return;
-    art.innerHTML = padDrawing(mode, compact);
-    for (const tab of host.querySelectorAll<HTMLElement>('[data-mode]')) tab.classList.toggle('on', tab.dataset.mode === mode);
-    for (const key of host.querySelectorAll<HTMLElement>('[data-bumper]')) key.textContent = padName(key.dataset.bumper!);
+  host.innerHTML = '<div class="pause-help-toolbar"><div class="pause-help-tabs" role="group" aria-label="操作設備"><button type="button" data-keys="keyboard">鍵鼠</button><button type="button" data-keys="pad">手把</button></div><div class="pause-help-mode pad-modes" role="group" aria-label="操作情境"><button type="button" data-mode="drive">開車</button><button type="button" data-mode="foot">下車</button></div></div><div class="control-set" data-set="keyboard"></div><div class="control-set pad-set" data-set="pad"><div class="pad-art"></div></div>';
+  const keys = (items: Control[]) => '<dl>' + items.map(([key,what,more])=>'<div><dt>'+key.split(' / ').map(k=>'<kbd>'+k+'</kbd>').join('')+'</dt><dd>'+what+(more?'<small>'+more+'</small>':'')+'</dd></div>').join('')+'</dl>';
+  const draw = () => {
+    host.dataset.padKind = padKind();
+    host.querySelector<HTMLElement>('.pause-help-mode')!.dataset.mode=mode;
+    for(const button of host.querySelectorAll<HTMLElement>('[data-mode]'))button.setAttribute('aria-pressed',String(button.dataset.mode===mode));
+    for(const button of host.querySelectorAll<HTMLElement>('[data-keys]'))button.setAttribute('aria-selected',String(button.dataset.keys===shown));
+    for(const panel of host.querySelectorAll<HTMLElement>('[data-set]'))panel.hidden=panel.dataset.set!==shown;
+    const driving: Control[]=[...KEYBOARD[0][1],['C','下車']];
+    const foot: Control[]=[['WASD','移動'],['Shift','奔跑'],['C','上車'],['F','舉起、放下貨物'],['左鍵','按住蓄力，放開拋出','移動滑鼠瞄準'],['右鍵','取消拋出'],['空白鍵','跳躍','拿重物時不能跳']];
+    const common=KEYBOARD[2][1].filter(([key])=>mode==='drive'||key!=='右鍵拖曳');
+    host.querySelector('[data-set="keyboard"]')!.innerHTML='<div class="key-guide-columns"><section class="key-guide"><h4>'+(mode==='drive'?'開車配送':'下車搬貨')+'</h4>'+keys(mode==='drive'?driving:foot)+'</section><section class="key-guide key-guide-common"><h4>視角與其他</h4>'+keys(common)+'</section></div>';
+    if(shown!=='pad')return;
+    const art=host.querySelector<HTMLElement>('.pad-art')!;art.innerHTML=padDrawing(mode,compact);
+    const svg=art.querySelector('svg')!;
+    const colors:Record<string,string>={'#6fd08c':'#38764b','#ff7a6b':'#ab503e','#5ea8ff':'#356c9b','#ffd166':'#946521','#7fb0ff':'#356c9b','#ff7a8a':'#a74360','#f29ad8':'#955683','#5fd6b8':'#267a65'};
+    for(const e of svg.querySelectorAll('*')){
+      const fill=e.getAttribute('fill'),stroke=e.getAttribute('stroke');
+      if(fill==='#fff')e.setAttribute('fill','#344b3d');
+      if(fill&&colors[fill])e.setAttribute('fill',colors[fill]);
+      if(stroke&&colors[stroke])e.setAttribute('stroke',colors[stroke]);
+      if(stroke?.startsWith('rgba(255,255,255,'))e.setAttribute('stroke',stroke.endsWith('0.85)')?'#586b51':'#a8b096');
+      if(stroke==='rgba(255,209,102,0.55)'){e.setAttribute('stroke','#687953');e.setAttribute('stroke-width','2.2');}
+      if(fill==='rgba(0,0,0,0.25)')e.setAttribute('fill','#fff7dd');
+    }
+    const body=svg.querySelector('path[d^="M268 96"]')!;body.setAttribute('fill','#e1d9b6');body.setAttribute('stroke','#8e9a79');body.setAttribute('stroke-width','3');svg.prepend(body);
   };
-  const show = (set: ControlSet) => {
-    const shown = set;
-    for (const tab of host.querySelectorAll<HTMLElement>('[data-keys]')) tab.classList.toggle('on', tab.dataset.keys === shown);
-    for (const group of host.querySelectorAll<HTMLElement>('.control-set')) group.hidden = group.dataset.set !== shown;
-    if (shown === 'pad') drawPad();
-  };
-  for (const tab of host.querySelectorAll<HTMLElement>('[data-keys]')) tab.addEventListener('click', () => show(tab.dataset.keys as ControlSet));
-  for (const tab of host.querySelectorAll<HTMLElement>('[data-mode]')) tab.addEventListener('click', () => {
-    mode = tab.dataset.mode as 'drive' | 'foot';
-    drawPad();
-  });
-  show('keyboard');
-  return show;
+  const show=(set:ControlSet)=>{shown=set;draw();};
+  for(const button of host.querySelectorAll<HTMLElement>('[data-keys]'))button.addEventListener('click',()=>show(button.dataset.keys as ControlSet));
+  for(const button of host.querySelectorAll<HTMLElement>('[data-mode]'))button.addEventListener('click',()=>{mode=button.dataset.mode as typeof mode;draw();});
+  host.addEventListener('refresh-pad',draw);
+  for(const selector of ['[data-keys]','[data-mode]']){
+    const buttons=[...host.querySelectorAll<HTMLElement>(selector)];
+    buttons.forEach((button,i)=>button.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();event.stopPropagation();
+      const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(i+(event.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;
+      buttons[next].click();buttons[next].focus();
+    }));
+  }
+  show('keyboard');return show;
 }

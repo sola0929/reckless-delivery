@@ -33,7 +33,8 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
   const cached = textures.get(key);
   if (cached) return cached;
 
-  const size = 128;
+  // The noodle carton's picture is finer than the rest: it is the whole of what is on it.
+  const size = base === 'noodles' ? 256 : 128;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const g = canvas.getContext('2d')!;
@@ -91,6 +92,193 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
     g.fillText('阿', size / 2, size * 0.27 * 1.5);
     g.fillText('月', size / 2, size * 0.73 * 1.5);
     g.restore();
+  }
+
+  if (base === 'cabbage') {
+    // Pale green leaves wrapped round one another: each one's edge a darker wavy line across, its rib a pale line from the
+    // stalk up.
+    g.fillStyle = '#b9d98a';
+    g.fillRect(0, 0, size, size);
+    for (let i = 0; i < 7; i++) {
+      const x0 = (i / 7) * size, y = size * (0.18 + (i % 3) * 0.2);
+      g.fillStyle = i % 2 ? '#a8cc78' : '#c6e29c';
+      g.beginPath();
+      g.moveTo(x0 - 6, size);
+      g.lineTo(x0 - 6, y + 8);
+      g.quadraticCurveTo(x0 + size / 14, y - 10, x0 + size / 7 + 6, y + 8);
+      g.lineTo(x0 + size / 7 + 6, size);
+      g.fill();
+      g.strokeStyle = '#7fae5a';
+      g.lineWidth = 2;
+      g.stroke();
+      g.strokeStyle = '#eef6d8';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(x0 + size / 14, size);
+      g.lineTo(x0 + size / 14 + 3, y + 4);
+      g.stroke();
+    }
+  }
+
+  if (base === 'noodles') {
+    // A carton of cup noodles: red bands top and bottom edged in yellow, and on the cream between them one big cup of them,
+    // drawn bold and outlined to be read across the yard: white, a red band round it, its yellow lid peeled back, the
+    // noodles curling over the rim, steam rising. Drawn narrower than it is, as the carton's long faces stretch it.
+    const u = size / 256;
+    g.fillStyle = '#fbf6ea';
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = '#d42a22';
+    g.fillRect(0, 0, size, size * 0.12);
+    g.fillRect(0, size * 0.9, size, size * 0.1);
+    g.fillStyle = '#f4c20d';
+    g.fillRect(0, size * 0.12, size, size * 0.03);
+    g.fillRect(0, size * 0.87, size, size * 0.03);
+    g.save();
+    g.translate(size * 0.5, 0);
+    g.scale(0.8, 1);
+    const ink = '#3a2418';
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    // Steam.
+    g.strokeStyle = '#a8a4a0';
+    g.lineWidth = 7 * u;
+    for (const x of [-6, 26, 58]) {
+      g.beginPath();
+      g.moveTo(x * u, 92 * u);
+      g.bezierCurveTo((x - 16) * u, 76 * u, (x + 16) * u, 62 * u, x * u, 46 * u);
+      g.stroke();
+    }
+    // The cup, wider at the top, and its red band.
+    const cup = (y: number) => 78 - ((y - 104) / (214 - 104)) * 26;
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.moveTo(-cup(104) * u, 104 * u);
+    g.lineTo(cup(104) * u, 104 * u);
+    g.lineTo(cup(214) * u, 214 * u);
+    g.lineTo(-cup(214) * u, 214 * u);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#d42a22';
+    g.beginPath();
+    g.moveTo(-cup(148) * u, 148 * u);
+    g.lineTo(cup(148) * u, 148 * u);
+    g.lineTo(cup(184) * u, 184 * u);
+    g.lineTo(-cup(184) * u, 184 * u);
+    g.closePath();
+    g.fill();
+    // On the band, a white bowl of noodles, the maker's mark.
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.arc(0, 160 * u, 15 * u, 0, Math.PI);
+    g.fill();
+    g.fillRect(-18 * u, 157 * u, 36 * u, 4 * u);
+    g.strokeStyle = ink;
+    g.lineWidth = 6 * u;
+    g.beginPath();
+    g.moveTo(-cup(104) * u, 104 * u);
+    g.lineTo(-cup(214) * u, 214 * u);
+    g.lineTo(cup(214) * u, 214 * u);
+    g.lineTo(cup(104) * u, 104 * u);
+    g.stroke();
+    // The noodles in it, under the rim, and over it.
+    g.fillStyle = '#f2c65a';
+    g.beginPath();
+    g.ellipse(0, 104 * u, 80 * u, 16 * u, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#d99a2a';
+    g.lineWidth = 4 * u;
+    for (let k = 0; k < 4; k++) {
+      g.beginPath();
+      for (let x = -70; x <= 70; x += 3) {
+        const y = 96 + k * 5 + Math.sin(x / 5 + k * 1.7) * 3;
+        if (x === -70) g.moveTo(x * u, y * u);
+        else g.lineTo(x * u, y * u);
+      }
+      g.stroke();
+    }
+    g.strokeStyle = ink;
+    g.lineWidth = 6 * u;
+    g.beginPath();
+    g.ellipse(0, 104 * u, 80 * u, 16 * u, 0, 0, Math.PI * 2);
+    g.stroke();
+    // The lid, peeled back off the far side and standing up, yellow, a red ring on it.
+    g.save();
+    g.translate(-34 * u, 74 * u);
+    g.rotate(-0.42);
+    g.fillStyle = '#f4c20d';
+    g.beginPath();
+    g.ellipse(0, 0, 58 * u, 24 * u, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#d42a22';
+    g.lineWidth = 6 * u;
+    g.beginPath();
+    g.ellipse(0, 0, 32 * u, 12 * u, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.strokeStyle = ink;
+    g.lineWidth = 6 * u;
+    g.beginPath();
+    g.ellipse(0, 0, 58 * u, 24 * u, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+    // A fork stuck in it.
+    g.strokeStyle = ink;
+    g.lineWidth = 7 * u;
+    g.beginPath();
+    g.moveTo(40 * u, 100 * u);
+    g.lineTo(70 * u, 40 * u);
+    g.stroke();
+    g.strokeStyle = '#d8dcde';
+    g.lineWidth = 4 * u;
+    g.beginPath();
+    g.moveTo(40 * u, 100 * u);
+    g.lineTo(70 * u, 40 * u);
+    g.stroke();
+    g.restore();
+  }
+
+  if (base === 'octopus' || base === 'sucker') {
+    // An octopus's skin: red-purple, mottled darker, flecked paler. Along its arms, rows of pale suckers round them.
+    let seed = base === 'octopus' ? 5 : 9;
+    const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    g.fillStyle = '#c4566a';
+    g.fillRect(0, 0, size, size);
+    for (let i = 0; i < 26; i++) {
+      g.fillStyle = i % 3 ? 'rgba(140, 50, 72, 0.45)' : 'rgba(240, 150, 160, 0.4)';
+      g.beginPath();
+      g.ellipse(rand() * size, rand() * size, 4 + rand() * 10, 3 + rand() * 6, rand() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    if (base === 'sucker') {
+      for (let row = 0; row < 8; row++) for (let col = 0; col < 4; col++) {
+        const x = (col + 0.5 + (row % 2) * 0.5) * (size / 4), y = (row + 0.5) * (size / 8);
+        g.fillStyle = '#f4d0cc';
+        g.beginPath();
+        g.arc(x % size, y, size * 0.05, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#d88a90';
+        g.beginPath();
+        g.arc(x % size, y, size * 0.022, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+
+  if (base === 'mahi') {
+    // A mahi-mahi's flank: gold, greener toward one pole, flecked with small blue spots.
+    let seed = 13;
+    const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const shade = g.createLinearGradient(0, 0, 0, size);
+    shade.addColorStop(0, '#e8c434');
+    shade.addColorStop(0.55, '#e2c030');
+    shade.addColorStop(1, '#b8c040');
+    g.fillStyle = shade;
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = '#2a5aa8';
+    for (let i = 0; i < 34; i++) {
+      g.beginPath();
+      g.arc(rand() * size, rand() * size * 0.9, 1.6 + rand() * 2.2, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   if (base === 'crate') {
@@ -153,14 +341,21 @@ function damageTexture(base: Surface, stage: Stage): THREE.Texture {
 }
 
 function partGeometry(part: PartDesc): THREE.BufferGeometry {
+  const geometry = shapeGeometry(part);
+  if (part.scale) geometry.scale(...part.scale);
+  return part.flat ? geometry.scale(1, part.flat, 1) : geometry;
+}
+
+function shapeGeometry(part: PartDesc): THREE.BufferGeometry {
   const [a, b, c] = part.size;
   switch (part.shape) {
     case 'box': return new THREE.BoxGeometry(a * 2, b * 2, c * 2);
-    case 'cylinder': return new THREE.CylinderGeometry(a, a, b * 2, 20);
+    case 'cylinder': return new THREE.CylinderGeometry(a, a, b * 2, part.sides ?? 20);
     case 'capsule': return new THREE.CapsuleGeometry(a, b * 2, 4, 10);
     case 'sphere': return new THREE.SphereGeometry(a, 20, 14);
     // The top half of a ball, moved down so that it is centred on its own middle.
     case 'dome': return new THREE.SphereGeometry(a, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, -a / 2, 0);
+    case 'cone': return new THREE.ConeGeometry(a, b * 2, part.sides ?? 14);
   }
   throw new Error(`no geometry for a ${part.shape}`);
 }
@@ -182,13 +377,13 @@ function partMesh(part: PartDesc, stage: Stage): THREE.Mesh {
     mesh.add(cap);
   }
   if (part.shape === 'dome') {
-    // The cut face, closing the open side of the half.
+    // The cut face, closing the open side of the half: a melon's red inside; anything else, its own colour.
     const radius = part.size[0];
     const face = new THREE.Mesh(
       new THREE.CircleGeometry(radius, 24).rotateX(Math.PI / 2),
-      new THREE.MeshStandardMaterial({ map: damageTexture('flesh', 0), roughness: 0.6 }),
+      part.texture === 'melon' ? new THREE.MeshStandardMaterial({ map: damageTexture('flesh', 0), roughness: 0.6 }) : material,
     );
-    face.position.y = -radius / 2;
+    face.position.y = (-radius / 2) * (part.flat ?? 1);
     face.receiveShadow = true;
     mesh.add(face);
   }
@@ -358,7 +553,7 @@ export class CargoViews {
         if (view.leakTimer >= LEAK_INTERVAL) {
           view.leakTimer = 0;
           // Whatever it is full of: water from a jar, juice from a melon.
-          this.bursts.emit(this.at.copy(view.group.position), item.type.burst === 'pulp' || item.type.burst.startsWith('paint') ? item.type.burst : 'water', 1, 0.8);
+          this.bursts.emit(this.at.copy(view.group.position), item.type.burst === 'pulp' || item.type.burst === 'ink' || item.type.burst.startsWith('paint') ? item.type.burst : 'water', 1, 0.8);
         }
       }
     }

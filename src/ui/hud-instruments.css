@@ -1,0 +1,33 @@
+/* Instrument-only concept revision. Dial and numeric speed share one value. */
+.hud .dashboard { width:548px; height:252px; padding:9px 15px 9px 7px; border-radius:26px 19px 19px 26px; border:1px solid #788a9180; background:linear-gradient(155deg,#42545d 0%,#273941 9%,#15262f 55%,#0e1b23 100%); box-shadow:0 12px 24px #09131c66,inset 0 2px 1px #a4b4b426,inset 0 -3px 4px #071017aa; gap:11px; overflow:hidden; }
+.hud .analog-speed { width:230px; height:230px; border-right:0; flex:none; }
+.analog-face { display:block; width:230px; height:230px; overflow:visible; }
+.dial-ticks .tick-major { stroke:#d7e4e1; stroke-width:2; }
+.dial-ticks .tick-minor { stroke:#788e96; stroke-width:1; }
+.dial-labels { fill:#d3dedb; font:600 15px Barlow,sans-serif; text-anchor:middle; dominant-baseline:central; }
+.dial-title { fill:#8fa1a7; font:600 9px Noto,sans-serif; letter-spacing:2px; text-anchor:middle; }
+#speed-needle { filter:drop-shadow(0 2px 2px #0008); }
+.hud .analog-speed .speed-number { inset:144px 0 auto; flex-direction:column; gap:0; }
+.hud .analog-speed .speed-number b { font:600 42px/.95 Barlow; letter-spacing:1px; text-shadow:0 0 9px #e6f3ed18; }
+.hud .analog-speed .speed-number span { font:600 12px Barlow; margin-top:4px; letter-spacing:1px; color:#8ca2aa; }
+.hud .vehicle-navigation { padding:5px 0 0; overflow:visible; min-width:0; flex:1; }
+.nav-device-label { height:22px; display:flex; align-items:center; justify-content:space-between; font-size:10px; font-weight:600; letter-spacing:2px; color:#b3c2c5; padding:0 3px; }
+.nav-signal { font:600 10px Barlow; letter-spacing:1px; display:flex; align-items:center; gap:5px; color:#80989d; }
+.nav-signal i { width:4px; height:4px; background:#88bba5; border-radius:100%; box-shadow:0 0 6px #88bba544; }
+.nav-screen { padding:3px; margin-top:4px; border:1px solid #63747a; border-radius:9px; background:#060f15; box-shadow:inset 0 2px 5px #000,0 1px 0 #a5b4ba33; overflow:hidden; }
+.hud .vehicle-navigation .navigation-heading { background:linear-gradient(#263e49,#1c323c); height:44px; padding:4px 10px 4px 7px; border-radius:5px 5px 0 0; gap:9px; border-bottom:1px solid #6c84884a; }
+.hud .vehicle-navigation .direction-arrow { width:29px; height:29px; display:grid; place-items:center; border:1px solid #a5bab855; border-radius:5px; color:#f5cd72; font-size:27px; line-height:1; }
+.navigation-heading>div { display:flex; flex-direction:column; gap:2px; line-height:1.2; }
+.navigation-heading>div small { font-size:8px; color:#99b1b6; letter-spacing:1px; }
+.navigation-heading>div span { font-size:15px; font-weight:600; letter-spacing:1px; }
+.hud .vehicle-navigation .navigation-heading>b { font:600 30px Barlow; letter-spacing:.5px; color:#f0f2e9; }
+.hud .vehicle-navigation .navigation-heading>b small { font-size:13px; margin-left:4px; }
+.hud .vehicle-navigation .nav-map { display:block; width:100%; height:130px; margin:0; border-radius:0; }
+.navigation-status { height:19px; padding:0 7px; display:flex; justify-content:space-between; align-items:center; font-size:9px; color:#96abb1; background:#162a33; border-top:1px solid #68808733; border-radius:0 0 4px 4px; }
+.map-scale { font:600 10px Barlow; display:flex; align-items:center; gap:5px; }
+.map-scale i { width:25px; height:4px; border:1px solid #8ca3ab; border-top:0; }
+.speed-preview-control { display:flex; align-items:center; gap:7px; color:#b7c8cb; white-space:nowrap; font-size:12px; }
+.speed-preview-control[hidden] { display:none; }
+.speed-preview-control input { width:125px; accent-color:#ed9b66; }
+.speed-preview-control output { min-width:24px; text-align:right; font-variant-numeric:tabular-nums; }
+.review-footer:has(.speed-preview-control:not([hidden]))>span:last-child { display:none; }

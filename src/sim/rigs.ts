@@ -25,6 +25,8 @@ export interface RigShape {
   solid: boolean;
   /** Felt, not drawn: what a hull's drawn shape stands for to what meets it. */
   hidden?: boolean;
+  /** Faded while it stands between the camera and the truck. */
+  fade?: boolean;
   /** A loft's outline at its foot, at y0, and at its top, at y1: the same number of corners, in order round. */
   lo?: [number, number][];
   hi?: [number, number][];
@@ -158,7 +160,7 @@ function floatShapes(desc: RigDesc, box: (half: [number, number, number], pos: [
     // Made as the level says, piece by piece.
     for (const p of desc.parts ?? []) {
       if (p.shape === 'loft') shapes.push({ kind: 'loft', half: [0, 0, 0], pos: [0, 0, 0], color: p.color, solid: false, lo: p.lo, hi: p.hi, y0: p.y0, y1: p.y1 });
-      else shapes.push({ kind: p.shape, half: p.half ?? [0.5, 0.5, 0.5], pos: p.pos ?? [0, 0, 0], rot: p.rot, color: p.color, solid: !!p.solid, hidden: p.hidden });
+      else shapes.push({ kind: p.shape, half: p.half ?? [0.5, 0.5, 0.5], pos: p.pos ?? [0, 0, 0], rot: p.rot, color: p.color, solid: !!p.solid, hidden: p.hidden, fade: p.fade });
     }
   } else if (desc.hull === 'walk') {
     // A boardwalk on piles: planks across it, a beam under each side, piles down into the water every four metres or so.

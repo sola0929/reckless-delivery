@@ -1,0 +1,206 @@
+/* Joined, perforated delivery receipt. */
+.result:not([hidden]) .receipt { animation:receipt-in .45s cubic-bezier(.2,.8,.2,1) both,paper-hit .2s 1.08s both; }
+.result:not([hidden]) .receipt-paper { animation:none; }
+.result .receipt {
+ left:265px; top:127px; width:1070px; height:646px;
+ gap:0; overflow:hidden; border-radius:0;
+ filter:drop-shadow(0 16px 25px #091b2b50);
+ clip-path:polygon(16px 0,430px 0,440px 7px,450px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,450px 100%,440px calc(100% - 7px),430px 100%,16px 100%,0 calc(100% - 16px),0 16px);
+}
+.result .receipt:after {
+ content:''; position:absolute; left:432px; top:18px; bottom:18px; width:2px; z-index:3;
+ background:repeating-linear-gradient(to bottom,#818575 0 7px,transparent 7px 13px);
+ pointer-events:none;
+}
+.result .receipt-paper {
+ width:440px; padding:35px 40px; border:0; border-radius:0;
+ background:linear-gradient(105deg,#fcf4df,#f3e9ce);
+ color:#29413f; transform:none; box-shadow:none;
+}
+.result .receipt-kicker { align-items:center; font-size:17px; font-weight:900; }
+.result .receipt-kicker>span { color:#7b7967; font-size:12px; font-weight:500; letter-spacing:1px; }
+.result .receipt-route { color:#84816e; font-size:14px; margin-top:19px; }
+.result h2 { font-size:82px; font-weight:900; margin:20px 0 3px; letter-spacing:-5px; text-shadow:1px 2px 0 #dbccaa; }
+.result h2>span { color:#db743e; }
+.result .stars { gap:13px; font-size:36px; color:#efbe50; }
+.result .stars>span { -webkit-text-stroke:1px #ae8135; text-shadow:1px 2px 0 #bb8b3f; }
+.result .delivery-label { margin-top:26px; color:#747b65; font-size:14px; font-weight:600; }
+.result .delivered-value { font:900 65px/1.2 Noto,sans-serif; letter-spacing:-3px; font-variant-numeric:tabular-nums; margin:2px 0 6px; }
+.result .original-value { color:#84806d; font-size:13px; }
+.result .original-value>b { font:600 19px Barlow,sans-serif; }
+.result .receipt-condition { margin-top:23px; font-size:13px; font-weight:600; color:#65745f; }
+.result .receipt-condition>b { font:800 23px Noto,sans-serif; color:#3d6a53; }
+.result .receipt-bar { height:8px; border:1px solid #718166; border-radius:4px; background:#dad1b5; }
+.result .receipt-bar>i { background:#8eab79; }
+.result .stamp { bottom:58px; right:35px; color:#bc5134; border-color:#bc5134; outline-color:#bc5134; font-size:31px; font-weight:900; border-radius:3px 1px 4px 2px; mix-blend-mode:multiply; }
+.result .paper-bottom { left:40px; right:40px; bottom:23px; border-top:1px dashed #a6a285; }
+.result .paper-bottom>span { color:#8c8974; }
+.result .barcode { opacity:.6; }
+.result .receipt-details {
+ width:630px; padding:35px 42px 30px; transform:none;
+ background:#263e3e; border:1px solid #b6a777; border-left:0;
+ border-radius:0; box-shadow:none;
+}
+.result .details-title { height:41px; }
+.result .details-title>h3 { position:relative; margin:0; color:#f6edd5; font-size:27px; font-weight:800; letter-spacing:1px; }
+.result .details-title>h3:after { content:''; position:absolute; left:0; bottom:-9px; width:28px; height:3px; background:#dd814e; border-radius:1px; }
+.result .record-badge { color:#35463b; background:#edcc74; padding:6px 12px; border-radius:4px 2px 4px 2px; font-size:12px; font-weight:800; }
+.result .stats { margin:24px 0 0; }
+.result .stats>div { height:53px; border-bottom:1px solid #9ba99030; }
+.result .stats dt { color:#c2cbb9; font-size:17px; font-weight:500; }
+.result .stats dd { font:800 27px Noto,sans-serif; letter-spacing:0; color:#f5edd8; }
+.result .stats dd span { font-size:19px; color:#93a798; font-weight:500; }
+.result .stats>div:nth-child(n+3) dd { color:#e1b190; }
+.result .hidden-cargo { margin-top:23px; color:#c2cbb9; font-size:14px; font-weight:500; }
+.result .hidden-cargo>b { font:800 21px Noto,sans-serif; color:#f4e8c3; }
+.result .hidden-cargo i { border:1px dashed #8fa18d; color:#d3d3ad; border-radius:3px; }
+.result blockquote { margin:20px 0 0; padding:12px 14px; border:0; border-left:3px solid #dfaa5a; background:#ead18a0c; color:#ddd1a4; font-size:14px; letter-spacing:.5px; }
+.result .result-actions { left:42px; right:42px; bottom:27px; }
+.result .result-actions .primary { height:62px; font:800 21px Noto,sans-serif; color:#263e3c; background:#f2c763; border:2px solid #c49b4e; border-radius:8px 5px 8px 5px; box-shadow:0 3px 0 #ad813b; padding:0 22px; }
+.result .result-actions .primary:hover { background:#ffdb83; box-shadow:0 5px 0 #ad813b; }
+.result .result-actions .primary:active { box-shadow:0 1px 0 #ad813b; }
+.result .result-secondary { gap:20px; margin-top:15px; }
+.result .result-secondary button { font-size:15px; font-weight:600; color:#d5d9c7; border:1px solid #9aab8b60; border-radius:5px; padding:9px 14px; }
+.result .result-secondary button:hover { color:#f4cc6a; border-color:#dfbd68; }
+.result .record-badge[hidden],.result .result-secondary button[hidden] { display:none; }
+.result.failed h2 { font-size:64px; line-height:1.5375; color:#a4533b; letter-spacing:-3px; }
+.result.failed h2>span { color:#aa795a; }
+.result.failed .stars>span { color:#c9c4b3; -webkit-text-stroke:1px #aaa48e; text-shadow:none; animation:none; }
+.result.failed .receipt-condition>b { color:#a4533b; }
+.result.failed blockquote { color:#edc4ac; background:#9d503c24; border-left-color:#cf865c; font-weight:600; }
+.result.failed .stamp { font-size:29px; letter-spacing:3px; }
+.result.failed .stamp>span { letter-spacing:3px; }
+.result-outcome-control { display:flex; align-items:center; gap:7px; white-space:nowrap; font-size:12px; color:#b7c8cb; }
+.result-outcome-control[hidden] { display:none; }
+.result-outcome-control select { background:#22353c; color:#f0e6d2; border:1px solid #53676e; border-radius:4px; padding:3px 7px; font:inherit; }
+
+/* Compact accident receipt with a real, single-capture scene photo. */
+.result .accident-photo,.result .failure-explanation,.result .failure-run-data { display:none; }
+.result.failed .receipt { top:165px; height:570px; }
+.result.failed .receipt-route { margin-top:12px; }
+.result.failed h2 { margin:12px 0 0; font-size:58px; line-height:1.2; }
+.result.failed .stars,.result.failed .delivery-label,.result.failed .delivered-value,
+.result.failed .original-value,.result.failed .receipt-condition,.result.failed .receipt-bar,
+.result.failed .stats,.result.failed .hidden-cargo { display:none; }
+.result.failed .accident-photo {
+ display:block; position:absolute; top:186px; left:40px; width:360px; margin:0;
+ padding:10px 10px 9px; background:#fffaf0;
+ box-shadow:1px 3px 5px #243b3626; transform:rotate(-1.2deg);
+}
+.result.failed .accident-photo img { display:block; width:340px; height:212.5px; object-fit:cover; background:#d5d4bb; }
+.result.failed .accident-photo:before,.result.failed .accident-photo:after {
+ content:''; position:absolute; z-index:1; top:-10px; width:68px; height:25px;
+ background:linear-gradient(100deg,#e4bd6eb5,#f0d08cbf,#dcb365ad);
+ border-top:1px solid #fff1c77a; border-bottom:1px solid #b18f4540;
+ clip-path:polygon(4% 0,98% 3%,96% 26%,100% 49%,97% 72%,99% 100%,0 96%,3% 72%,0 46%,4% 23%);
+ pointer-events:none;
+}
+.result.failed .accident-photo:before { left:17px; transform:rotate(-16deg); }
+.result.failed .accident-photo:after { right:17px; transform:rotate(13deg); }
+.result.failed .accident-photo figcaption { margin-top:7px; display:flex; justify-content:space-between; font-size:11px; font-weight:600; color:#727966; }
+.result.failed .accident-photo figcaption span { font-weight:400; color:#8f927d; }
+.result.failed .stamp { bottom:39px; left:45px; right:auto; }
+.result.failed .paper-bottom>span { display:none; }
+.result.failed .paper-bottom { justify-content:flex-end; }
+.result.failed .receipt-details {
+ padding-top:42px;
+ background-image:url('/ui/receipt-paper-grain.svg'),linear-gradient(115deg,#55695626,transparent 55%,#102b2b20);
+ background-size:256px 256px,100% 100%;
+ background-blend-mode:soft-light,normal;
+}
+.result.failed .details-title h3 { font-size:30px; }
+.result.failed .failure-explanation { display:block; margin-top:47px; }
+.result.failed .failure-explanation>span { font-size:13px; color:#a9b9a6; }
+.result.failed .failure-explanation>p { margin:12px 0 0; font-size:23px; line-height:1.7; font-weight:700; color:#f0e5cd; }
+.result.failed blockquote { display:none; }
+.result.failed .failure-run-data { display:grid; grid-template-columns:1fr 1fr; gap:25px; margin:30px 0 0; padding:24px 0; border-top:1px solid #9ba99030; border-bottom:1px solid #9ba99030; }
+.result.failed .failure-run-data>div { display:flex; flex-direction:column; gap:9px; }
+.result.failed .failure-run-data dt { color:#a9b9a6; font-size:13px; }
+.result.failed .failure-run-data dd { color:#f1e5c9; font:600 34px/1 Barlow,sans-serif; letter-spacing:1px; font-variant-numeric:tabular-nums; margin:0; }
+.result.failed .failure-run-data .failure-progress { color:#e4a36d; }
+.result-save-control { display:flex; gap:6px; align-items:center; font-size:12px; white-space:nowrap; color:#b7c8cb; }
+.result-save-control[hidden] { display:none; }
+.result-save-control input { accent-color:#edc96a; }
+.review-footer:has(.result-outcome-control:not([hidden])) { flex-wrap:wrap; align-items:center; }
+.review-footer:has(.result-outcome-control:not([hidden]))>span:last-child { display:none; }
+.review-footer:has(.result-outcome-control:not([hidden])) #review-description { flex:1; min-width:290px; }
+.result.failed .result-actions { bottom:62px; }
+
+/* Failure-only sequence: read the report, stamp it, then lose one tape corner. */
+.result.failed.active .receipt {
+ animation:receipt-in .45s cubic-bezier(.2,.8,.2,1) both,accident-paper-hit .26s 1.682s both;
+}
+.result.failed.active .receipt-kicker,
+.result.failed.active .receipt-route,
+.result.failed.active h2,
+.result.failed.active .details-title { animation:rise-in .3s .16s both; }
+.result.failed.active .failure-explanation { animation:rise-in .3s .3s both; }
+.result.failed.active .failure-run-data>div:first-child { animation:rise-in .3s .44s both; }
+.result.failed.active .failure-run-data>div:last-child { animation:rise-in .3s .54s both; }
+.result.failed.active .result-actions { animation:rise-in .3s .62s both; }
+.result.failed.active .stamp {
+ z-index:4;
+ animation:stamp-down .38s cubic-bezier(.18,.75,.2,1) 1.5s both;
+}
+.result.failed .accident-photo {
+ /* The pivot is the center of the surviving left tape, not the photo center. */
+ transform-origin:51px 3px;
+ transform:rotate(7deg);
+ box-shadow:2px 7px 9px #243b3630;
+}
+.result.failed.active .accident-photo {
+ animation:accident-photo-in .32s .28s both,accident-photo-swing 1.5s 1.86s both;
+}
+.result.failed .accident-photo:before {
+ transform-origin:34px 13px;
+ transform:rotate(-23deg);
+}
+.result.failed.active .accident-photo:before {
+ animation:accident-tape-anchor 1.5s 1.86s both;
+}
+.result.failed .accident-photo:after {
+ transform-origin:52px 20px;
+ transform:translate(5px,8px) rotate(38deg) scaleX(.74);
+ background:linear-gradient(110deg,#f9e2a9e6 0%,#f6d995e6 38%,#b29460b8 46%,#e8c57bd9 57%,#dfbb70c9 100%);
+ filter:drop-shadow(-2px 3px 2px #47351550);
+}
+.result.failed.active .accident-photo:after {
+ animation:accident-tape-peel .24s 1.72s both;
+}
+@keyframes accident-photo-in { from { opacity:0; } to { opacity:1; } }
+@keyframes accident-paper-hit {
+ 0%,100% { translate:0 0; }
+ 18% { translate:0 3px; }
+ 44% { translate:-1px -2px; }
+ 70% { translate:1px 1px; }
+}
+@keyframes accident-photo-swing {
+ 0% { transform:rotate(-1.2deg); box-shadow:1px 3px 5px #243b3626; }
+ 24% { transform:rotate(11deg); }
+ 47% { transform:rotate(4.4deg); }
+ 68% { transform:rotate(8.3deg); }
+ 85% { transform:rotate(6.5deg); }
+ 100% { transform:rotate(7deg); box-shadow:2px 7px 9px #243b3630; }
+}
+/* Counter-rotation keeps the remaining tape attached to the sheet. */
+@keyframes accident-tape-anchor {
+ 0% { transform:rotate(-14.8deg); }
+ 24% { transform:rotate(-27deg); }
+ 47% { transform:rotate(-20.4deg); }
+ 68% { transform:rotate(-24.3deg); }
+ 85% { transform:rotate(-22.5deg); }
+ 100% { transform:rotate(-23deg); }
+}
+@keyframes accident-tape-peel {
+ 0% {
+  transform:translate(0,0) rotate(13deg) scaleX(1); filter:drop-shadow(0 0 0 transparent);
+  background:linear-gradient(100deg,#e4bd6eb5,#f0d08cbf,#dcb365ad);
+ }
+ 55% { transform:translate(3px,3px) rotate(25deg) scaleX(.88); }
+ 100% { transform:translate(5px,8px) rotate(38deg) scaleX(.74); }
+}
+.reduced-motion .result.failed .accident-photo::before,
+.reduced-motion .result.failed .accident-photo::after { animation:none!important; }
+@media(prefers-reduced-motion:reduce) {
+ .result.failed .accident-photo::before,.result.failed .accident-photo::after { animation:none!important; }
+}

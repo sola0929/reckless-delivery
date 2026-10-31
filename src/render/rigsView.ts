@@ -16,6 +16,9 @@ const darkLamp = new THREE.MeshStandardMaterial({ color: 0x7a5a20, roughness: 0.
 const warnLamp = new THREE.MeshBasicMaterial({ color: 0xffb020 });
 const fallLamp = new THREE.MeshBasicMaterial({ color: 0xff3020 });
 const lampHousing = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.7 });
+/** What fades, as a building does, while it stands between the camera and the truck: how far, and how fast. */
+const FADED_OPACITY = 0.16;
+const FADE_RATE = 8;
 
 /** A box turned, a cylinder, a lofted hull: put into the one mesh of the part they are on, corner by corner. */
 const m4 = new THREE.Matrix4();
@@ -88,6 +91,14 @@ export class RigsView {
   private readonly near = new THREE.Vector3();
   private readonly at = new THREE.Vector3();
   private readonly toward = new THREE.Vector3();
+  /** A ship's accommodation and the like: drawn apart from the rest of its part, to be faded; its box in the part's own frame. */
+  private readonly faders: { group: THREE.Object3D; mesh: THREE.Mesh; material: THREE.MeshStandardMaterial; box: THREE.Box3; opacity: number }[] = [];
+  private readonly ray = new THREE.Ray();
+  private readonly inverse = new THREE.Matrix4();
+  private readonly eye = new THREE.Vector3();
+  private readonly aim = new THREE.Vector3();
+  private readonly hit = new THREE.Vector3();
+  private lastTime?: number;
 
   constructor(scene: THREE.Scene, rigs: readonly Rig[], rocks: readonly Rock[], holes: readonly Hole[] = []) {
     // A small round lamp on a little black base, as on site barriers: big enough to be seen from the cab.
@@ -109,10 +120,13 @@ export class RigsView {
     }
     for (const rig of rigs) {
       const items = rig.parts.map((part, n) => {
-        const shapes = new Shapes();
+        const solid = new Shapes(), fading = new Shapes();
+        let fades = false;
         const group = new THREE.Group();
         for (const s of part.shapes) {
           if (s.hidden) continue;
+          const shapes = s.fade ? fading : solid;
+          fades ||= !!s.fade;
           if (s.kind === 'loft') loft(shapes, s);
           else if (s.kind === 'cyl') cylinder(shapes, s);
           else if (s.rot) turnedBox(shapes, s);
@@ -129,10 +143,19 @@ export class RigsView {
             group.add(lean);
           } else shapes.box(...s.pos, ...s.half, s.color);
         }
-        const mesh = new THREE.Mesh(shapes.geometry(), material);
+        const mesh = new THREE.Mesh(solid.geometry(), material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         group.add(mesh);
+        if (fades) {
+          const geometry = fading.geometry(), own = material.clone();
+          geometry.computeBoundingBox();
+          const faded = new THREE.Mesh(geometry, own);
+          faded.castShadow = true;
+          faded.receiveShadow = true;
+          group.add(faded);
+          this.faders.push({ group, mesh: faded, material: own, box: geometry.boundingBox!.clone(), opacity: 1 });
+        }
         if (rig.lamp.part === n) {
           const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.28), lampOut);
           lamp.position.set(...rig.lamp.at);
@@ -257,6 +280,8 @@ export class RigsView {
       }
     }
     for (const { rig, mesh } of this.lamps) mesh.material = rig.warn && flash ? lampLit : lampOut;
+    if (camera && truck) this.fade(camera, truck, Math.min(0.1, time - (this.lastTime ?? time)));
+    this.lastTime = time;
     for (const cable of this.cables) {
       const to = this.at.set(...cable.rig.cable!.at).applyQuaternion(cable.to.mesh.quaternion).add(cable.to.mesh.position);
       let from = cable.from;
@@ -272,6 +297,32 @@ export class RigsView {
       cable.mesh.position.copy(from).add(to).multiplyScalar(0.5);
       cable.mesh.scale.set(1, length, 1);
       cable.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+    }
+  }
+
+  /** Fading what is marked to fade while it is between the camera and the truck: looked for in each part's own frame, as it moves. */
+  private fade(camera: THREE.Vector3, truck: THREE.Vector3, dt: number): void {
+    const ease = 1 - Math.exp(-FADE_RATE * dt);
+    for (const f of this.faders) {
+      f.group.updateMatrixWorld();
+      this.inverse.copy(f.group.matrixWorld).invert();
+      this.eye.copy(camera).applyMatrix4(this.inverse);
+      this.aim.copy(truck).applyMatrix4(this.inverse);
+      this.ray.origin.copy(this.eye);
+      this.ray.direction.copy(this.aim).sub(this.eye).normalize();
+      const point = this.ray.intersectBox(f.box, this.hit);
+      const target = point !== null && point.distanceTo(this.eye) < this.eye.distanceTo(this.aim) ? FADED_OPACITY : 1;
+      if (f.opacity === target) continue;
+      f.opacity += (target - f.opacity) * ease;
+      if (Math.abs(f.opacity - target) < 0.01) f.opacity = target;
+      // Only pay for transparency while it is actually see-through.
+      const transparent = f.opacity < 1;
+      f.material.opacity = f.opacity;
+      if (f.material.transparent !== transparent) {
+        f.material.transparent = transparent;
+        f.material.depthWrite = !transparent;
+        f.material.needsUpdate = true;
+      }
     }
   }
 }

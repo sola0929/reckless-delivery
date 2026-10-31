@@ -1,3 +1,4 @@
+import './ui/init';
 import { levelStates, loadBest, type Best } from './best';
 import { CARGO_TYPES } from './sim/cargo-types';
 import { bumpControls, drawControls } from './controls';
@@ -212,17 +213,34 @@ function showMenu(): void {
   let chosenId = '';
   let shown = 0;
   let turn = 0;
+  let autoPictures = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const pictureToggle = document.createElement('button');
+  pictureToggle.className = 'preview-autoplay';
+  pictureToggle.type = 'button';
+  const labelAutoplay = () => {
+    pictureToggle.textContent = autoPictures ? 'Ⅱ' : '▶';
+    pictureToggle.setAttribute('aria-label', autoPictures ? '暫停照片輪播' : '播放照片輪播');
+    pictureToggle.setAttribute('aria-pressed', String(!autoPictures));
+  };
+  labelAutoplay();
+  pictureToggle.addEventListener('click', () => { autoPictures = !autoPictures; labelAutoplay(); });
+  shots.append(pictureToggle);
   const show = (n: number) => {
     const pictures = [...shots.querySelectorAll('img')];
     if (!pictures.length) return;
     shown = (n + pictures.length) % pictures.length;
     pictures.forEach((img, k) => img.classList.toggle('on', k === shown));
-    [...dots.children].forEach((dot, k) => dot.classList.toggle('on', k === shown));
+    [...dots.children].forEach((dot, k) => {
+      dot.classList.toggle('on', k === shown);
+      dot.setAttribute('aria-current', String(k === shown));
+    });
     caption.textContent = pictures[shown].alt;
   };
   const rotate = () => {
     window.clearInterval(turn);
-    turn = window.setInterval(() => show(shown + 1), 3200);
+    turn = window.setInterval(() => {
+      if (autoPictures && !document.hidden && preview.offsetParent !== null && !shots.matches(':hover,:focus-within')) show(shown + 1);
+    }, 3200);
   };
   showPicture = (step: number) => {
     show(shown + step);
@@ -245,7 +263,7 @@ function showMenu(): void {
       caption.before(img);
       const dot = document.createElement('button');
       dot.type = 'button';
-      dot.tabIndex = -1;
+      dot.tabIndex = 0;
       dot.setAttribute('aria-label', text);
       dot.addEventListener('click', () => {
         show(k);
@@ -338,6 +356,7 @@ function showMenu(): void {
 
   // The arrow keys walk the list; Esc goes back to the first page.
   window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
     const list = choices();
     const at = list.indexOf(document.activeElement as HTMLElement);
     if (['ArrowDown', 'KeyS', 'ArrowRight', 'KeyD'].includes(e.code)) list[(at + 1) % list.length]?.focus();

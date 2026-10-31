@@ -126,6 +126,10 @@ const BURST_STYLES = {
   paintYellow: { colors: [0xe0b020, 0xf2c94c, 0xc89a18], size: [0.05, 0.12], stretch: 1.2, life: [0.6, 1.2] },
   // A clay pot in pieces, and the earth out of it.
   shards: { colors: [0xb5533c, 0x9a4530, 0x6b4a32, 0x4f8a4a], size: [0.05, 0.11], stretch: 1.4, life: [0.9, 1.5] },
+  // An octopus's ink, black, and bits of it, purple.
+  ink: { colors: [0x15141c, 0x24222e, 0x15141c, 0x8a3448], size: [0.05, 0.12], stretch: 1.2, life: [0.7, 1.3] },
+  // A crab's shell in bits: red outside, pale inside.
+  shell: { colors: [0xc23c26, 0xe0704a, 0xf0d8b8], size: [0.03, 0.07], stretch: 1.6, life: [0.8, 1.4] },
   // Ice: chips of it, white and the palest blue.
   ice: { colors: [0xf2f8fa, 0xd6eaf0, 0xbfdce6], size: [0.04, 0.1], stretch: 1.3, life: [0.7, 1.3] },
   // Gold paper money, square and flat, that flutters down slowly.

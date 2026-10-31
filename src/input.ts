@@ -38,6 +38,9 @@ export class Input {
 
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
+      // Focused form controls keep native arrows/Space; Esc still closes the pause menu.
+      if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
+      if (e.target instanceof HTMLButtonElement && e.target.offsetParent !== null && e.code === 'Space') return;
       if (!HANDLED.has(e.code)) return;
       // Enter is left to do its usual work as well: on a focused button, it presses it.
       if (e.code !== 'Enter') e.preventDefault();

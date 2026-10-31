@@ -1,5 +1,6 @@
 import { Relief, type Look } from './relief';
-import { standardLoad } from './sandbox';
+import type { CargoPlacement } from '../sim/cargo';
+import { TRUCK } from '../config';
 import { ARCADE_PILLARS, BOAT_ROW, ROAD_W, STREET_END, street } from './harbourStreet';
 import { EAVE, HALL, MARKET_ROUTE, OUT, market } from './harbourMarket';
 import { LANE, ROW, SHED, lane } from './harbourLane';
@@ -246,7 +247,7 @@ export function harbour(): LevelDef {
     props,
     objects,
     decals,
-    cargo: standardLoad(),
+    cargo: harbourLoad(),
     traffic: [],
     rigs: [...st.rigs, ...oh.rigs],
     pools: [...(st.pools ?? []), ...ln.pools, ...mr.pools, ...oh.pools],
@@ -296,4 +297,26 @@ export function harbour(): LevelDef {
     stars: STARS,
     par: 420,
   };
+}
+
+/**
+ * The last load before the port shuts, for the reefer: the season's bluefin, frozen, lying across the bed against the cab;
+ * behind it, kept low so that it is seen, a big octopus with its arms spread out between two mahi-mahi; a ship's anchor laid
+ * flat across the bed; a king crab sprawled behind it; and at the back four cabbages and four cartons of cup noodles stacked
+ * two high. Five thousand in all.
+ */
+function harbourLoad(): CargoPlacement[] {
+  const cargo: CargoPlacement[] = [];
+  const floor = TRUCK.frame.pos[1] + TRUCK.frame.half[1];
+  const gap = 0.01;
+  const on = (half: number) => floor + half + gap;
+  // The tuna with its dark back and fins to the rear, where they are seen.
+  cargo.push({ type: 'tuna', pos: [0, on(0.252), 1.6], rotY: -Math.PI / 2 });
+  cargo.push({ type: 'octopus', pos: [0, on(0.17), 0.45] });
+  for (const x of [-0.92, 0.92]) cargo.push({ type: 'mahi', pos: [x, on(0.09), 0.45] });
+  cargo.push({ type: 'anchor', pos: [-0.1, on(0.07), -1.0], rotY: Math.PI / 2 });
+  cargo.push({ type: 'kingCrab', pos: [0, on(0.17), -2.41] });
+  for (const z of [-3.0, -3.35]) for (const x of [-0.92, -0.58]) cargo.push({ type: 'cabbage', pos: [x, on(0.15), z] });
+  for (const x of [0.02, 0.72]) for (const y of [on(0.22), floor + 0.44 + 0.22 + gap * 3]) cargo.push({ type: 'noodles', pos: [x, y, -3.15] });
+  return cargo;
 }

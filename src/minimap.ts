@@ -5,17 +5,18 @@ import { TRAIN_HALF } from './sim/trains';
 /** Pixels per metre of the pre-drawn map, and of the map as shown. */
 const DRAWN = 1.5;
 const SHOWN = 0.62;
-const ROAD = '#3a4048';
+const ROAD = '#44584e';
 const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 /**
- * A round map in the corner of the screen. It turns with the camera, so up on the map is
+ * A navigation map in the corner of the screen. It turns with the camera, so up on the map is
  * always the way the screen is facing, matching the arrow that points at the delivery bay.
  */
 export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly background: HTMLCanvasElement;
   private readonly size: number;
+  private readonly height: number;
   private readonly maxX: number;
   private readonly maxZ: number;
   private time = 0;
@@ -25,7 +26,9 @@ export class Minimap {
   constructor(canvas: HTMLCanvasElement, private readonly level: LevelDef) {
     const ratio = Math.min(window.devicePixelRatio, 2);
     this.size = canvas.clientWidth;
-    canvas.width = canvas.height = this.size * ratio;
+    this.height = canvas.clientHeight;
+    canvas.width = this.size * ratio;
+    canvas.height = this.height * ratio;
     this.ctx = canvas.getContext('2d')!;
     this.ctx.scale(ratio, ratio);
 
@@ -71,7 +74,7 @@ export class Minimap {
     // The intended way through, as a dotted line down the middle of the road.
     const route = this.level.route;
     if (route && route.length > 1) {
-      g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      g.strokeStyle = '#f3cd70';
       g.lineWidth = 2.5 * DRAWN;
       g.setLineDash([5 * DRAWN, 5 * DRAWN]);
       g.lineJoin = 'round';
@@ -97,8 +100,9 @@ export class Minimap {
     trains: readonly { x: number; z: number }[] = [],
   ): void {
     this.time += dt;
-    const { ctx, size } = this;
+    const { ctx, size, height } = this;
     const half = size / 2;
+    const rimAt = (x: number, y: number) => Math.min((half - 9) / Math.max(0.0001, Math.abs(x)), (height / 2 - 9) / Math.max(0.0001, Math.abs(y))) * Math.hypot(x, y);
     const cos = Math.cos(viewYaw);
     const sin = Math.sin(viewYaw);
     /** A world position as an offset from the middle of the map, in pixels. */
@@ -108,15 +112,15 @@ export class Minimap {
       return [u * cos - v * sin, u * sin + v * cos];
     };
 
-    ctx.clearRect(0, 0, size, size);
+    ctx.clearRect(0, 0, size, height);
     ctx.save();
     ctx.beginPath();
-    ctx.arc(half, half, half - 2, 0, Math.PI * 2);
+    ctx.rect(1, 1, size - 2, height - 2);
     ctx.clip();
     ctx.fillStyle = '#20252b';
-    ctx.fillRect(0, 0, size, size);
+    ctx.fillRect(0, 0, size, height);
 
-    ctx.translate(half, half);
+    ctx.translate(half, height / 2);
     ctx.save();
     ctx.rotate(viewYaw);
     ctx.scale(SHOWN / DRAWN, SHOWN / DRAWN);
@@ -182,7 +186,7 @@ export class Minimap {
     if (save) {
       let [sx, sy] = place((save.zone[0] + save.zone[2]) / 2, (save.zone[1] + save.zone[3]) / 2);
       const far = Math.hypot(sx, sy);
-      const rim = half - 9;
+      const rim = rimAt(sx, sy);
       if (far > rim && !this.saved) {
         sx *= rim / far;
         sy *= rim / far;
@@ -210,7 +214,7 @@ export class Minimap {
       let [fx, fy] = place(finish.pos[0], finish.pos[1]);
       // Off the edge of the map, pin it to the rim in the right direction.
       const far = Math.hypot(fx, fy);
-      const rim = half - 9;
+      const rim = rimAt(fx, fy);
       if (far > rim) {
         fx *= rim / far;
         fy *= rim / far;
@@ -243,7 +247,7 @@ export class Minimap {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(half, half, half - 2, 0, Math.PI * 2);
+    ctx.rect(1, 1, size - 2, height - 2);
     ctx.stroke();
   }
 }

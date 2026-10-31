@@ -1,0 +1,42 @@
+/* Art-direction alternative only: preserve accepted instrument layout and behavior. */
+.hud-game-style .hud .dashboard { background:#22353c; border:3px solid #13282f; border-radius:23px 15px 15px 23px; box-shadow:0 5px 0 #10242cb3,0 9px 18px #101e2433; }
+.hud-game-style .analog-face>circle:nth-of-type(1) { fill:#d9ba79; }
+.hud-game-style .analog-face>circle:nth-of-type(2) { fill:#273c42; }
+.hud-game-style .analog-face>circle:nth-of-type(3) { fill:#eee8d8; stroke:none; }
+.hud-game-style .analog-face>path { stroke:#b6ad96; }
+.hud-game-style .dial-ticks .tick-major { stroke:#31484c; stroke-width:3; stroke-linecap:round; }
+.hud-game-style .dial-ticks .tick-minor { stroke:#a49e8b; stroke-width:2; stroke-linecap:round; }
+.hud-game-style .dial-ticks .tick-minor:nth-child(even) { display:none; }
+.hud-game-style .dial-labels { fill:#3a4b4d; font:700 12px Noto,sans-serif; }
+.hud-game-style .dial-title { fill:#888675; font:500 10px Noto,sans-serif; letter-spacing:2px; }
+.hud-game-style #speed-needle { filter:none; }
+.hud-game-style #speed-needle>path:first-child { fill:#e46c3c; stroke:#c9562e; stroke-width:1; }
+.hud-game-style #speed-needle>path:last-child { stroke:#f8c192; }
+.hud-game-style .analog-face>circle:nth-of-type(4) { fill:#2c4145; stroke:#eee8d8; stroke-width:3; }
+.hud-game-style .analog-face>circle:nth-of-type(5) { fill:#df7541; }
+.hud-game-style .hud .analog-speed .speed-number b { font:800 35px/1 Noto,sans-serif; letter-spacing:0; color:#253e42; text-shadow:none; }
+.hud-game-style .hud .analog-speed .speed-number span { color:#798276; font:600 10px Noto,sans-serif; margin-top:5px; }
+.hud-game-style .nav-device-label { color:#e2d8bc; font-size:11px; font-weight:600; letter-spacing:1px; padding-left:5px; }
+.hud-game-style .nav-device-label:after { content:''; width:17px; height:5px; border-radius:1px; background:#e98049; transform:skewX(-18deg); margin-right:5px; }
+.hud-game-style .nav-signal { display:none; }
+.hud-game-style .nav-screen { background:#12282f; border:2px solid #9c9f88; padding:3px; border-radius:8px; box-shadow:none; }
+.hud-game-style .hud .vehicle-navigation .navigation-heading { background:#334b50; border-bottom:0; border-radius:3px 3px 0 0; }
+.hud-game-style .hud .vehicle-navigation .direction-arrow { border:0; border-radius:4px; background:#edc96a; color:#283e43; font-size:26px; }
+.hud-game-style .navigation-heading>div small { color:#c0c4b2; }
+.hud-game-style .navigation-heading>div span { color:#f4edd7; }
+.hud-game-style .hud .vehicle-navigation .navigation-heading>b { color:#f4edd7; font:700 25px Noto,sans-serif; letter-spacing:-1px; }
+.hud-game-style .hud .vehicle-navigation .navigation-heading>b small { color:#c0c4b2; font-size:10px; letter-spacing:0; }
+.hud-game-style .nav-map>rect { fill:#d4d1bc; }
+.hud-game-style .nav-map>g[fill] { fill:#a3b3a4; stroke:#8fa394; stroke-width:1; }
+.hud-game-style .nav-map>g[stroke] { stroke:#eae4ce; stroke-width:2; opacity:1; }
+.hud-game-style .navigation-status { background:#354b50; border-top:0; color:#c5ceba; border-radius:0 0 2px 2px; }
+.hud-game-style .map-scale i { border-color:#c5ceba; }
+.hud-game-style .cargo-summary { background:#22353ce8; border-top:0; border-left:3px solid #d9ba79; box-shadow:0 3px 0 #13282f66; }
+.hud-game-style .cargo-figure em { color:#afd0a3; }
+.hud-game-style .cargo-track i { background:#afd0a3; }
+.hud-game-style .timer,.hud-game-style .pause { background:#22353ce8; }
+.hud-style-control { display:flex; align-items:center; gap:7px; white-space:nowrap; font-size:12px; color:#b7c8cb; }
+.hud-style-control[hidden] { display:none; }
+.hud-style-control select { background:#22353c; color:#f0e6d2; border:1px solid #53676e; border-radius:4px; padding:3px 7px; font:inherit; }
+.review-footer:has(.hud-style-control:not([hidden])) { flex-wrap:wrap; align-items:center; }
+.review-footer:has(.hud-style-control:not([hidden])) #review-description { flex:1; min-width:290px; }

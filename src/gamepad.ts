@@ -20,7 +20,7 @@ export type PadKind = 'xbox' | 'ps';
 const forced = import.meta.env.DEV ? (new URLSearchParams(location.search).get('pad') as PadKind | null) : null;
 let kind: PadKind = forced ?? 'xbox';
 export const padKind = (): PadKind => kind;
-const kindOf = (id: string): PadKind => (/054c|playstation|dualshock|dualsense|wireless controller/i.test(id) ? 'ps' : 'xbox');
+const kindOf = (id: string): PadKind => (/xbox|xinput|045e/i.test(id) ? 'xbox' : /054c|playstation|dualshock|dualsense|wireless controller/i.test(id) ? 'ps' : 'xbox');
 
 /** Each button's name on each maker's controller, by where it is. */
 const NAMES: Record<PadKind, Record<string, string>> = {
