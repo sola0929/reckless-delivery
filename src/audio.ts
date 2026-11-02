@@ -190,6 +190,9 @@ export class GameAudio {
 
   private lastBump = 0;
   private lastKnock = 0;
+  /** The last splat, and how many have come one hard on another: a stack of fruit going is one wet crash, not a dozen. */
+  private lastSplat = 0;
+  private splatRun = 0;
   private lastThud = 0;
   private lastCrunch = 0;
   private lastHorn = 0;
@@ -667,9 +670,14 @@ export class GameAudio {
       case 'ceramic':
         this.play(pick(this.clips.potBreak), 0.9, 1 + wobble);
         break;
-      case 'melon':
-        this.play(pick(this.clips.splat), 0.9, 0.95 + wobble);
+      case 'melon': {
+        const t = ctx.currentTime;
+        if (t - this.lastSplat < 0.1) return;
+        this.splatRun = t - this.lastSplat < 0.6 ? this.splatRun + 1 : 0;
+        this.lastSplat = t;
+        this.play(pick(this.clips.splat), 0.9 / (1 + this.splatRun * 0.45), 0.95 + wobble);
         break;
+      }
       case 'wood':
         this.play(pick(weight >= 0.15 ? this.clips.woodBig : this.clips.woodSmall), 0.85, 1 + wobble);
         break;

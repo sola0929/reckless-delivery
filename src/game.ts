@@ -510,7 +510,7 @@ const SPLASH_REACH = 7;
 
 /** Something has just been sent flying: throw up whatever it is made of. */
 /** Things that sound of neither wood nor metal when hit. */
-const SOFT = new Set(['cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa',
+const SOFT = new Set(['tarpPanelFront', 'tarpPanelBack', 'cone', 'box', 'chair', 'umbrella', 'toilet', 'chickenWhite', 'chickenBrown', 'chickenBlack', 'trayGrain', 'trayVeg', 'riceSack', 'mattress', 'sofa',
   // Sacks, plastic and straw.
   'sandbag', 'cementBag', 'jerrycan', 'rallyPole', 'delineator', 'barrier', 'flagOrange', 'flagPurple', 'flagTeal', 'haystack',
   // The harbour's: polystyrene, plastic baskets and chests, bags of ice, nets, floats, tarpaulins.
@@ -526,9 +526,13 @@ const STONE = new Set(['boulder', 'rockSmall', 'bricks']);
 /** Dead weight: a thump. */
 const WEIGHT = new Set(['gravelPile', 'culvert', 'culvertStack', 'pipe', 'concretePipe']);
 
+/** Those that don't sound like what they throw off: a shop's sign is a box of steel, not a jar, though its face goes in pieces; a rack of greens is a wooden frame, not a tree. */
+const SOUNDS_LIKE: Record<string, Material> = { shopSign: 'metal', dryingRack: 'wood' };
+
 /** What a roadside object sounds like, from what it is. */
 function materialOfObject(object: KnockEvent['object']): Material {
   const { kind, desc } = object;
+  if (SOUNDS_LIKE[desc.kind]) return SOUNDS_LIKE[desc.kind];
   if (kind.effect === 'shards') return 'ceramic';
   if (kind.effect === 'leaves') return 'tree';
   if (kind.effect === 'splinters') return 'wood';
@@ -549,6 +553,7 @@ const CARGO_SOUND: Record<string, Material> = {
   fridge: 'barrel', safe: 'heavy', watermelon: 'melon',
   washer: 'barrel', sack: 'soft', soda: 'ceramic',
   tuna: 'ice', anchor: 'heavy', cabbage: 'melon', noodles: 'soft', kingCrab: 'bone', octopus: 'soft', mahi: 'soft',
+  captainCap: 'soft', telescope: 'metal', shipBell: 'metal',
 };
 /** An item of cargo jolted by less than this, m/s, makes no sound; and one that has just made one waits this long. */
 const CARGO_QUIET = 2;
@@ -748,7 +753,7 @@ function showKnock(knock: KnockEvent): void {
       if (sim.driver.mode === 'driving') hud.splat(kind.juice, Math.min(1, Math.abs(sim.truck.forwardSpeed()) / 12) * (kind.wrecked ? 1 : 0.45));
     }
   }
-  if (kind.effect === 'shards') audio.smash('ceramic', 0.5);
+  if (kind.effect === 'shards' && materialOfObject(knock.object) === 'ceramic') audio.smash('ceramic', 0.5);
   if (kind.flee) audio.hen(Math.max(0, 1 - away / 35));
   if (kind.crackle) {
     const left = typeof kind.crackle === 'number' ? kind.crackle : CRACKLE_SECONDS;
@@ -1008,8 +1013,8 @@ function converse(dt: number, speed: number): void {
   }
   const t = sim.truck.body.translation();
   // Said on the way in to a place; let go unsaid once the truck is out of its way in, past it or turned off.
-  level.chat!.places?.forEach(({ zone: [x0, z0, x1, z1] }, k) => {
-    const inside = t.x >= x0 && t.x <= x1 && t.z >= z0 && t.z <= z1;
+  level.chat!.places?.forEach(({ zone: [x0, z0, x1, z1], above }, k) => {
+    const inside = t.x >= x0 && t.x <= x1 && t.z >= z0 && t.z <= z1 && (above === undefined || t.y > above);
     if (!inside) c.drop('place', k);
     else if (!said.places.has(k)) {
       said.places.add(k);
@@ -1090,8 +1095,9 @@ function resetRun(toSave = false): void {
   setPaused(false);
   if (toSave) sim.backToSave();
   else {
-    bannerUp = true;
-    bannerAge = 0;
+    // The manifest is shown once, on coming into the level: not again on starting over; put away if it is still up.
+    if (bannerUp) hud.dismissBanner();
+    bannerUp = false;
     closeBanner = false;
     sim.reset();
     hud.showHelp(15);
@@ -1103,7 +1109,6 @@ function resetRun(toSave = false): void {
   rigsView.snap();
   truckSync.snap();
   hud.hideResult();
-  if (!toSave) hud.showBanner();
   resultShown = false;
   const at = sim.truck.body.translation();
   routeProgress.reset(at.x, at.z);
@@ -1611,7 +1616,8 @@ function frame(now: number): void {
   squallUndo();
   if (outageView) {
     const was = outageView.gone;
-    outageView.update(dt, focus);
+    outageView.update(dt, focus, onFoot ? driverView.lamp : null);
+    driverView.inTheDark(outageView.dark);
     if (was < 0 && outageView.gone >= 0) audio.powerCut();
     murmur(dt, outageView.gone);
     // No rain under the hall's roof.
@@ -1662,7 +1668,7 @@ function frame(now: number): void {
   navigate();
   // Nothing hidden along the way is given away: it is on the map only once it has been aboard.
   const fallen = sim.cargo.filter((c) => c.fallen && c.body && !c.held && (!c.bonus || c.aboardOnce || level.practice)).map((c) => ({ x: c.lastPos.x, z: c.lastPos.z }));
-  minimap.saved = sim.hasSave;
+  minimap.savedAt = sim.savedAt;
   minimap.update(
     dt, truckAt.x, truckAt.z, truckHeading(), chase.viewYaw, sim.traffic.cars, fallen,
     onFoot ? { x: driver.pos.x, z: driver.pos.z, leash: DRIVER.leash } : null,

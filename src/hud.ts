@@ -440,8 +440,13 @@ export class Hud {
     const known = records?.before?.items ?? [];
     el('result-hidden').innerHTML = hidden
       ? `<div class="rh-head"><span>隱藏貨物</span><b>${hidden.found} / ${hidden.total}</b>${hidden.value > 0 ? `<em>+${money(hidden.value)}</em>` : ''}${hidden.found === hidden.total ? '<i>全收</i>' : ''}</div>` +
-        `<div class="rh-slots">${types.map((type) => hidden.items.includes(type) ? `<span class="on">${CARGO_TYPES[type].name}${known.includes(type) ? '' : '<sup>NEW</sup>'}</span>`
-          : known.includes(type) ? `<span class="seen">${CARGO_TYPES[type].name}</span>` : '<span>？</span>').join('')}</div>`
+        `<div class="rh-cargo-grid">${types.map(type => {
+          const delivered = hidden.items.includes(type), seen = known.includes(type);
+          return `<div class="rh-cargo-card ${delivered ? 'delivered' : seen ? 'seen' : 'unknown'}">` +
+            (delivered || seen ? `<img src="${import.meta.env.BASE_URL}ui/cargo/${type}.png" alt="${CARGO_TYPES[type].name}">` : '<div class="rh-cargo-mystery" aria-hidden="true">？</div>') +
+            `<b>${delivered || seen ? CARGO_TYPES[type].name : '未發現'}</b><small${delivered || seen ? ' class="rh-cargo-status"' : ''}>${delivered ? '✓ 已送達' : seen ? '本趟未送達' : '探索路線尋找貨物'}</small>` +
+            (delivered && !seen ? '<em>新發現</em>' : '') + '</div>';
+        }).join('')}</div>`
       : '';
     el('result-goals').innerHTML = '';
 

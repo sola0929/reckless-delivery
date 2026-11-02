@@ -11,7 +11,7 @@ const JET_KICK_PUSH = 1.4;
 import { sandbox } from '../levels/sandbox';
 import { groundTiles } from '../levels/ground';
 import { heightAt, terrainMesh } from '../levels/terrain';
-import type { LevelDef, PitDesc, PropDesc, TrackDesc } from '../levels/types';
+import { type LevelDef, type PitDesc, type PropDesc, type TrackDesc, savesOf } from '../levels/types';
 import { Battle, type BattleSound } from './battle';
 import { CargoSystem, type CargoEvent, type CargoItem, type SavedItem } from './cargo';
 import { Driver, NO_FOOT_INPUT, type FootInput } from './driver';
@@ -185,7 +185,8 @@ export class Sim {
   rightings = 0;
   private mishap: Failure | 'train' | null = null;
   /** The run as it stood when it passed the level's save point: the load, the clock, what had been run into by then. */
-  private saved: { items: SavedItem[]; time: number; trip: Trip } | null = null;
+  /** What was recorded at the last save point passed, and which one it was. */
+  private saved: { items: SavedItem[]; time: number; trip: Trip; at: number } | null = null;
   /** Set on the step the save point is passed, until taken. */
   private savedNow = false;
   /** What had been run into before the save point, when the run has gone back to it: added to what is run into after. */
@@ -493,17 +494,19 @@ export class Sim {
     }
   }
 
-  /** Through the save point in the cab, the first time: the load is recorded as it stands. */
+  /** Through a save point in the cab, the first time, and only one further on than the last: the load is recorded as it stands. */
   private checkSave(): void {
-    const save = this.level.save;
-    if (!save || this.saved || this.driver.mode !== 'driving') return;
+    if (this.driver.mode !== 'driving') return;
     const t = this.truck.body.translation();
-    const [x0, z0, x1, z1] = save.zone;
-    if (t.x < x0 || t.x > x1 || t.z < z0 || t.z > z1) return;
-    // One up on a roof is passed up there, not under it.
-    if (save.y !== undefined && t.y < save.y - 2) return;
-    this.saved = { items: this.cargoSystem.snapshot(this.truck), time: this.time, trip: this.trip() };
-    this.savedNow = true;
+    savesOf(this.level).forEach((save, at) => {
+      if (this.saved && at <= this.saved.at) return;
+      const [x0, z0, x1, z1] = save.zone;
+      if (t.x < x0 || t.x > x1 || t.z < z0 || t.z > z1) return;
+      // One up on a roof is passed up there, not under it.
+      if (save.y !== undefined && t.y < save.y - 2) return;
+      this.saved = { items: this.cargoSystem.snapshot(this.truck), time: this.time, trip: this.trip(), at };
+      this.savedNow = true;
+    });
   }
 
   /** Whether the save point has just been passed; once. */
@@ -518,12 +521,17 @@ export class Sim {
     return this.saved !== null;
   }
 
+  /** Which of the level's save points was the last passed: -1 for none yet. */
+  get savedAt(): number {
+    return this.saved?.at ?? -1;
+  }
+
   /**
    * Back to the save point: everything along the way as it was at the start, the truck where the save was made with what
    * was aboard it then, as hurt as it was then; the clock as it read. Cargo bodies are rebuilt, so views must be too.
    */
   backToSave(): void {
-    const saved = this.saved, save = this.level.save;
+    const saved = this.saved, save = saved && savesOf(this.level)[saved.at];
     if (!saved || !save) return;
     const retries = this.retries + 1;
     this.reset();

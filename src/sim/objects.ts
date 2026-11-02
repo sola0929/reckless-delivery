@@ -874,8 +874,11 @@ export class ObjectSystem {
     const [x, y, z] = object.desc.pos;
     for (const other of this.objects) {
       if (other === object || !other.kind.collapse || other.knocked || other.fallIn !== undefined || (other.near && !other.body.isSleeping())) continue;
+      // Pieces of something put up further apart bring down only each other: a scaffold is not a tarpaulin's.
+      if (!object.kind.spreads !== !other.kind.spreads) continue;
       const [ox, oy, oz] = other.desc.pos;
-      if (Math.abs(ox - x) < 2.6 && Math.abs(oy - y) < 2 && Math.abs(oz - z) < 2.2) other.fallIn = 0.04 + this.random() * 0.1;
+      const [rx, ry, rz] = object.kind.spreads ?? [2.6, 2, 2.2];
+      if (Math.abs(ox - x) < rx && Math.abs(oy - y) < ry && Math.abs(oz - z) < rz) other.fallIn = 0.04 + this.random() * 0.1;
     }
   }
 

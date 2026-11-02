@@ -1,4 +1,4 @@
-import type { LevelDef } from './levels/types';
+import { type LevelDef, savesOf } from './levels/types';
 import type { TrafficCar } from './sim/traffic';
 import { TRAIN_HALF } from './sim/trains';
 
@@ -20,8 +20,8 @@ export class Minimap {
   private readonly maxX: number;
   private readonly maxZ: number;
   private time = 0;
-  /** Whether the run has passed its save point: its flag then goes grey and is no longer pinned to the rim. */
-  saved = false;
+  /** Which of its save points the run has passed last, -1 for none: those flags go grey and are no longer pinned to the rim. */
+  savedAt = -1;
 
   constructor(canvas: HTMLCanvasElement, private readonly level: LevelDef) {
     const ratio = Math.min(window.devicePixelRatio, 2);
@@ -181,24 +181,25 @@ export class Minimap {
       ctx.stroke();
     }
 
-    // The save point, as a small flag: pinned to the rim like the bay until passed, then grey where it is.
-    const save = this.level.save;
-    if (save) {
+    // The save points, each a small flag: pinned to the rim like the bay until passed, then grey where it is.
+    savesOf(this.level).forEach((save, k) => {
+      // Only the next to be passed is pinned to the rim, as the bay is: the one after it shows once it is on the map.
+      const passed = k <= this.savedAt, next = k === this.savedAt + 1;
       let [sx, sy] = place((save.zone[0] + save.zone[2]) / 2, (save.zone[1] + save.zone[3]) / 2);
       const far = Math.hypot(sx, sy);
       const rim = rimAt(sx, sy);
-      if (far > rim && !this.saved) {
+      if (far > rim && next) {
         sx *= rim / far;
         sy *= rim / far;
       }
-      if (far <= rim || !this.saved) {
+      if (far <= rim || next) {
         ctx.strokeStyle = '#0d1a24';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(sx - 3, sy + 6);
         ctx.lineTo(sx - 3, sy - 7);
         ctx.stroke();
-        ctx.fillStyle = this.saved ? '#8a929a' : '#3fb8ff';
+        ctx.fillStyle = passed ? '#8a929a' : '#3fb8ff';
         ctx.beginPath();
         ctx.moveTo(sx - 3, sy - 7);
         ctx.lineTo(sx + 6, sy - 4);
@@ -207,7 +208,7 @@ export class Minimap {
         ctx.fill();
         ctx.stroke();
       }
-    }
+    });
 
     const finish = this.level.finish;
     if (finish) {

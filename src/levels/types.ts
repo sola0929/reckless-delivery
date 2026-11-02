@@ -87,6 +87,10 @@ export interface PropDesc {
   overhead?: boolean;
   /** Drawn but not solid: rooftops, foliage, awnings. */
   ghost?: boolean;
+  /** Lit of itself, its colour as it is whatever the light: a lamp's glass, a strip light. Static props only, not faded. */
+  glow?: boolean;
+  /** While the truck, or whoever is on foot, is inside this box, corner to corner, a little room: not drawn at all, rather than faded, when it is in the way of seeing them there. Needs `fade`. */
+  openFrom?: [Vec3, Vec3];
   /**
    * Felt only by the truck's wheels, a jolt as they go over it: a joint standing proud of a road. Whatever slides, rolls or
    * falls on to it (a wreck, a load, someone on foot) goes over it as if it were not there, rather than catch on its edge.
@@ -794,10 +798,11 @@ export interface LevelDef {
   /** Traffic, scooters and people further than this from the truck, metres, stand still until it comes nearer: on a level too big to see across. */
   quietBeyond?: number;
   /**
-   * The run's one save point: passing through `zone` [x0, z0, x1, z1] in the cab records the load as it stands, and after a
+   * The run's save point: passing through `zone` [x0, z0, x1, z1] in the cab records the load as it stands, and after a
    * failure the run can go back to it, the truck put down at `pos` facing `yaw` (on the floor at `y`, where that is not the ground).
+   * One to a level; a long level may have more, in the order they are passed: it goes back to the last.
    */
-  save?: { zone: [number, number, number, number]; pos: Vec2; yaw: number; y?: number };
+  save?: SaveDesc | SaveDesc[];
   /** For testing: places just before each part of the level, to put the truck down at, by number key. */
   checkpoints?: { name: string; pos: Vec2; yaw: number; /** The floor to put it down on, where that is not the ground: up a building. */ y?: number }[];
   battle?: BattleDesc;
@@ -863,10 +868,25 @@ export type Talk = ['them' | 'me', string][];
 
 export interface ChatDesc {
   /** Whose load it is: picks the customer's face and what they have to say. */
-  customer: 'student' | 'canteen' | 'foreman';
+  customer: 'student' | 'canteen' | 'foreman' | 'captain';
   /**
    * Places that get a word as the truck comes up to them: said when it first comes into `zone` [x0, z0, x1, z1], from the
-   * customer unless said otherwise, and let go unsaid if it has left the zone before its turn came.
+   * customer unless said otherwise, and let go unsaid if it has left the zone before its turn came, or after  seconds
+   * waiting (15 unless said): longer for a zone that is a whole place rather than the way in to one. With `above`, only
+   * while the truck is higher than that: up on a roof, not in the building under it.
    */
-  places?: { zone: [number, number, number, number]; from?: 'boss' | 'customer'; talk: Talk }[];
+  places?: { zone: [number, number, number, number]; above?: number; from?: 'boss' | 'customer'; wait?: number; talk: Talk }[];
+}
+
+/** A save point: see `LevelDef.save`. */
+export interface SaveDesc {
+  zone: [number, number, number, number];
+  pos: Vec2;
+  yaw: number;
+  y?: number;
+}
+
+/** A level's save points, in order: none, its one, or its several. */
+export function savesOf(level: Pick<LevelDef, 'save'>): SaveDesc[] {
+  return level.save === undefined ? [] : Array.isArray(level.save) ? level.save : [level.save];
 }

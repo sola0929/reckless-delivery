@@ -136,12 +136,11 @@ export function outerHarbour(relief: Relief, looks: { quay: Look; water: Look; r
     for (let z = OUT_RAMP.z0 + 2; z < OUT_RAMP.z1 - 1; z += 2) box(x + Math.sign(x - OUT_RAMP.x0 - 3) * 0.21 - 0.02, 0, z - 0.02, x + Math.sign(x - OUT_RAMP.x0 - 3) * 0.21 + 0.02, Math.max(0.2, rampAt(z) - 0.1), z + 0.02, 0x8c8c84, { ghost: true });
   }
   for (const z of [OUT_RAMP.z1 + 0.6, OUT_RAMP.z1 + 2.8]) box(OUT_RAMP.x0, 0.008, z, OUT_RAMP.x1, 0.014, z + 0.12, 0xd8b02a, { ghost: true });
-  // Washed up the ramp's lower half by the waves coming over the quay: a net in a heap on the west, a log along the
-  // east rail, floats and polystyrene between and the odd tyre; weed left in lines where the water stopped.
+  // Washed up the ramp's lower half by the waves coming over the quay: a net in a heap on the west, floats and polystyrene
+  // about it and the odd tyre; weed left in lines where the water stopped.
   {
     const slope = Math.atan2(OUT_RAMP.h, OUT_RAMP.z1 - OUT_RAMP.z0);
     object('netHeap', OUT_RAMP.x0 + 1.5, 417.5, 0.6, rampAt(417.5), { tilt: slope });
-    object('driftwood', OUT_RAMP.x1 - 0.8, 422.4, 0.12, rampAt(422.4), { tilt: slope });
     for (const [x, z] of [[-44.2, 414.6], [-42.6, 419.2], [-45.4, 421.6], [-43.4, 425.8], [-46.2, 426.2], [-41.8, 413.2]]) object('buoy', x, z, x, rampAt(z));
     for (const [x, z, a] of [[-43.1, 416.6, 0.4], [-45.9, 412.4, 1.9], [-42.2, 426.4, 2.8]] as const) object('foamBox', x, z, a, rampAt(z), { tilt: slope });
     object('tyre', -44.6, 410.8, 0.3, rampAt(410.8));
@@ -180,7 +179,7 @@ export function outerHarbour(relief: Relief, looks: { quay: Look; water: Look; r
   // A boat hauled out on the hard: up on its keel blocks and props, the boat lift standing over it with its slings still
   // under it, the work on its hull half done.
   const hauled = add({ kind: 'float', hull: 'vessel', pos: [-96, 3.1, 432], yaw: Math.PI / 2, half: [3.4, 0, 9], period: 1, phase: 0,
-    parts: fishingBoat({ w: 3.4, l: 9, color: 0x3f9a94, kind: 'trawl', gaps: [], gear: 5.4, hold: -2.6 }) });
+    parts: fishingBoat({ w: 3.4, l: 9, color: 0x3f9a94, kind: 'trawl', gaps: [[-1, 0]], gear: 5.4, hold: -2.6 }) });
   void hauled;
   for (const x of [-102, -98, -94, -90]) {
     box(x - 0.5, 0, 431.4, x + 0.5, 0.55, 432.6, 0x6e5a42);
@@ -194,9 +193,55 @@ export function outerHarbour(relief: Relief, looks: { quay: Look; water: Look; r
   }
   for (const z of [426.5, 437.5]) box(-104.5, 7.8, z - 0.3, -87.5, 8.4, z + 0.3, LIFT, UP);
   for (const x of [-100, -92]) for (const s of [-1, 1]) rod([x, 7.6, 432 + s * 5.5], [x, 0.9, 432 + s * 2.9], 0.04, 0x2a2c30, { ghost: true });
-  object('ladder', -93.6, 435.2, 0.3);
-  object('paintPail', -95, 435.6);
-  object('paintPail', -94.4, 436.1, 1);
+  object('ladder', -100, 435.3, 0.3);
+  object('paintPail', -99.4, 436.3);
+  object('paintPail', -100.6, 436.6, 1);
+  // The yard's work stage up its side to the gap in its bulwark, at its deck's height: a landing of planks on scaffold
+  // tubes, a steel stair down from it along the hull, yellow at each tread's edge; rails round. Solid, to be climbed.
+  {
+    const DECK_Y = 3.1, Z0 = 435.55, Z1 = 437.05, X0 = -97.6, X1 = -94.4, FOOT = X1 + DECK_Y / 0.84;
+    const TUBE = 0x9aa0a6, PLANK = 0x9a7a50, NOSE = 0xe8b820, SEEN = { ghost: true, fade: true } as const;
+    box(X0, DECK_Y - 0.1, Z0, X1, DECK_Y, Z1, PLANK, { fade: true });
+    for (let x = X0 + 0.25; x < X1; x += 0.25) box(x - 0.01, DECK_Y, Z0, x + 0.01, DECK_Y + 0.004, Z1, 0x6e5a42, { ghost: true });
+    for (const x of [X0 + 0.05, X1 - 0.05]) for (const z of [Z0 + 0.05, Z1 - 0.05]) rod([x, 0, z], [x, DECK_Y + 1, z], 0.04, TUBE);
+    for (const y of [0.9, 2.0]) rod([X0 + 0.05, y, Z1 - 0.05], [X1 - 0.05, y, Z1 - 0.05], 0.03, TUBE, { ghost: true });
+    const long = Math.hypot(FOOT - X1, DECK_Y), n = Math.round(DECK_Y / 0.3), mid = (Z0 + Z1) / 2;
+    props.push({ shape: 'box', size: [long / 2, 0.05, (Z1 - Z0) / 2], pos: [(X1 + FOOT) / 2, DECK_Y / 2 - 0.1, mid], rot: [0, 0, -Math.atan2(DECK_Y, FOOT - X1)], color: 0x6f767c, fade: true });
+    for (let i = 1; i < n; i++) {
+      const x = X1 + ((FOOT - X1) * i) / n, y = DECK_Y - (DECK_Y * i) / n;
+      box(x - 0.13, y - 0.04, Z0 + 0.05, x + 0.13, y, Z1 - 0.05, 0x8a9298, SEEN);
+      box(x + 0.1, y - 0.045, Z0 + 0.05, x + 0.16, y + 0.005, Z1 - 0.05, NOSE, { ghost: true });
+    }
+    // Its rails: along the stair both sides, round the landing's open sides; the top ones solid.
+    const rail = (a: Vec3, b: Vec3) => {
+      rod([a[0], a[1] + 1, a[2]], [b[0], b[1] + 1, b[2]], 0.025, NOSE, { fade: true });
+      rod([a[0], a[1] + 0.5, a[2]], [b[0], b[1] + 0.5, b[2]], 0.018, NOSE, { ghost: true });
+      const m = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / 1.3));
+      for (let k = 0; k <= m; k++) {
+        const t = k / m;
+        rod([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t], [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t + 1, a[2] + (b[2] - a[2]) * t], 0.02, NOSE, { ghost: true });
+      }
+    };
+    for (const z of [Z0 + 0.03, Z1 - 0.03]) rail([X1, DECK_Y, z], [FOOT, 0, z]);
+    rail([X0, DECK_Y, Z1 - 0.03], [X1, DECK_Y, Z1 - 0.03]);
+    rail([X0 + 0.03, DECK_Y, Z0], [X0 + 0.03, DECK_Y, Z1]);
+    box(FOOT - 0.1, 0, Z0, FOOT + 0.5, 0.05, Z1, 0x9a9c98, { ghost: true });
+  }
+  // On its deck by the wheelhouse, what the crew left stacked: fish boxes two high and four high against its side, and up
+  // on the ledge round its upper tier a crate; one onto the next, a jump each, up onto its roof. Where on the boat, as it
+  // lies: across it, up from its deck, along it from its middle.
+  {
+    const onBoat = (x: number, y: number, z: number): Vec3 => [-96 + z, 3.1 + y, 432 - x];
+    const crate = (x: number, z: number, y0: number, y1: number, halfX: number, halfZ: number, color: number) => {
+      const [wx, wy0, wz] = onBoat(x, y0, z);
+      box(wx - halfZ, wy0, wz - halfX, wx + halfZ, wy0 + (y1 - y0), wz + halfX, color);
+    };
+    const FISH = [0x2f6ab8, 0xc8372d, 0xe8b82e, 0x2f6ab8];
+    for (let k = 0; k < 2; k++) crate(-2.75, -4.6, k * 0.3, k * 0.3 + 0.29, 0.3, 0.35, FISH[(k + 1) % 4]);
+    for (let k = 0; k < 4; k++) crate(-2.75, -5.4, k * 0.3, k * 0.3 + 0.29, 0.3, 0.35, FISH[k]);
+    crate(-1.82, -6.2, 2.3, 3.1, 0.25, 0.32, 0x9a7a50);
+    crate(-1.82, -6.2, 3.1, 3.12, 0.26, 0.33, 0x7a5f3c);
+  }
 
   // The boats' fuel, at the quay's edge: the attendant's booth, its pump and hose to the water, the tanks behind a fence.
   box(-71.6, 0, 444, -68.4, 2.6, 446.6, 0xf2f0ea);
@@ -237,7 +282,7 @@ export function outerHarbour(relief: Relief, looks: { quay: Look; water: Look; r
   for (const z of [406, 418, 430, 448]) bollard(QUAY.x1 - 1.1, z);
   for (let x = QUAY.x0 + 3; x < QUAY.x1; x += 3.6) props.push({ shape: 'cylinder', size: [0.4, 0.13, 0], pos: [x, -0.55, QUAY.z1 + 0.15], rot: [Math.PI / 2, 0, 0], color: 0x1e1f22, ghost: true });
   // Lamps along the quay's edge.
-  for (const x of [-112, -92, -56, -38]) object('lamp', x, QUAY.z1 - 2.2, Math.PI);
+  for (const x of [-112, -92, -64, -38]) object('lamp', x, QUAY.z1 - 2.2, Math.PI);
 
   // Boats along the quay's edge, in for the storm, made fast to its bollards, doubled lines; at the fuel berth one taking
   // on fuel. None where the way comes round toward the edge.
@@ -310,8 +355,9 @@ export function outerHarbour(relief: Relief, looks: { quay: Look; water: Look; r
   box(LORRY.x - 0.25, 1.25, LORRY.z - 4.4, LORRY.x + 0.25, 3.1, LORRY.z - 4.0, 0x5f666c, { ghost: true });
   for (const [dz, c] of [[-2.6, 0x3f6a4a], [-0.6, 0x2f62a8]]) box(LORRY.x - 1.1, 1.25, LORRY.z + dz - 0.9, LORRY.x + 1.1, 2.05, LORRY.z + dz + 0.9, c, { ghost: true });
   for (const side of [-1, 1]) box(LORRY.x + side * 1.3, 0, LORRY.z + 0.6, LORRY.x + side * 2.1, 0.12, LORRY.z + 1.2, 0x5f666c);
-  props.push({ shape: 'box', size: [4, 0.03, 3], pos: [-57, 2.5, 447], rot: [0.08, 0, 0.03], color: 0x2e8a5a, ...UP });
-  for (const [x, z] of [[-60.6, 444.4], [-53.4, 444.4], [-60.6, 449.6], [-53.4, 449.6]]) rod([x, 0, z], [x, z > 447 ? 2.25 : 2.7, z], 0.05, 0x8a8f96);
+  // Its poles going over outward; its sheet, in quarters edge to edge on their tops, only let down off them.
+  for (const [x, z] of [[-60.6, 444.4], [-53.4, 444.4], [-60.6, 449.6], [-53.4, 449.6]] as const) object(z < 447 ? 'tarpPoleTall' : 'tarpPole', x, z, 0, 0, { lean: [Math.sign(x + 57) * 0.5, Math.sign(z - 447) * 0.4] });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) object(sz < 0 ? 'tarpPanelFront' : 'tarpPanelBack', -57 + sx * 2, 447 + sz * 1.5, 0, 2.5 - sz * 1.5 * 0.087, { lean: [0, 0] });
   object('table', -57, 447);
   for (const [x, z, a] of [[-58.2, 447.2, 1.2], [-55.9, 446.5, -1.5]]) object('stool', x, z, a);
   object('gasCylinder', -59.6, 448.6);

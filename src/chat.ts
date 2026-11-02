@@ -77,7 +77,7 @@ export class Chat {
   place(index: number): void {
     const spot = this.desc.places?.[index];
     if (!spot || this.used.has(spot.talk)) return;
-    this.queue.push({ cue: 'place', place: index, left: WAIT });
+    this.queue.push({ cue: 'place', place: index, left: spot.wait ?? WAIT });
   }
 
   /** No longer worth saying, if it is still waiting: the truck has moved on, or is past the place. */

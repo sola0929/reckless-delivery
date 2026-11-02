@@ -4,6 +4,8 @@ import type { Driver } from '../sim/driver';
 
 const ARC_POINTS = 22;
 const GRAVITY = new THREE.Vector3(0, -9.81, 0);
+/** How much of its own colour the figure shows in the dark, without any light on it. */
+const DARK_GLOW = 0.28;
 
 /** A capsule limb hanging from a pivot at its top, so rotating the pivot swings it. */
 function limb(radius: number, length: number, material: THREE.Material): THREE.Group {
@@ -28,6 +30,11 @@ export class DriverView {
   private readonly arc: THREE.InstancedMesh;
   private readonly landing: THREE.Mesh;
   private readonly leash: THREE.LineLoop;
+  /** A headlamp on the cap, worn only in the dark; its glass, lit when it is on. */
+  readonly lamp = new THREE.Group();
+  private readonly glass = new THREE.MeshBasicMaterial({ color: 0x3a3a36 });
+  /** What the figure is made of, and the colour of each: in the dark, a little of its own light. */
+  private readonly worn: THREE.MeshStandardMaterial[];
   private phase = 0;
   private lift = 0;
   private tuck = 0;
@@ -51,6 +58,20 @@ export class DriverView {
       part.castShadow = true;
       this.torso.add(part);
     }
+    // The headlamp: its strap round the cap, the lamp at the front of the crown above the peak, tipped down a little.
+    const black = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.6 });
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.272, 0.022, 6, 28).rotateX(Math.PI / 2), black);
+    strap.position.y = 1.6;
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.08), black);
+    housing.position.set(0, 1.63, 0.29);
+    housing.rotation.x = 0.35;
+    const glass = new THREE.Mesh(new THREE.CircleGeometry(0.04, 14), this.glass);
+    glass.position.set(0, 1.62, 0.334);
+    glass.rotation.x = 0.35;
+    this.lamp.add(strap, housing, glass);
+    this.lamp.visible = false;
+    this.torso.add(this.lamp);
+    this.worn = [skin, cloth];
 
     for (const side of [1, -1]) {
       const arm = limb(0.085, 0.42, skin);
@@ -95,6 +116,16 @@ export class DriverView {
       aid.visible = false;
       scene.add(aid);
     }
+  }
+
+  /**
+   * In the dark (0 to 1, by how dark): the headlamp on, and the figure a little lit of itself, as if by what the lamp throws
+   * back, so whoever is played is never only a black shape.
+   */
+  inTheDark(k: number): void {
+    this.lamp.visible = k > 0.01;
+    this.glass.color.setHex(k > 0.5 ? 0xfff6e0 : 0x3a3a36);
+    for (const m of this.worn) m.emissive.copy(m.color).multiplyScalar(DARK_GLOW * k);
   }
 
   update(dt: number, driver: Driver, truck: THREE.Vector3): void {

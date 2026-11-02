@@ -1,14 +1,14 @@
-// The save point on each level, headless: short of it, hurt one item, wreck another, throw a third off; drive through the
+// Each save point on each level, headless: short of it, hurt one item, wreck another, throw a third off; drive through the
 // save point; then lose everything and go back to it. The load must come back as it was saved, worth what it was then.
 // npx tsx dev/save-check.ts [level ...]
 import { LEVELS } from '../src/levels';
 import { Sim } from '../src/sim/sim';
+import { savesOf } from '../src/levels/types';
 
 const ids = process.argv.slice(2).length ? process.argv.slice(2) : ['hillcity', 'uptown', 'quarry'];
 const park = { throttle: 0, steer: 0, handbrake: true };
-for (const id of ids) {
+for (const id of ids) for (const [k, save] of savesOf(LEVELS[id]()).entries()) {
   const level = LEVELS[id]();
-  const save = level.save!;
   const sim = await Sim.create({ ...level, crowds: [] });
   const [x0, z0, x1, z1] = save.zone;
   const mid = [(x0 + x1) / 2, (z0 + z1) / 2];
@@ -34,7 +34,7 @@ for (const id of ids) {
     saved = sim.takeSaved();
   }
   for (let i = 0; i < 60; i++) sim.step(park);
-  console.log(`${id}: saved before the zone ${before}; saved driving in ${saved}: ${describe()}`);
+  console.log(`${id} #${k + 1}: saved before the zone ${before}; saved driving in ${saved}: ${describe()}`);
   for (const item of items) item.body?.setTranslation({ x: mid[0] + 60, y: 40, z: mid[1] }, true);
   for (let i = 0; i < 30; i++) sim.step(park);
   console.log(`  everything thrown off: $${Math.round(sim.cargoValue())}`);

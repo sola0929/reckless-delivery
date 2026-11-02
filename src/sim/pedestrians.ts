@@ -55,6 +55,8 @@ const HELMET = [0x2f4a5c, 0x7a4424];
 const DASH_SPEED = 5;
 /** The truck has to be going at least this fast to send someone flying, or to scare them. */
 const HIT_SPEED = 1.5;
+/** How far above their feet the truck's middle may be, metres, and still run into them or scare them off: about a metre on the same ground. */
+const REACH = [-1.5, 3];
 const SCARE_SPEED = 3;
 /** Nobody on foot comes nearer than this to a truck that is standing or crawling, metres from its sides. */
 const BERTH = 1.7;
@@ -66,7 +68,11 @@ const HALF_WIDTH = TRUCK.frame.half[0] + 0.3;
 const HALF_LENGTH = TRUCK.frame.half[2] + 0.3;
 const G = -PHYSICS.gravity;
 const q = new Quaternion();
+const turned = new Quaternion();
 const local = new Vector3();
+const step = new Vector3();
+/** How far out from the truck's side someone standing in its way steps, metres. */
+const STEP_ASIDE = 0.6;
 
 /**
  * People milling about in set areas. They are not solid: the truck doesn't stop for them or
@@ -137,6 +143,12 @@ export class Pedestrians {
     const tv = truck.body.linvel();
     const truckSpeed = Math.hypot(tv.x, tv.z);
     q.set(r.x, r.y, r.z, r.w).invert();
+    turned.set(r.x, r.y, r.z, r.w);
+    /** Whether a place on the ground is where the truck stands. */
+    const underTruck = (x: number, z: number) => {
+      step.set(x - t.x, 0, z - t.z).applyQuaternion(q);
+      return Math.abs(step.x) < HALF_WIDTH && Math.abs(step.z) < HALF_LENGTH;
+    };
     this.fresh = [];
     this.clock += dt;
 
@@ -156,9 +168,12 @@ export class Pedestrians {
         continue;
       }
 
+      // Only the truck on their own level reaches them: not one on a roof over their heads, or a floor above them.
+      const above = t.y - p.pos.y;
+      const reach = above > REACH[0] && above < REACH[1];
       // Under the truck's wheels: thrown ahead of it and to whichever side they were nearer.
       local.set(p.pos.x - t.x, 0, p.pos.z - t.z).applyQuaternion(q);
-      if (truckSpeed > HIT_SPEED && Math.abs(local.x) < HALF_WIDTH && Math.abs(local.z) < HALF_LENGTH) {
+      if (reach && truckSpeed > HIT_SPEED && Math.abs(local.x) < HALF_WIDTH && Math.abs(local.z) < HALF_LENGTH) {
         const side = local.x < 0 ? -1 : 1;
         // Sideways relative to the way the truck is travelling.
         const sx = (tv.z / truckSpeed) * side;
@@ -177,7 +192,7 @@ export class Pedestrians {
       // path. The moment is what catches them out. A slow truck gives them plenty of time;
       // a fast one arrives before they have moved.
       let threatened = false;
-      if (p.state !== 'flee' && truckSpeed > SCARE_SPEED && p.crowd.dance === undefined) {
+      if (reach && p.state !== 'flee' && truckSpeed > SCARE_SPEED && p.crowd.dance === undefined) {
         const dx = p.pos.x - t.x;
         const dz = p.pos.z - t.z;
         const along = (dx * tv.x + dz * tv.z) / truckSpeed;
@@ -192,6 +207,15 @@ export class Pedestrians {
         }
       }
       if (!threatened) p.alarm = 0;
+
+      // The truck is solid to them as well: one it has crept up onto, or stopped on, steps out from under it to its nearer
+      // side; and nobody walks into it (below).
+      const inWay = reach && Math.abs(local.x) < HALF_WIDTH && Math.abs(local.z) < HALF_LENGTH;
+      if (inWay && truckSpeed <= HIT_SPEED && (p.state === 'wait' || p.state === 'walk') && !p.bus && !p.crowd.charge && p.crowd.dance === undefined) {
+        step.set(Math.sign(local.x || 1) * (HALF_WIDTH + STEP_ASIDE), 0, local.z).applyQuaternion(turned);
+        p.target.set(t.x + step.x, p.pos.y, t.z + step.z);
+        p.state = 'walk';
+      }
 
       // Soldiers only, and nobody in a city: a truck standing, or crawling, is not walked up to,
       // and whoever it has stopped beside moves off, so that it does not run them down the
@@ -261,7 +285,7 @@ export class Pedestrians {
       }
       const nextX = p.pos.x + (dx / left) * pace * dt;
       const nextZ = p.pos.z + (dz / left) * pace * dt;
-      if ((this.ground && Math.abs(this.ground(nextX, nextZ) + (p.crowd.raised ?? 0) - p.pos.y) > 0.6) || this.keepOut.some(([x0, z0, x1, z1]) => nextX > x0 && nextX < x1 && nextZ > z0 && nextZ < z1)) {
+      if ((this.ground && Math.abs(this.ground(nextX, nextZ) + (p.crowd.raised ?? 0) - p.pos.y) > 0.6) || this.keepOut.some(([x0, z0, x1, z1]) => nextX > x0 && nextX < x1 && nextZ > z0 && nextZ < z1) || (reach && !inWay && underTruck(nextX, nextZ))) {
         p.state = 'wait';
         p.timer = 0.6;
         p.speed = 0;

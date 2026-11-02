@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { surfaceTexture } from './textures';
 import { mulberry32 } from '../levels/sandbox';
 import { heightAt } from '../levels/terrain';
-import type { GateDesc, PropDesc, SignDesc, SlickDesc } from '../levels/types';
+import { type GateDesc, type PropDesc, type SignDesc, type SlickDesc, savesOf } from '../levels/types';
 import type { Sim } from '../sim/sim';
 import { TRAIN_HALF } from '../sim/trains';
 import { Birds } from './birdsView';
@@ -31,6 +31,8 @@ interface Fader {
   overhead?: boolean;
   /** Its box is a zone set by the level: faded too while the camera is inside it. */
   zone?: boolean;
+  /** A room it closes in: while what is followed is inside it, not drawn at all when in the way. */
+  room?: THREE.Box3;
 }
 
 const LIVERIES = [0xd8483a, 0x2f6fb0, 0xe0a020, 0x3f8f5f, 0x8a4fa0, 0xd06a2a];
@@ -448,7 +450,7 @@ const UNIT = {
  * Scenery that never moves or fades, drawn as one instanced mesh per shape. A city has
  * thousands of these (trees, pavements, fences), far too many to draw one by one.
  */
-function staticProps(props: PropDesc[]): THREE.InstancedMesh[] {
+function staticProps(props: PropDesc[], glow = false): THREE.InstancedMesh[] {
   const matrix = new THREE.Matrix4();
   const rotation = new THREE.Quaternion();
   const euler = new THREE.Euler();
@@ -461,7 +463,7 @@ function staticProps(props: PropDesc[]): THREE.InstancedMesh[] {
   return kinds.flatMap(([shape, texture]) => {
     const group = props.filter((p) => p.shape === shape && p.texture === texture);
     if (!group.length) return [];
-    const mesh = new THREE.InstancedMesh(UNIT[shape](), new THREE.MeshStandardMaterial({ roughness: 0.85, map: texture ? surfaceTexture(texture) : null }), group.length);
+    const mesh = new THREE.InstancedMesh(UNIT[shape](), glow ? new THREE.MeshBasicMaterial() : new THREE.MeshStandardMaterial({ roughness: 0.85, map: texture ? surfaceTexture(texture) : null }), group.length);
     group.forEach((p, i) => {
       const [a, b, c] = p.size;
       if (shape === 'box' || shape === 'sphere') scale.set(a, b, c);
@@ -726,7 +728,8 @@ export class LevelView {
   private lids: { desc: { area: [number, number, number, number]; below: number }; group: THREE.Group }[] = [];
   private readonly finishGlow: THREE.Mesh | null = null;
   /** The save point's frame on the ground and posts at its corners: blue and pulsing until passed, grey after. */
-  private readonly saveMark: THREE.MeshBasicMaterial | null = null;
+  /** Each save point's frame and posts, one material to each. */
+  private readonly saveMarks: THREE.MeshBasicMaterial[] = [];
   /** One pair of materials per railway track: the lamps and the panels that show its signal. */
   private readonly signals: { lamp: THREE.MeshBasicMaterial; panel: THREE.MeshBasicMaterial }[] = [];
   private readonly gates: Gate[] = [];
@@ -755,7 +758,8 @@ export class LevelView {
     this.lids = (sim.level.lids ?? []).map((desc) => ({ desc, group: new THREE.Group() }));
     for (const lid of this.lids) scene.add(lid.group);
     const plain = props.filter((p) => p.mass === undefined && !p.fade && !p.cutaway && !p.paving && !p.vehicle);
-    for (const mesh of staticProps(plain.filter((p) => lidOf(p) < 0))) scene.add(mesh);
+    for (const mesh of staticProps(plain.filter((p) => lidOf(p) < 0 && !p.glow))) scene.add(mesh);
+    for (const mesh of staticProps(plain.filter((p) => lidOf(p) < 0 && p.glow), true)) scene.add(mesh);
     this.lids.forEach((lid, k) => { for (const mesh of staticProps(plain.filter((p) => lidOf(p) === k))) lid.group.add(mesh); });
     for (const p of props) {
       if (!p.vehicle) continue;
@@ -930,10 +934,10 @@ export class LevelView {
       scene.add(this.finishGlow);
     }
 
-    const save = sim.level.save;
-    if (save) {
+    for (const save of savesOf(sim.level)) {
       // Not like the bay's glowing box: a dashed frame painted on the road, and a thin post at each corner.
-      this.saveMark = new THREE.MeshBasicMaterial({ color: SAVE_COLOR, transparent: true, opacity: 0.8, depthWrite: false });
+      const mark = new THREE.MeshBasicMaterial({ color: SAVE_COLOR, transparent: true, opacity: 0.8, depthWrite: false });
+      this.saveMarks.push(mark);
       const [x0, z0, x1, z1] = save.zone;
       // On whatever is there to be driven on: the ground, or up on a roof, what is drawn of the roof, its slopes and all.
       const solid = scene.children.filter((o) => o instanceof THREE.Mesh || o instanceof THREE.Group);
@@ -958,14 +962,14 @@ export class LevelView {
         for (let i = 0; i < count; i++) {
           const t = (i + 0.5) / count;
           const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-          const mesh = new THREE.Mesh(dash, this.saveMark!);
+          const mesh = new THREE.Mesh(dash, mark);
           mesh.position.set(x, ground(x, z) + 0.08, z);
           mesh.rotation.y = -Math.atan2(bz - az, bx - ax);
           onto.add(mesh);
         }
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6), this.saveMark!);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6), mark);
         post.position.set(ax, ground(ax, az) + 1.6, az);
-        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), this.saveMark!);
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mark);
         lamp.position.set(ax, ground(ax, az) + 3.4, az);
         onto.add(post, lamp);
       });
@@ -1045,11 +1049,11 @@ export class LevelView {
       this.finishGlow.visible = !this.sim.finishShut;
       (this.finishGlow.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(this.time * 3) * 0.07;
     }
-    if (this.saveMark) {
-      const passed = this.sim.hasSave;
-      this.saveMark.color.set(passed ? SAVE_PASSED : SAVE_COLOR);
-      this.saveMark.opacity = passed ? 0.35 : 0.65 + Math.sin(this.time * 4) * 0.25;
-    }
+    this.saveMarks.forEach((mark, k) => {
+      const passed = k <= this.sim.savedAt;
+      mark.color.set(passed ? SAVE_PASSED : SAVE_COLOR);
+      mark.opacity = passed ? 0.35 : 0.65 + Math.sin(this.time * 4) * 0.25;
+    });
 
     // Signals: flashing red while a train is due, steady green otherwise.
     const flash = Math.sin(this.time * 14) > 0;
@@ -1086,7 +1090,7 @@ export class LevelView {
       const point = this.ray.intersectBox(f.box, this.hit);
       const blocking = (point !== null && point.distanceTo(camera.position) < reach) || (f.zone === true && f.box.containsPoint(camera.position));
       const cut = f.cut !== undefined && f.cut > truck.y + CUT_ABOVE;
-      const target = cut ? 0 : blocking ? (f.overhead ? OVERHEAD_OPACITY : FADED_OPACITY) : 1;
+      const target = cut ? 0 : blocking ? (f.room?.containsPoint(truck) ? 0 : f.overhead ? OVERHEAD_OPACITY : FADED_OPACITY) : 1;
       if (f.opacity === target) continue;
       f.opacity += (target - f.opacity) * ease;
       if (Math.abs(f.opacity - target) < 0.01) f.opacity = target;
@@ -1163,6 +1167,7 @@ export class LevelView {
       overhead: desc.overhead,
       zone: desc.fadeZone !== undefined,
       cut: desc.cutaway ? y - (desc.rot ? Math.max(hx, hy, hz) * Math.abs(Math.sin(desc.rot[0])) + hy : hy) : undefined,
+      room: desc.openFrom && new THREE.Box3(new THREE.Vector3(...desc.openFrom[0]), new THREE.Vector3(...desc.openFrom[1])),
     };
   }
 

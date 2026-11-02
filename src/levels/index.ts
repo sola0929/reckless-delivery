@@ -48,7 +48,7 @@ export const LEVEL_LIST: LevelEntry[] = [
   { id: 'hillcity', name: '城市配送', badge: '1', note: '穿過市區，把一車貨送到卸貨區', ready: true, previews: ['市場小路', '機車車陣', '平交道', '路邊辦桌'], load: [18, 4000], hidden: ['amp', 'bicycle', 'aircon'] },
   { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500], hidden: ['stockpot', 'riceCooker', 'lightbox'] },
   { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000], hidden: ['megaphone', 'toolbox', 'radio'] },
-  { id: 'harbour', name: '風雨漁港', badge: '4', note: '颱風天的漁港：繞過翻覆的漁船、穿過停電的市場、翻上屋頂，從製冰廠出港，跳過並排的漁船，送上冷凍運搬船', ready: true, previews: ['颱風天的老街', '停電的市場', '市場屋頂', '並排的漁船'] },
+  { id: 'harbour', name: '風雨漁港', badge: '4', note: '颱風天的漁港：繞過翻覆的漁船、穿過停電的市場、翻上屋頂，從製冰廠出港，跳過並排的漁船，送上冷凍運搬船', ready: true, previews: ['颱風天的老街', '停電的市場', '市場屋頂', '並排的漁船'], hidden: ['captainCap', 'telescope', 'shipBell'] },
 ];
 
 /** The tutorial: before the deliveries, never in the way of them. */

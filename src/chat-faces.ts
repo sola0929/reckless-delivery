@@ -57,4 +57,19 @@ export const FACES = {
     <path d="M23 9.5h2v10.5h-2z" fill="#e6b400"/>
     <path d="M17 25h4M27 25h4" stroke="#2b2b2b" stroke-width="2" stroke-linecap="round"/>
     <path d="M20.5 32h7" stroke="#4a3a30" stroke-width="1.6" stroke-linecap="round"/>`),
+  // The reefer's captain, on a lifebuoy's red: weathered and brown, a full white beard, the white peaked cap with its black
+  // peak and gold badge, a navy jacket with gold buttons.
+  captain: wrap('#d9534a', `
+    <path d="M8 48c1-10 8-14 16-14s15 4 16 14z" fill="#1f2e4a"/>
+    <path d="M24 35v13" stroke="#16223a" stroke-width="1.2"/>
+    <circle cx="21" cy="42" r="1.1" fill="#e8b830"/><circle cx="21" cy="46" r="1.1" fill="#e8b830"/>
+    <circle cx="24" cy="25" r="11" fill="#c48a5c"/>
+    <path d="M13.2 26c0 8 4.5 12.5 10.8 12.5S34.8 34 34.8 26c-1.5 2-3 3-5 3.3-1.6-1.4-3.6-2-5.8-2s-4.2.6-5.8 2c-2-.3-3.5-1.3-5-3.3z" fill="#eeeae2"/>
+    <path d="M20.5 32.4q3.5 1.4 7 0" stroke="#7a4b3a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <path d="M17 23.8l4.5.3M31 23.8l-4.5.3" stroke="#e6e2da" stroke-width="2.2" stroke-linecap="round"/>
+    ${eyes(26.6)}
+    <path d="M10.5 18.5c0-6 6-9.5 13.5-9.5s13.5 3.5 13.5 9.5z" fill="#f6f6f2"/>
+    <path d="M11 18h26v2.4H11z" fill="#1c1c22"/>
+    <path d="M13 20.4h22q-1 3.2-11 3.2q-10 0-11-3.2z" fill="#1c1c22"/>
+    <circle cx="24" cy="15" r="2.4" fill="#e8b830"/>`),
 };

@@ -6,7 +6,8 @@ import type { OutageDesc } from '../levels/types';
 // What glows on its own in there, the stalls' names, the bulbs, goes dark with the rest. The emergency lights on their
 // rods come on and the exit signs glow green, pointing the way out: only to be seen, lighting nothing, a soft glow round
 // each. The work light behind the cab comes on over the load, and only the load. The beams of the headlights are seen in
-// the damp air. At the back door, under its shutter, the grey daylight outside.
+// the damp air. At the back door, under its shutter, the grey daylight outside. Out of the truck in the dark, the driver has
+// a headlamp on, shining where they face.
 
 /** How dark: what is left of the daylight inside, as a share. */
 const LEFT = 0.012;
@@ -23,6 +24,10 @@ const SHAFT = { long: 11, wide: 2.4, opacity: 0.14 };
 const DAYLIGHT = 0.45;
 /** The headlights: how bright, how far they reach, how wide, where on the truck's front. */
 const BEAM = { intensity: 900, reach: 30, angle: 0.55, penumbra: 0.45, decay: 1.5, at: [0.85, 0.35, 3.75] as const };
+/** The headlamp on foot: how bright, how far it reaches, how wide; where it shines from and where it is aimed, both as the lamp is. */
+const TORCH = { intensity: 70, reach: 12, angle: 0.4, penumbra: 0.85, decay: 1.5, at: [0, 1.62, 0.36] as const, on: [0, -0.2, 7] as const };
+/** Its beam seen in the air: how long, how wide at its end, how bright. */
+const TORCH_SHAFT = { long: 6, wide: 1.0, opacity: 0.05 };
 
 export class OutageView {
   private readonly hemisphere: THREE.HemisphereLight | null;
@@ -33,8 +38,12 @@ export class OutageView {
   private readonly beams: THREE.SpotLight[] = [];
   private readonly work: THREE.SpotLight;
   private readonly shafts: THREE.MeshBasicMaterial;
+  /** The headlamp's light, kept in the scene and only turned down while it is not wanted: a light coming and going costs a pause. */
+  private readonly torch: THREE.SpotLight;
+  private readonly torchShaft: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
   /** The glows round the emergency lights and exit signs; the daylight at the doors. */
-  private readonly halos: THREE.SpriteMaterial[] = [];
+  /** Each glow, and how strong it is at its darkest. */
+  private readonly halos: { material: THREE.SpriteMaterial; strength: number }[] = [];
   private readonly daylight: THREE.MeshBasicMaterial[] = [];
   private readonly lenses: THREE.MeshBasicMaterial;
   private readonly heads: THREE.MeshBasicMaterial;
@@ -112,6 +121,13 @@ export class OutageView {
     this.work.position.set(...WORK.at);
     this.work.target.position.set(0, 0.4, -2.6);
     truck.add(this.work, this.work.target);
+    // The headlamp's light, and its beam in the air, put where the lamp is each frame.
+    this.torch = new THREE.SpotLight(0xfff1d6, 0, TORCH.reach, TORCH.angle, TORCH.penumbra, TORCH.decay);
+    scene.add(this.torch, this.torch.target);
+    const shaft = new THREE.MeshBasicMaterial({ map: fadeTexture(0.25), color: 0xfff1d6, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    this.torchShaft = new THREE.Mesh(new THREE.ConeGeometry(TORCH_SHAFT.wide, TORCH_SHAFT.long, 16, 1, true).translate(0, -TORCH_SHAFT.long / 2, 0).rotateX(-Math.PI / 2), shaft);
+    this.torchShaft.renderOrder = 2;
+    scene.add(this.torchShaft);
     // At each door out, its shutter part down, the daylight: seen from in the dark, the fog not over it.
     for (const { pos, rotY, wide, high } of desc.daylight) {
       const light = new THREE.MeshBasicMaterial({ color: 0x9aa6b0, transparent: true, opacity: 0, fog: false, depthWrite: false });
@@ -155,24 +171,29 @@ export class OutageView {
 
     // The exit signs, hung over the aisles, green, a running man and its arrow, alight whether the power is on or off.
     const faces = new Map<number, THREE.MeshBasicMaterial>();
-    const edge = new THREE.MeshStandardMaterial({ color: 0xe8e8e2 });
+    // Drawn with what is see-through, after the glow behind and round it: a glow turned to the camera cuts through the sign
+    // when it is seen at an angle, and on the part of its face in front of that cut would lie over it, lighter.
+    const edge = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, transparent: true });
     for (const { pos, rotY, arrow } of desc.exits) {
       let face = faces.get(arrow);
-      if (!face) faces.set(arrow, (face = new THREE.MeshBasicMaterial({ map: exitTexture(arrow) })));
-      const sign = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.36, 0.08), [edge, edge, edge, edge, face, edge]);
+      if (!face) faces.set(arrow, (face = new THREE.MeshBasicMaterial({ map: exitTexture(arrow), transparent: true })));
+      // Big enough to be read down the aisle in the dark from behind the lorry.
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.54, 0.08), [edge, edge, edge, edge, face, edge]);
       sign.position.set(...pos);
       sign.rotation.y = rotY;
-      sign.add(this.halo(0x30e070, 1.6, [0, 0, 0.1]));
-      const hang = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 4.5 - pos[1] - 0.18, 4), rod);
-      hang.position.set(pos[0], (4.5 + pos[1] + 0.18) / 2, pos[2]);
+      sign.renderOrder = 1;
+      // Wide and strong: the sign itself covers its middle, and from behind the lorry only what shows round it reads as light.
+      sign.add(this.halo(0x30e070, 3.6, [0, 0, 0.1], 0.85));
+      const hang = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 4.5 - pos[1] - 0.27, 4), rod);
+      hang.position.set(pos[0], (4.5 + pos[1] + 0.27) / 2, pos[2]);
       scene.add(sign, hang);
     }
   }
 
   /** A soft glow, so big, round something alight: seen only in the dark. */
-  private halo(color: number, size: number, at: [number, number, number]): THREE.Sprite {
+  private halo(color: number, size: number, at: [number, number, number], strength = 0.55): THREE.Sprite {
     const material = new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.halos.push(material);
+    this.halos.push({ material, strength });
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(size, size * 0.6, 1);
     sprite.position.set(...at);
@@ -184,8 +205,8 @@ export class OutageView {
     return x > x0 - margin && x < x1 + margin && z > z0 - margin && z < z1 + margin && y < (this.desc.below ?? Infinity);
   }
 
-  /** Each frame, by where what is followed is: the truck, or the driver on foot. */
-  update(dt: number, focus: THREE.Vector3): void {
+  /** Each frame, by where what is followed is: the truck, or the driver on foot; and then, on foot, the lamp they wear. */
+  update(dt: number, focus: THREE.Vector3, lamp: THREE.Object3D | null): void {
     const inside = this.within(focus.x, focus.z, 0.5, focus.y);
     if (!inside) this.out = false;
     else if (!this.out && focus.z > this.desc.from) {
@@ -223,7 +244,20 @@ export class OutageView {
     this.heads.color.setHex(on > 0.5 ? 0xffffff : 0x8c8c88);
     this.work.intensity = WORK.intensity * on;
     this.shafts.opacity = SHAFT.opacity * on;
-    for (const halo of this.halos) halo.opacity = 0.55 * k;
+    for (const halo of this.halos) halo.material.opacity = halo.strength * k;
+    // The headlamp, out of the truck in the dark; aimed down the way they face, a little down.
+    const torch = lamp ? k : 0;
+    this.torch.intensity = TORCH.intensity * torch;
+    this.torchShaft.material.opacity = TORCH_SHAFT.opacity * torch;
+    this.torchShaft.visible = torch > 0;
+    if (lamp && torch > 0) {
+      lamp.updateWorldMatrix(true, false);
+      this.torch.position.set(...TORCH.at).applyMatrix4(lamp.matrixWorld);
+      this.torch.target.position.set(...TORCH.on).applyMatrix4(lamp.matrixWorld);
+      this.torch.target.updateMatrixWorld();
+      this.torchShaft.position.copy(this.torch.position);
+      this.torchShaft.lookAt(this.torch.target.position);
+    }
     for (const day of this.daylight) day.opacity = (day.map ? 0.3 : DAYLIGHT) * k;
   }
 
@@ -233,15 +267,20 @@ export class OutageView {
   }
 }
 
-/** Bright at one end and nothing at the other, along V: a beam fading as it goes, light fading across a floor. */
-function fadeTexture(): THREE.Texture {
+/**
+ * Bright at one end and nothing at the other, along V: a beam fading as it goes, light fading across a floor. With `from`,
+ * nothing at the very end either, coming up to its brightest that far along: a beam that starts at the eyes of whoever
+ * watches it is not to be a white blade from their head.
+ */
+function fadeTexture(from = 0): THREE.Texture {
   const canvas = document.createElement('canvas');
   canvas.width = 4;
   canvas.height = 128;
   const g = canvas.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  if (from) grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(from, 'rgba(255,255,255,1)');
+  grad.addColorStop(from + (1 - from) * 0.35, 'rgba(255,255,255,0.45)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 128);

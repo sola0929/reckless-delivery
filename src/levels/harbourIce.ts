@@ -36,6 +36,11 @@ const GALLERY = { y: 8.6, z: 347, leg: -35.5 };
 const PLANT = { x0: -96, face: ICE_YARD.x0, z0: 330, z1: 384, h: 12.5, bay: [338, 356] as [number, number] };
 /** The steel stair up its face north of the bay: the first floor's landing from z0, the second's from z1, each 1.6 long. */
 const STAIR = { z0: 356.8, z1: 363.6 };
+/**
+ * In at the second floor's door off the stair, a little room before the cold store: so deep from the face, from z0 to z1,
+ * floor to ceiling; the doorway the stair's landing comes to, from door0 to door1, the full height of the room.
+ */
+export const LOBBY = { deep: 4, z0: 361.8, z1: 366.4, y0: 8.4, y1: 11.2, door0: STAIR.z1 + 0.3, door1: STAIR.z1 + 1.3, wall: 0.25 };
 /** The dock the way comes down off, its west edge along the cold store's wall, and its height. */
 const DOCK_W = -52, DOCK_H = 1.2;
 
@@ -80,7 +85,22 @@ export function icePlant(relief: Relief, looks: { ground: Look }): IceParts {
   // brine tanks the cans freeze in, the crane over them, a rack of cans on its hook, the cans stacked, a cart of blocks.
   const F = PLANT.face, [b0, b1] = PLANT.bay, BAY_DEEP = 5;
   box(PLANT.x0, 0, PLANT.z0, F, PLANT.h, b0, WALL, { fade: true });
-  box(PLANT.x0, 0, b1, F, PLANT.h, PLANT.z1, WALL, { fade: true });
+  // North of the bay, round the little room in off the stair's top landing: below it, above it, behind it, either side,
+  // and the face either side of its doorway.
+  // The top floor round it is in pieces, so that while someone is in the room whatever of it is in the way of seeing them
+  // there is not drawn at all (see the end): its ceiling, its walls, the floor beyond them, what is on the roof over.
+  const L = LOBBY, NEAR = { x0: F - 12, z0: L.z0 - 4.5, z1: L.z1 + 5.6 };
+  const INSIDE: Partial<PropDesc> = { fade: true, openFrom: [[F - L.deep, L.y0 - 0.5, L.z0], [F + 0.1, L.y1, L.z1]] };
+  box(PLANT.x0, 0, b1, F, L.y0, PLANT.z1, WALL, { fade: true });
+  box(PLANT.x0, L.y0, b1, F, PLANT.h, NEAR.z0, WALL, { fade: true });
+  box(PLANT.x0, L.y0, NEAR.z1, F, PLANT.h, PLANT.z1, WALL, { fade: true });
+  box(PLANT.x0, L.y0, NEAR.z0, NEAR.x0, PLANT.h, NEAR.z1, WALL, { fade: true });
+  box(NEAR.x0, L.y0, NEAR.z0, F, PLANT.h, L.z0, WALL, INSIDE);
+  box(NEAR.x0, L.y0, L.z1, F, PLANT.h, NEAR.z1, WALL, INSIDE);
+  box(NEAR.x0, L.y0, L.z0, F - L.deep, PLANT.h, L.z1, WALL, INSIDE);
+  box(F - L.deep, L.y1, L.z0, F, PLANT.h, L.z1, WALL, INSIDE);
+  box(F - L.wall, L.y0, L.z0, F, L.y1, L.door0, WALL, INSIDE);
+  box(F - L.wall, L.y0, L.door1, F, L.y1, L.z1, WALL, INSIDE);
   box(PLANT.x0, 0, b0, F - BAY_DEEP, PLANT.h, b1, WALL, { fade: true });
   box(F - BAY_DEEP, 4.6, b0, F, PLANT.h, b1, WALL, { fade: true });
   for (let z = b0 + 4; z < b1 - 1; z += 4.5) box(F - 0.5, 0, z - 0.25, F, 4.6, z + 0.25, WALL_DARK);
@@ -122,7 +142,7 @@ export function icePlant(relief: Relief, looks: { ground: Look }): IceParts {
   }
   props.push({ shape: 'cylinder', size: [1.1, 1.3, 0], pos: [-90, PLANT.h + 1.3, 372], color: 0xc9ced2, fade: true });
   const signs: SignDesc[] = [
-    { kind: 'name', text: '順發製冰廠', colors: ['#1f4f9a', '#f2efe6', '#f2efe6'], wide: 14, pos: [F + 0.2, PLANT.h + 0.4, 366], rotY: Math.PI / 2 },
+    { kind: 'name', text: '順發製冰廠', colors: ['#1f4f9a', '#f2efe6', '#f2efe6'], wide: 14, pos: [F + 0.2, PLANT.h + 0.4, 375.5], rotY: Math.PI / 2 },
     { kind: 'name', text: '塊冰　碎冰　冷藏', colors: ['#c8372d', '#f2efe6', '#f2efe6'], wide: 6, pos: [F + 0.1, 3.3, 333.5], rotY: Math.PI / 2 },
   ];
 
@@ -328,22 +348,102 @@ export function icePlant(relief: Relief, looks: { ground: Look }): IceParts {
   for (const z of [PLANT.z1 - 1.8, PLANT.z1 - 1.5]) rod([F + 0.25, 3.95, z], [F + 0.25, PLANT.h + 0.6, z], 0.11, 0xe8ecee, { ghost: true });
   for (let z = b1 + 2; z < PLANT.z1 - 2; z += 3) box(F, 3.8, z - 0.04, F + 0.4, 3.85, z + 0.04, STEEL, { ghost: true });
   for (const [z, text] of [[373, '冷凍庫　一'], [378.5, '冷凍庫　二']] as const) signs.push({ kind: 'name', text, colors: ['#2a4a6a', '#f2efe6', '#f2efe6'], wide: 2.6, pos: [F + 0.2, 3.4, z], rotY: Math.PI / 2 });
-  // The stair up it: a flight up to the first floor's landing, back up to the second's; on posts.
-  const flight = (cx: number, za: number, ya: number, zb: number, yb: number) => {
-    const long = Math.hypot(zb - za, yb - ya), n = Math.round((yb - ya) / 0.3);
-    props.push({ shape: 'box', size: [0.6, 0.05, long / 2], pos: [cx, (ya + yb) / 2 - 0.1, (za + zb) / 2], rot: [Math.atan2(-(yb - ya), zb - za), 0, 0], color: STEEL, ...UP });
-    for (let i = 1; i < n; i++) box(cx - 0.55, ya + ((yb - ya) * i) / n - 0.02, za + ((zb - za) * i) / n - 0.12, cx + 0.55, ya + ((yb - ya) * i) / n, za + ((zb - za) * i) / n + 0.12, 0x7a8288, UP);
-    rod([cx + 0.58, ya + 1, za], [cx + 0.58, yb + 1, zb], 0.025, 0xd0a030, UP);
+  // The stair up it: a flight up to the first floor's landing, back up to the second's, side by side; on posts braced
+  // across. Solid, to be climbed on foot: the flights walked up as slopes under their treads, the top rails and the
+  // landings stood on. Each tread's edge painted yellow, so the way up is seen from the yard.
+  const STEPPED: Partial<PropDesc> = { fade: true };
+  const SEEN: Partial<PropDesc> = { ghost: true, fade: true };
+  const RAIL = 0xd0a030, NOSING = 0xe8b820, TREAD = 0x8a9298;
+  /** How wide each flight, and so the landings, twice that, metres. */
+  const WIDE = 1.5, OUT = F + WIDE * 2;
+  /** Rails from a to b, a post's height over them, and the posts under them so far apart: the top rail solid, the middle one only drawn. */
+  const railing = (a: Vec3, b: Vec3) => {
+    rod([a[0], a[1] + 1, a[2]], [b[0], b[1] + 1, b[2]], 0.025, RAIL, STEPPED);
+    rod([a[0], a[1] + 0.5, a[2]], [b[0], b[1] + 0.5, b[2]], 0.018, RAIL, { ghost: true });
+    const n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / 1.3));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, z = a[2] + (b[2] - a[2]) * t;
+      rod([x, y, z], [x, y + 1, z], 0.022, RAIL, { ghost: true });
+    }
   };
-  flight(F + 0.6, STAIR.z1, 0, STAIR.z0 + 1.6, 4.6);
-  flight(F + 1.8, STAIR.z0 + 1.6, 4.6, STAIR.z1, 8.4);
+  const flight = (cx: number, za: number, ya: number, zb: number, yb: number, sides: number[]) => {
+    const long = Math.hypot(zb - za, yb - ya), n = Math.round((yb - ya) / 0.3), tilt = Math.atan2(-(yb - ya), zb - za), down = Math.sign(za - zb), half = WIDE / 2;
+    props.push({ shape: 'box', size: [half, 0.05, long / 2], pos: [cx, (ya + yb) / 2 - 0.1, (za + zb) / 2], rot: [tilt, 0, 0], color: STEEL, ...STEPPED });
+    // Its stringers either side, deep channels.
+    for (const side of [-1, 1]) props.push({ shape: 'box', size: [0.04, 0.16, long / 2], pos: [cx + side * half, (ya + yb) / 2 - 0.02, (za + zb) / 2], rot: [tilt, 0, 0], color: DARK_STEEL, ...SEEN });
+    for (let i = 1; i < n; i++) {
+      const y = ya + ((yb - ya) * i) / n, z = za + ((zb - za) * i) / n;
+      box(cx - half + 0.04, y - 0.04, z - 0.13, cx + half - 0.04, y, z + 0.13, TREAD, SEEN);
+      box(cx - half + 0.04, y - 0.045, z + down * 0.13 - 0.03, cx + half - 0.04, y + 0.005, z + down * 0.13 + 0.03, NOSING, { ghost: true });
+    }
+    for (const side of sides) railing([cx + side * (half - 0.02), ya, za], [cx + side * (half - 0.02), yb, zb]);
+  };
+  flight(F + WIDE / 2, STAIR.z1, 0, STAIR.z0 + 1.6, 4.6, [1]);
+  flight(F + WIDE * 1.5, STAIR.z0 + 1.6, 4.6, STAIR.z1, 8.4, [-1, 1]);
   for (const [z, y] of [[STAIR.z0, 4.6], [STAIR.z1, 8.4]]) {
-    box(F, y - 0.12, z, F + 2.4, y, z + 1.6, STEEL, UP);
-    rod([F + 2.4, y + 1, z], [F + 2.4, y + 1, z + 1.6], 0.025, 0xd0a030, UP);
-    for (const dz of [0.05, 1.55]) box(F + 2.29, 0, z + dz - 0.06, F + 2.41, y, z + dz + 0.06, STEEL);
-    box(F, y, z + 0.3, F + 0.1, y + 2.1, z + 1.3, 0x8a949a, { ghost: true });
+    box(F, y - 0.12, z, OUT, y, z + 1.6, STEEL, STEPPED);
+    // Its deck a grating; a toe board along its open sides.
+    for (let x = F + 0.2; x < OUT - 0.1; x += 0.2) box(x - 0.015, y, z + 0.05, x + 0.015, y + 0.006, z + 1.55, DARK_STEEL, { ghost: true });
+    box(OUT - 0.04, y, z, OUT, y + 0.1, z + 1.6, NOSING, { ghost: true });
+    railing([OUT - 0.02, y, z], [OUT - 0.02, y, z + 1.6]);
+    // Its open end: the first's south end; the second's north end, and its south side where it is over the first flight.
+    if (y < LOBBY.y0) {
+      box(F, y, z, OUT, y + 0.1, z + 0.04, NOSING, { ghost: true });
+      railing([F + 0.05, y, z + 0.02], [OUT - 0.02, y, z + 0.02]);
+    } else {
+      box(F, y, z + 1.56, OUT, y + 0.1, z + 1.6, NOSING, { ghost: true });
+      railing([F + 0.05, y, z + 1.58], [OUT - 0.02, y, z + 1.58]);
+      railing([F + 0.05, y, z + 0.02], [F + WIDE - 0.02, y, z + 0.02]);
+    }
+    for (const dz of [0.05, 1.55]) box(OUT - 0.11, 0, z + dz - 0.06, OUT + 0.01, y, z + dz + 0.06, STEEL);
+    // Braced across between its posts.
+    rod([OUT - 0.05, 0.4, z + 0.05], [OUT - 0.05, y - 0.4, z + 1.55], 0.03, DARK_STEEL, { ghost: true });
+    rod([OUT - 0.05, 0.4, z + 1.55], [OUT - 0.05, y - 0.4, z + 0.05], 0.03, DARK_STEEL, { ghost: true });
+    if (y < LOBBY.y0) box(F, y, z + 0.3, F + 0.1, y + 2.1, z + 1.3, 0x8a949a, { ghost: true });
   }
-  box(F, 0, STAIR.z1 - 0.1, F + 1.2, 0.2, STAIR.z1 + 0.5, 0x9a9c98);
+  box(F, 0, STAIR.z1 - 0.1, F + WIDE, 0.2, STAIR.z1 + 0.5, 0x9a9c98);
+  signs.push({ kind: 'name', text: '二樓　冷凍庫三', colors: ['#2a4a6a', '#f2efe6', '#f2efe6'], wide: 1.3, pos: [OUT + 0.04, 2.1, STAIR.z1 + 1.55], rotY: Math.PI / 2 });
+
+  // The second floor's door, at the stair's top: its steel frame, a window over it; the door itself swung wide out onto
+  // the landing and left so, "close the door behind you" on it; a lamp over it, lit; the room in lit. What is in the
+  // wall goes with the wall, while someone is in the room.
+  const DOOR = 0x2f6a9a, FRAME = 0x3a4248, GLASS = 0x2c3a44, IN_WALL = { ...INSIDE, ghost: true };
+  box(F - 0.02, L.y0, L.door0 - 0.1, F + 0.07, L.y0 + 2.3, L.door0, FRAME, IN_WALL);
+  box(F - 0.02, L.y0, L.door1, F + 0.07, L.y0 + 2.3, L.door1 + 0.1, FRAME, IN_WALL);
+  box(F - 0.02, L.y0 + 2.2, L.door0 - 0.1, F + 0.07, L.y0 + 2.32, L.door1 + 0.1, FRAME, IN_WALL);
+  box(F - 0.15, L.y0 + 2.32, L.door0, F - 0.08, L.y1, L.door1, GLASS, IN_WALL);
+  box(F + 0.04, L.y0 + 0.02, L.door1 + 0.02, F + 0.98, L.y0 + 2.18, L.door1 + 0.07, DOOR, SEEN);
+  box(F + 0.1, L.y0 + 0.05, L.door1 + 0.015, F + 0.92, L.y0 + 0.3, L.door1 + 0.02, STAINLESS, SEEN);
+  box(F + 0.3, L.y0 + 1.5, L.door1 + 0.015, F + 0.72, L.y0 + 1.95, L.door1 + 0.02, GLASS, SEEN);
+  box(F + 0.84, L.y0 + 0.98, L.door1 - 0.09, F + 0.9, L.y0 + 1.04, L.door1 + 0.02, STAINLESS, SEEN);
+  signs.push({ kind: 'name', text: '隨手關門', colors: ['#f2efe6', '#c8372d', '#c8372d'], wide: 0.6, pos: [F + 0.51, L.y0 + 1.2, L.door1 + 0.01], rotY: Math.PI });
+  box(F, L.y1 + 0.1, 364.22, F + 0.2, L.y1 + 0.32, 364.58, 0x2a2c30, SEEN);
+  box(F + 0.2, L.y1 + 0.12, 364.25, F + 0.24, L.y1 + 0.3, 364.55, 0xfff0c0, { ghost: true, glow: true });
+
+  // The little room in, before the cold store: tiled white to above the waist, painted green over; strip lights; the cold
+  // store's insulated door across the back on its track, its name over it, its thermometer; the men's yellow aprons on
+  // their hooks, their white boots under them, a bench.
+  const back = F - L.deep, inner = F - L.wall, TILE = 0xe4eae6, GREEN = 0xa9bfae;
+  for (const [x0, z0, x1, z1] of [[back, L.z0, inner, L.z0 + 0.02], [back, L.z1 - 0.02, inner, L.z1], [back, L.z0, back + 0.02, L.z1]] as const) {
+    box(x0, L.y0, z0, x1, L.y0 + 1.3, z1, TILE, { ghost: true });
+    box(x0, L.y0 + 1.3, z0, x1, L.y1, z1, GREEN, { ghost: true });
+  }
+  box(back + 0.02, L.y0, L.z0 + 0.02, inner, L.y0 + 0.01, L.z1 - 0.02, 0x8e9692, { ghost: true });
+  box(back + 0.3, L.y0, L.z0 + 0.4, back + 0.5, L.y0 + 0.015, L.z1 - 0.4, 0x3a3e42, { ghost: true });
+  for (const z of [363, 365.4]) {
+    box(F - 2.9, L.y1 - 0.08, z - 0.09, F - 1.1, L.y1, z + 0.09, 0xe8ecee, { ghost: true });
+    box(F - 2.85, L.y1 - 0.11, z - 0.04, F - 1.15, L.y1 - 0.08, z + 0.04, 0xf4fbff, { ghost: true });
+  }
+  box(back + 0.02, L.y0, 363.2, back + 0.16, L.y0 + 2.3, 365.4, 0xe8ecee, { ghost: true });
+  for (const z of [363.2, 365.36]) box(back + 0.02, L.y0, z, back + 0.18, L.y0 + 2.3, z + 0.04, STAINLESS, { ghost: true });
+  box(back + 0.02, L.y0 + 2.35, 362.2, back + 0.1, L.y0 + 2.45, 366.2, STAINLESS, { ghost: true });
+  box(back + 0.16, L.y0 + 1.0, 364.95, back + 0.24, L.y0 + 1.5, 365.05, 0xc8372d, { ghost: true });
+  props.push({ shape: 'cylinder', size: [0.11, 0.02, 0], pos: [back + 0.04, L.y0 + 1.6, 365.9], rot: [0, 0, Math.PI / 2], color: 0xf2efe6, ghost: true });
+  signs.push({ kind: 'name', text: '冷凍庫　三', colors: ['#2a4a6a', '#f2efe6', '#f2efe6'], wide: 1.6, pos: [back + 0.14, L.y0 + 2.62, 364.3], rotY: Math.PI / 2 });
+  box(F - 2.9, L.y0 + 2.0, L.z1 - 0.08, F - 1.2, L.y0 + 2.05, L.z1 - 0.02, STAINLESS, { ghost: true });
+  for (const x of [F - 1.7, F - 2.4]) box(x - 0.25, L.y0 + 0.9, L.z1 - 0.06, x + 0.25, L.y0 + 2.0, L.z1 - 0.03, 0xe0b020, { ghost: true });
+  for (const x of [F - 1.55, F - 1.75, F - 2.25, F - 2.45]) box(x - 0.07, L.y0, L.z1 - 0.75, x + 0.07, L.y0 + 0.32, L.z1 - 0.48, 0xeeeeea, { ghost: true });
+  box(back + 0.3, L.y0, L.z1 - 0.45, back + 1.5, L.y0 + 0.42, L.z1 - 0.04, 0x9a7a50);
   // On its roof, by the face: the condensers the ammonia is cooled in, fans on top, the pipes to them.
   for (const z0 of [356.5, 362]) {
     box(-74, PLANT.h, z0, -70.5, PLANT.h + 2.2, z0 + 4.5, 0x9fb2b8, { fade: true });
@@ -387,5 +487,16 @@ export function icePlant(relief: Relief, looks: { ground: Look }): IceParts {
     object('bucket', -87.9, 347.1, 0, h);
   }
 
+  // Near the little room, all that is in or on the top floor, the face's windows with it, and in the room itself: while
+  // someone is in the room, not drawn when in the way of seeing them. Not what stands out from the face: the stair, the
+  // door swung out, the lamp.
+  for (const p of props) {
+    const [x, y, z] = p.pos;
+    if (p.glow || p.openFrom || x > F + 0.1 || x < NEAR.x0 || z < NEAR.z0 || z > NEAR.z1 || y < L.y0 + 0.2) continue;
+    p.fade = true;
+    p.openFrom = INSIDE.openFrom;
+    // What is up on the roof goes all together, the fans with their condenser.
+    if (y > PLANT.h - 0.2) p.fadeZone = [[NEAR.x0, PLANT.h - 0.2, NEAR.z0], [F + 0.1, PLANT.h + 3, NEAR.z1]];
+  }
   return { props, objects, signs, decals };
 }

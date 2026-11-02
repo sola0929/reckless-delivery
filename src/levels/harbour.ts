@@ -2,11 +2,11 @@ import { Relief, type Look } from './relief';
 import type { CargoPlacement } from '../sim/cargo';
 import { TRUCK } from '../config';
 import { ARCADE_PILLARS, BOAT_ROW, ROAD_W, STREET_END, street } from './harbourStreet';
-import { EAVE, HALL, MARKET_ROUTE, OUT, market } from './harbourMarket';
+import { EAVE, HALL, MARKET_ROUTE, OUT, deadEnds, market } from './harbourMarket';
 import { LANE, ROW, SHED, lane } from './harbourLane';
 import { ROOF_FORKS, ROOF_SPOTS, roofs } from './harbourRoofs';
 import { CANOPY, canopy } from './harbourCanopy';
-import { ICE_WAY, ICE_YARD, GATE_X, RAMP, SEA_WALL, icePlant } from './harbourIce';
+import { ICE_WAY, ICE_YARD, GATE_X, LOBBY, RAMP, SEA_WALL, icePlant } from './harbourIce';
 import { JOINT, MARKET_ROOF_SPOTS, MARKET_ROOF_WAY, marketRoof } from './harbourMarketRoof';
 import { newsCrews } from './harbourNews';
 import { FINISH, OUTER_SPOTS, OUTER_WAY, PIER, QUAY as OUTER_QUAY, SHIP, SURF, outerHarbour } from './harbourOuter';
@@ -197,6 +197,21 @@ export function harbour(): LevelDef {
   // The sea wall all along the north, the sea beyond it.
   relief.area(rect(min[0], SEA_WALL.z0, max[0], SEA_WALL.z1), SEA_WALL.h, SEAWALL);
   relief.area(rect(min[0], SEA_WALL.z1, max[0], max[1]), -3.5, WATER);
+  // Round the map, past where it ends, the sea: the town is on the shore, and the sea is not to stop at a line with
+  // nothing behind it. The town's edges where they meet it, a face of concrete down into it: its own height along the
+  // land, the sea wall's at the sea wall's end, the outer quay's past it; the inner harbour open to it on the south.
+  const COAST = 0x8c8c84, WALL_FROM = 376;
+  for (const x of [min[0] - 0.4, max[0]]) {
+    box(x, -4, min[1], x + 0.4, 0, WALL_FROM, COAST);
+    box(x, -4, WALL_FROM, x + 0.4, SEA_WALL.h, SEA_WALL.z1, COAST);
+  }
+  box(min[0] - 0.4, -4, SEA_WALL.z1, min[0], 0, OUTER_QUAY.z1, COAST);
+  for (const [x0, x1] of [[min[0], 8], [88, max[0]]]) box(x0, -4, min[1] - 0.4, x1, 0, min[1], COAST);
+  const offshore = [
+    { area: [min[0] - 300, min[1], min[0], SEA_WALL.z1] as [number, number, number, number], surface: SURF },
+    { area: [max[0], min[1], max[0] + 300, SEA_WALL.z1] as [number, number, number, number], surface: SURF },
+    { area: [min[0] - 300, min[1] - 300, max[0] + 300, min[1]] as [number, number, number, number], surface: -2.4 },
+  ].map((sea) => ({ ...sea, tint: 0x2c4a4c, flow: [0.06, 0.1] as [number, number], rain: true, waves: 0.32 }));
   // The ice plant's yard, the ramp up the sea wall, the gate; in its own file.
   const ic = icePlant(relief, { ground: CONCRETE });
   props.push(...ic.props);
@@ -247,10 +262,10 @@ export function harbour(): LevelDef {
     props,
     objects,
     decals,
-    cargo: harbourLoad(),
+    cargo: [...harbourLoad(), ...hiddenCargo()],
     traffic: [],
     rigs: [...st.rigs, ...oh.rigs],
-    pools: [...(st.pools ?? []), ...ln.pools, ...mr.pools, ...oh.pools],
+    pools: [...(st.pools ?? []), ...ln.pools, ...mr.pools, ...oh.pools, ...offshore],
     fords: [...ln.fords, ...mr.fords],
     lids: [{ area: [HALL.x0, HALL.z0, HALL.x1, HALL.z1], below: EAVE - 0.25 }],
     roofFalls: [{ area: [HALL.x0, HALL.z0, HALL.x1, HALL.z1], below: EAVE - 0.3, skylights: mr.skylights }],
@@ -296,6 +311,23 @@ export function harbour(): LevelDef {
     finish: { pos: FINISH.pos, half: FINISH.half, above: SHIP.y - 1 },
     stars: STARS,
     par: 420,
+    // The reefer's old captain. Each place's word while the truck is in it, a zone the whole place rather than the way in, so
+    // that it can wait out a conversation already going and still come while it is there: round the capsized boat; along the
+    // street's windy alleys, where the news crew is (the boss, about the storm); in the market once the lights are out; up on
+    // the market's roof (above its eaves, not in the hall under it); the dock, the ice yard and its ramp; the outer
+    // quay and the boats; the ship's side with its loose containers.
+    chat: {
+      customer: 'captain',
+      places: [
+        { zone: [-14, 40, 10, 150], wait: 30, talk: [['them', '前面那艘船'], ['them', '那艘肚子朝上在曬太陽的'], ['them', '不要一直看它'], ['me', '就是翻了'], ['them', '噓！！！']] },
+        { zone: [-14, 150, 14, HALL.z0 - 12], wait: 30, from: 'boss', talk: [['them', '新聞說颱風今晚登陸'], ['me', '那還要送嗎'], ['them', '客人說他看過黃曆，今天宜出貨'], ['me', '黃曆有寫宜被浪打嗎']] },
+        { zone: [HALL.x0, mk.outage.from + 2, HALL.x1, HALL.z1], wait: 30, talk: [['them', '市場停電了，裡面很暗'], ['them', '你看得到路嗎'], ['me', '看不到'], ['me', '但撞得到']] },
+        { zone: [HALL.x0, HALL.z0, HALL.x1, HALL.z1], above: EAVE, wait: 30, talk: [['them', '市場的人打給我，說有一台到處亂開的貨車'], ['me', '真的嗎？我在市場屋頂上沒看到欸'], ['them', '會不會他說的就是你']] },
+        { zone: [-60, 290, -28, SEA_WALL.z1 - 2], wait: 30, talk: [['them', '製冰廠的坡結冰了，很滑'], ['me', '放心，我有經驗'], ['them', '你在冰上開過？'], ['me', '在冰上滑過直排輪'], ['me', '都是四個輪子 應該差不多']] },
+        { zone: [-58, 424, PIER.x0, 460], wait: 30, talk: [['them', '你要從漁船上開過來？'], ['them', '那些船不是我的，撞到要賠'], ['me', '那撞到你的呢'], ['them', '……也要賠']] },
+        { zone: [44, 490, 70, 550], wait: 30, talk: [['them', '甲板上的貨櫃會滑，小心點'], ['me', '放心，我會看準時機'], ['them', '你剛剛已經撞到一個了'], ['me', '那是它看錯時機']] },
+      ],
+    },
   };
 }
 
@@ -319,4 +351,19 @@ function harbourLoad(): CargoPlacement[] {
   for (const z of [-3.0, -3.35]) for (const x of [-0.92, -0.58]) cargo.push({ type: 'cabbage', pos: [x, on(0.15), z] });
   for (const x of [0.02, 0.72]) for (const y of [on(0.22), floor + 0.44 + 0.22 + gap * 3]) cargo.push({ type: 'noodles', pos: [x, y, -3.15] });
   return cargo;
+}
+
+/**
+ * The captain's things, left about the harbour this morning, to be found: his new cap, made big at the market, put down in
+ * the people's walkway off the dark aisle that goes nowhere, a way down it between the stalls; his telescope, on its tripod in the ice
+ * plant, up its steel stair and in at the second floor's door, beside the doorway and turned to the wall; the ship's bell, back from
+ * being polished, on the hard by the boat up on its blocks in the yard on the outer quay.
+ */
+function hiddenCargo(): CargoPlacement[] {
+  const [, fish] = deadEnds();
+  return [
+    { type: 'captainCap', pos: [fish.end[0] + 2.6, 0.19, fish.end[1] - 8.5], rotY: 0.4, found: true },
+    { type: 'telescope', pos: [ICE_YARD.x0 - LOBBY.wall - 0.75, LOBBY.y0 + 0.72, LOBBY.z0 + 0.95], rotY: Math.PI, found: true },
+    { type: 'shipBell', pos: [-101.3, 3.1 + 3.85 + 0.31 * 1.5 + 0.02, 431.25], rotY: 0.6, found: true },
+  ];
 }

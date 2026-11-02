@@ -224,6 +224,8 @@ const LEVEE_TOP = 10, RIVER_BANK = 5;
 const LEVEE_FROM = zOf(50) - 8;
 const GATE_X = 86, GATE_TO = zOf(51) + 8;
 const RAMP_FOOT: Vec2 = [xOf(6) - 3, zOf(54) + 4 - 20];
+/** How far south the ground goes past the main gate, for the road outside and the woods beyond it. */
+const OUTSIDE_TO = -72;
 
 /** Where each place is: its middle line across, and where its own measures along start from. */
 const A: Vec2 = [xOf(2), zOf(4)];
@@ -232,6 +234,9 @@ const C: Vec2 = [xOf(5), zOf(34)];
 const D: Vec2 = [xOf(6), zOf(54) + 4];
 
 function base(x: number, z: number): { h: number; look: Look } {
+  // South of the map, outside the main gate: the gravel apron in front of it, and woodland up the slope round about, the
+  // county road cut through it (laid as a road of its own).
+  if (z < -8) return x > 8 && x < 56 && z > -12 ? SQUARES['.'] : SQUARES.T;
   const c = Math.round(x / CELL) - COL0, r = Math.round(z / CELL);
   const row = MAP[Math.max(0, Math.min(MAP.length - 1, r))];
   const square = SQUARES[row[Math.max(0, Math.min(row.length - 1, c))]] ?? SQUARES['#'];
@@ -282,7 +287,7 @@ function hiddenCargo(props: PropDesc[], ground: (x: number, z: number) => number
 }
 
 export function quarry(): LevelDef {
-  const min: Vec2 = [xOf(COL0) - 8, -8], max: Vec2 = [xOf(COL0 + MAP[0].length - 1) + 8, zOf(MAP.length - 1) + 8];
+  const min: Vec2 = [xOf(COL0) - 8, OUTSIDE_TO], max: Vec2 = [xOf(COL0 + MAP[0].length - 1) + 8, zOf(MAP.length - 1) + 8];
   const relief = new Relief(min, max, 8, base);
   const props: PropDesc[] = [];
   const decals: DecalDesc[] = [];
@@ -320,6 +325,27 @@ export function quarry(): LevelDef {
   lorry(yard.x1 - 10, yard.z0 + 14, Math.PI);
   for (const [x, z] of [[yard.x0 + 3, yard.z1 - 4], [yard.x0 + 5, yard.z1 - 4], [yard.x0 + 3, yard.z1 - 6]] as const) object('pallet', x, z);
   for (const z of [yard.z0 + 20, yard.z0 + 23]) object('tyreStack', yard.x1 - 2, z);
+
+  // Behind the start, the quarry's main gate, slid shut behind the lorry once it was in: its two posts, the gate across
+  // between them, rails and bars, on its wheels in its track; the name over it both ways, and, facing in, the warning
+  // to those going out. Outside, the county road past it, curving away downhill through the woods either way; its
+  // guardrail along the far side, and the round mirror there for those coming out.
+  for (const x of [A[0] - 5.6, A[0] + 5.6]) props.push({ shape: 'box', size: [0.32, 1.5, 0.32], pos: [x, TOP + 1.5, -6], color: 0xb4b6b2 }, { shape: 'box', size: [0.36, 0.1, 0.36], pos: [x, TOP + 3.05, -6], color: 0x8a8e90, ghost: true });
+  for (const y of [0.3, 1.05, 1.8]) props.push({ shape: 'box', size: [5.25, 0.05, 0.05], pos: [A[0], TOP + y, -6], color: 0xc8ccd0 });
+  for (let x = -5; x <= 5.01; x += 0.25) props.push({ shape: 'box', size: [0.018, 0.75, 0.018], pos: [A[0] + x, TOP + 1.05, -6], color: 0xb4b8bc, ghost: true });
+  for (const x of [-4.2, -1.4, 1.4, 4.2]) props.push({ shape: 'cylinder', size: [0.12, 0.04, 0], pos: [A[0] + x, TOP + 0.13, -6], rot: [Math.PI / 2, 0, Math.PI / 2], color: 0x2a2c30, ghost: true });
+  decals.push({ pos: [A[0], -6], size: [12, 0.12], color: 0x6f6a60, base: TOP, y: 0.02 });
+  for (const [dz, rotY] of [[-0.06, Math.PI], [0.06, 0]]) signs.push({ kind: 'name', text: '宏泰砂石場', colors: ['#1f4f9a', '#f2efe6', '#f2efe6'], wide: 4.4, pos: [A[0] - 5.6, TOP + 3.9, -6 + dz], rotY });
+  props.push({ shape: 'box', size: [0.05, 0.6, 0.05], pos: [A[0] - 5.6, TOP + 3.4, -6.05], color: 0x5a5f66, ghost: true });
+  signs.push({ kind: 'name', text: '出廠注意來車　減速慢行', colors: ['#f2c12e', '#24262a', '#24262a'], wide: 3.2, pos: [A[0] + 9, TOP + 1.25, -5.9], rotY: 0 });
+  const county = road([{ x: -54, z: -64, h: 6 }, { x: -30, z: -42, h: 8.6 }, { x: -8, z: -21, h: 11.3 }, { x: 12, z: -15, h: TOP }, { x: 32, z: -15, h: TOP }, { x: 52, z: -15, h: TOP }, { x: 72, z: -21, h: 11.3 }, { x: 96, z: -42, h: 8.6 }, { x: 120, z: -64, h: 6 }], 9, STREET, true);
+  void county;
+  for (let x = 4; x < 62; x += 3) decals.push({ pos: [x, -15], size: [1.6, 0.12], color: 0xe0b020, base: TOP, y: 0.02 });
+  for (const z of [-10.8, -19.2]) decals.push({ pos: [32, z], size: [56, 0.1], color: 0xe8e4d8, base: TOP, y: 0.02 });
+  for (let x = -2; x <= 66; x += 4) props.push({ shape: 'box', size: [0.07, 0.38, 0.07], pos: [x, TOP + 0.38, -19.9], color: 0x8a8e90 });
+  props.push({ shape: 'box', size: [34.2, 0.16, 0.04], pos: [32, TOP + 0.62, -19.8], color: 0xc8ccd0 });
+  props.push({ shape: 'cylinder', size: [0.05, 1.5, 0], pos: [A[0] + 3, TOP + 1.5, -20.2], color: 0x8a8e90 });
+  props.push({ shape: 'cylinder', size: [0.48, 0.05, 0], pos: [A[0] + 3, TOP + 3.1, -20.15], rot: [Math.PI / 2, 0, 0], color: 0xe0702a, ghost: true }, { shape: 'cylinder', size: [0.4, 0.05, 0], pos: [A[0] + 3, TOP + 3.1, -20.1], rot: [Math.PI / 2, 0, 0], color: 0xc8d4dc, ghost: true });
 
   // A: the stockpiles.
   heapYard(site, A[0], A[1], TOP);
@@ -853,7 +879,12 @@ export function quarry(): LevelDef {
       [C[0], C[1] + DIKE_FROM], off, [D[0], D[1] + RIVER_IN], ...end.route,
     ],
     // Saved on the track up through the melon field, past the river: put back there, facing on up it.
-    save: { zone: [D[0] - 5, field + 4, D[0] + 5, field + 16], pos: [D[0], field + 10], yaw: 0 },
+    // Two, as the longest level: at the foot of the way down from the load-out, where the dike begins; and in the field over
+    // the river.
+    save: [
+      { zone: [C[0] - 4.5, C[1] + DIKE_FROM - 14, C[0] + 4.5, C[1] + DIKE_FROM - 3], pos: [C[0], C[1] + DIKE_FROM - 9], yaw: 0 },
+      { zone: [D[0] - 5, field + 4, D[0] + 5, field + 16], pos: [D[0], field + 10], yaw: 0 },
+    ],
     // The customer is the foreman of the building site at the end; the boss has a word at the river.
     chat: {
       customer: 'foreman',
@@ -2230,6 +2261,14 @@ function scenery(s: Site, w: Ways, groundOf: () => (x: number, z: number) => num
         }
       }
     }
+    // Outside the main gate: the fence along the yard's south edge either side of it, and the woods on the slopes round
+    // about the road.
+    fence([8.5, -6], [A[0] - 6, -6]);
+    fence([A[0] + 6, -6], [55.5, -6]);
+    for (let x = -50, n = 0; x < 160; x += 7, n++) for (let z = -68; z < -9; z += 7) {
+      const tx = x + (hash(n, z) - 0.5) * 4, tz = z + (hash(n, z + 1) - 0.5) * 4;
+      if (ground(tx, tz) > 17.8 && level(tx, tz, 1.2) && hash(n, z + 2) < 0.7) tree(tx, tz, ground(tx, tz), n + 900 + z);
+    }
     // Hills all round beyond, the quarry's hill rising highest behind it to the west.
     const hill = (x: number, z: number, r: number, h: number, k: number) => props.push({ shape: 'cone', size: [r, h / 2, 0], pos: [x, h / 2 - 4, z], color: [0x6f8a52, 0x7a9060, 0x5f7a48, 0x8a8378][k % 4], ghost: true });
     for (let z = -80, k = 0; z < 1640; z += 60, k++) {
@@ -2239,7 +2278,7 @@ function scenery(s: Site, w: Ways, groundOf: () => (x: number, z: number) => num
       hill(240 + hash(k, 93) * 30, z + 30, 60 + hash(k, 94) * 25, 45 + hash(k, 95) * 40, k + 1);
     }
     for (let x = -160, k = 0; x < 300; x += 70, k++) {
-      if (x < -20 || x > 80) hill(x, -80 - hash(k, 96) * 30, 55 + hash(k, 97) * 20, 40 + hash(k, 98) * 30, k + 2);
+      hill(x, -110 - hash(k, 96) * 30, 55 + hash(k, 97) * 20, 40 + hash(k, 98) * 30, k + 2);
       const rn = 70 + hash(k, 100) * 30;
       hill(x, 1556 + rn + hash(k, 99) * 30, rn, 50 + hash(k, 101) * 50, k + 3);
     }

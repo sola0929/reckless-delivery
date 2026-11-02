@@ -1427,6 +1427,125 @@ function mahi(): CargoType {
   };
 }
 
+/**
+ * The captain's new peaked cap, made to order at the market: the white top wider than the black band under it, the
+ * glossy peak, the gold cord across it and the badge with its wings. Made big, as he asked: some 0.8 m across. The badge
+ * goes first, then the cord.
+ */
+function captainCap(): CargoType {
+  const k = 2.85;
+  const GOLD = 0xe8b830, BLACK = 0x1c1c22, CAP_WHITE = 0xf6f6f2;
+  return {
+    id: 'captainCap',
+    name: '船長帽',
+    value: 400,
+    threshold: 8,
+    maxHit: 22,
+    give: 22,
+    crush: 0.2,
+    salvage: 0.3,
+    friction: 0.7,
+    hull: { shape: 'cylinder', size: [0.14 * k, 0.062 * k, 0] },
+    parts: [
+      { shape: 'cylinder', size: [0.115 * k, 0.03 * k, 0], pos: [0, -0.03 * k, 0], color: BLACK, mass: 0.4 },
+      { shape: 'cylinder', size: [0.128 * k, 0.02 * k, 0], pos: [0, 0.02 * k, 0], color: CAP_WHITE, mass: 0.3 },
+      { shape: 'cylinder', size: [0.14 * k, 0.012 * k, 0], pos: [0, 0.05 * k, 0], color: CAP_WHITE, mass: 0.3 },
+      { shape: 'box', size: [0.085 * k, 0.005 * k, 0.04 * k], pos: [0, -0.055 * k, 0.135 * k], rot: [0.35, 0, 0], color: 0x14141a, mass: 0.15 },
+      { shape: 'box', size: [0.09 * k, 0.005 * k, 0.005 * k], pos: [0, -0.035 * k, 0.117 * k], color: GOLD, mass: 0.02, detachAt: 2 },
+      { shape: 'box', size: [0.028 * k, 0.022 * k, 0.004 * k], pos: [0, 0.005 * k, 0.13 * k], color: GOLD, mass: 0.03, detachAt: 1 },
+      ...[-1, 1].map((sx): PartDesc => ({ shape: 'box', size: [0.025 * k, 0.007 * k, 0.003 * k], pos: [sx * 0.045 * k, 0.01 * k, 0.127 * k], rot: [0, sx * -0.35, sx * 0.3], color: GOLD, mass: 0.01, detachAt: 1 })),
+    ],
+    debris: [
+      { shape: 'cylinder', size: [0.115 * k, 0.03 * k, 0], pos: [0, -0.03 * k, 0], color: BLACK, mass: 0.4 },
+      { shape: 'cylinder', size: [0.14 * k, 0.012 * k, 0], pos: [0.02, 0.01 * k, 0], rot: [0.3, 0, 0.2], color: 0xd8d8d0, mass: 0.3 },
+    ],
+    burst: 'grain',
+  };
+}
+
+/**
+ * The captain's brass telescope on its wooden tripod, the tube along +Z, its lens at that end. Each leg leans out from the
+ * head by `tilt`, turned round by its angle. The lens goes first, then the eyepiece and a leg.
+ */
+function telescope(): CargoType {
+  const BRASS = 0xc9a23a, DARK_BRASS = 0x9a7a28, LEG = 0x8a5a2a;
+  const head = 0.42, foot = -0.7, spread = 0.42;
+  const tilt = Math.atan2(spread, head - foot), leg = Math.hypot(spread, head - foot) / 2;
+  const up = 0.1, mid: Vec3 = [0, 0.56, 0.02];
+  const along = (d: number): Vec3 => [0, mid[1] + Math.sin(up) * d, mid[2] + Math.cos(up) * d];
+  const tube = (r: number, half: number, d: number, color: number, mass: number, detachAt?: 1 | 2): PartDesc =>
+    ({ shape: 'cylinder', size: [r, half, 0], pos: along(d), rot: [Math.PI / 2 - up, 0, 0], color, mass, ...(detachAt ? { detachAt } : {}) });
+  return {
+    id: 'telescope',
+    name: '望遠鏡',
+    value: 350,
+    threshold: 6,
+    maxHit: 30,
+    give: 16,
+    salvage: 0.3,
+    friction: 0.6,
+    hull: { shape: 'box', size: [0.45, 0.7, 0.58] },
+    parts: [
+      ...[0, 1, 2].map((n): PartDesc => {
+        const a = Math.PI / 2 + (n * Math.PI * 2) / 3;
+        return { shape: 'cylinder', size: [0.022, leg, 0], pos: [Math.cos(a) * spread / 2, (head + foot) / 2, Math.sin(a) * spread / 2], rot: [0, -a, tilt], color: LEG, mass: 1, ...(n === 1 ? { detachAt: 2 as const } : {}) };
+      }),
+      { shape: 'box', size: [0.07, 0.05, 0.07], pos: [0, head + 0.04, 0], color: DARK_BRASS, mass: 0.5 },
+      tube(0.055, 0.36, 0, BRASS, 3.5),
+      tube(0.058, 0.012, 0.2, DARK_BRASS, 0.05),
+      tube(0.058, 0.012, -0.2, DARK_BRASS, 0.05),
+      tube(0.07, 0.08, 0.42, BRASS, 0.6),
+      tube(0.06, 0.005, 0.505, 0x6a8aa8, 0.05, 1),
+      tube(0.03, 0.1, -0.44, DARK_BRASS, 0.3, 2),
+    ],
+    debris: [
+      tube(0.055, 0.36, 0, BRASS, 3.5),
+      { shape: 'cylinder', size: [0.022, leg, 0], pos: [0.2, foot + 0.05, 0], rot: [0, 0, Math.PI / 2], color: LEG, mass: 1 },
+      { shape: 'cylinder', size: [0.022, leg, 0], pos: [-0.1, foot + 0.05, 0.2], rot: [0, 0.7, Math.PI / 2], color: LEG, mass: 1 },
+    ],
+    burst: 'sparks',
+  };
+}
+
+/**
+ * The ship's bell, brass, off to the yard to be polished and hung again: a lip round its mouth, the band its name is cut
+ * in, its shoulder, the crown and the loop it hangs by; its rope down the side. Drawn twice life size. Heavy, and hard to
+ * hurt: the rope comes off, then the loop.
+ */
+function shipBell(): CargoType {
+  // A big one, its mouth near a metre across: every size and place below so many times that of a small one.
+  const BRASS = 0xc9a23a, DARK_BRASS = 0x9a7a28, k = 1.5;
+  return {
+    id: 'shipBell',
+    name: '船鐘',
+    value: 450,
+    threshold: 11,
+    maxHit: 20,
+    give: 30,
+    salvage: 0.5,
+    friction: 0.6,
+    hull: { shape: 'cylinder', size: [0.32 * k, 0.31 * k, 0] },
+    parts: [
+      // Flaring out to its mouth a step at a time, as a bell does.
+      { shape: 'cylinder', size: [0.32 * k, 0.03 * k, 0], pos: [0, -0.28 * k, 0], color: BRASS, mass: 12 },
+      { shape: 'cylinder', size: [0.29 * k, 0.05 * k, 0], pos: [0, -0.2 * k, 0], color: BRASS, mass: 13 },
+      { shape: 'cylinder', size: [0.26 * k, 0.07 * k, 0], pos: [0, -0.08 * k, 0], color: BRASS, mass: 15 },
+      { shape: 'cylinder', size: [0.255 * k, 0.025 * k, 0], pos: [0, 0.01 * k, 0], color: DARK_BRASS, mass: 1.5 },
+      { shape: 'cylinder', size: [0.24 * k, 0.05 * k, 0], pos: [0, 0.08 * k, 0], color: BRASS, mass: 10 },
+      { shape: 'sphere', size: [0.24 * k, 0, 0], flat: 0.5, pos: [0, 0.13 * k, 0], color: BRASS, mass: 9 },
+      { shape: 'cylinder', size: [0.06 * k, 0.03 * k, 0], pos: [0, 0.27 * k, 0], color: DARK_BRASS, mass: 2 },
+      { shape: 'box', size: [0.075 * k, 0.03 * k, 0.02 * k], pos: [0, 0.31 * k, 0], color: DARK_BRASS, mass: 1.2, detachAt: 2 },
+      { shape: 'sphere', size: [0.06 * k, 0, 0], pos: [0, -0.27 * k, 0], color: 0x6a5020, mass: 3 },
+      { shape: 'box', size: [0.015 * k, 0.17 * k, 0.015 * k], pos: [0.3 * k, -0.02 * k, 0], rot: [0, 0, 0.14], color: 0xf2efe6, mass: 0.1, detachAt: 1 },
+    ],
+    debris: [
+      { shape: 'cylinder', size: [0.28 * k, 0.2 * k, 0], pos: [0, -0.1 * k, 0], color: DARK_BRASS, mass: 45 },
+      { shape: 'sphere', size: [0.24 * k, 0, 0], flat: 0.5, pos: [0.05 * k, 0.1 * k, 0], rot: [0.4, 0, 0.3], color: DARK_BRASS, mass: 12 },
+    ],
+    burst: 'sparks',
+  };
+}
+
 export const CARGO_TYPES = {
   crate: crate('crate', '木箱', 0.35, 25, 100, WOOD),
   smallCrate: crate('smallCrate', '小木箱', 0.25, 10, 50, 0xd9b36c),
@@ -1460,6 +1579,9 @@ export const CARGO_TYPES = {
   kingCrab: kingCrab(),
   octopus: octopus(),
   mahi: mahi(),
+  captainCap: captainCap(),
+  telescope: telescope(),
+  shipBell: shipBell(),
 } satisfies Record<string, CargoType>;
 
 export type CargoTypeId = keyof typeof CARGO_TYPES;

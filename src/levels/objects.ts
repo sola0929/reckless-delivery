@@ -66,6 +66,8 @@ export interface ObjectKind {
   underfoot?: boolean;
   /** Part of something put up in pieces, a scaffold: when one piece is knocked, those next to it come down a moment later, and theirs, until all of it is down. */
   collapse?: boolean;
+  /** For such a thing put up in pieces further apart than a scaffold's: how far, across, up and along, the pieces that come down with it; and only those like it. */
+  spreads?: Vec3;
   /** Heavy enough that coming down on the truck or its load hurts the load: by its weight and how fast it comes. */
   crushes?: boolean;
   /** Stacked with others like it, piece on piece: when one is let go, so is all of the stack it is part of. */
@@ -307,6 +309,45 @@ function tent(): ObjectKind {
       ...stripes.map((_, i) => box([0.5, 0.03, half[1] * 0.8], [(i - 2) * 0.9, 0.5 + (i % 2) * 0.25, (i % 3) * 0.3 - 0.3], stripes[i], { ghost: true, rot: [0.25 - i * 0.12, 0.2 * i, 0.3 - i * 0.14] })),
       box([0, 0, 0], [0, 0.4, 0], 0xc8372d, { ghost: true }),
       box([0, 0, 0], [0, 0.4, 0], 0xc8372d, { ghost: true }),
+    ],
+  };
+}
+
+/**
+ * A tarpaulin put up on a quay to mend nets out of the rain, in its pieces: four steel poles, each stood in an old tyre with
+ * a little concrete in it, and the sheet laid over their tops, higher at the front to run the rain off behind. Knock one
+ * and the rest let go a moment after: the poles go over, the sheet comes down off them.
+ */
+const TARP = { reach: [8, 3, 6] as Vec3 };
+/** One of its poles in its tyre, so high. */
+function tarpPole(high: number): ObjectKind {
+  return {
+    mass: 25,
+    collapse: true,
+    spreads: TARP.reach,
+    parts: [
+      cyl(0.3, 0.11, [0, 0.11, 0], 0x1e1f22),
+      cyl(0.24, 0.02, [0, 0.21, 0], 0x9a9c98, { ghost: true }),
+      cyl(0.05, high / 2, [0, high / 2, 0], 0x8a8f96),
+      cyl(0.065, 0.06, [0, high - 0.08, 0], 0xe8e0c8, { ghost: true }),
+    ],
+  };
+}
+/**
+ * A quarter of its sheet, the front's or the back's, sloping up to the front: four of them edge to edge are the sheet, and
+ * coming down each goes its own way, so that it is down in folds over what was under it rather than one flat board.
+ */
+const TARP_SLOPE = 0.087;
+function tarpPanel(front: boolean): ObjectKind {
+  const half: Vec3 = [2, 0.03, 1.5], edge = front ? -half[2] : half[2];
+  return {
+    mass: 7,
+    collapse: true,
+    spreads: TARP.reach,
+    parts: [
+      box(half, [0, 0, 0], 0x2e8a5a, { rot: [TARP_SLOPE, 0, 0] }),
+      // Its hem along the sheet's edge.
+      box([half[0], 0.06, 0.04], [0, -edge * TARP_SLOPE - 0.02, edge], 0x24704a, { ghost: true }),
     ],
   };
 }
@@ -769,6 +810,10 @@ export const OBJECT_KINDS = {
   },
   stool: { mass: 3, parts: [cyl(0.16, 0.21, [0, 0.21, 0], 0xc8372d)] },
   tent: tent(),
+  tarpPole: tarpPole(2.25),
+  tarpPoleTall: tarpPole(2.7),
+  tarpPanelFront: tarpPanel(true),
+  tarpPanelBack: tarpPanel(false),
   /** A string of firecrackers hung on a pole, waiting for the procession. */
   firecrackers: {
     mass: 16,

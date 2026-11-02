@@ -137,6 +137,11 @@ export function deadEnds(): { junction: Vec2; end: Vec2 }[] {
 /** Where a cross aisle meets the way, its two corners cut off as a turn's are, and a square cleared round its middle: in the
  * dark it is to look like any turn, and a truck fooled into it must be able to turn in and back out. */
 const BRANCH_CUT = CORNER_CUT;
+/** How far back from a cross aisle's far end there is nobody standing, metres. */
+const BRANCH_EMPTY = 4.5;
+/** And how far along a walkway either side of where it crosses one of those aisles, metres: the far corner of the hall, the
+ * shoppers gone from it. */
+const WALKWAY_EMPTY = 12;
 /** How far out over the aisle the top of a stack leans, as a share of a piece's width across: a stack whose weight is then
  * still over its foot, standing until it is knocked. */
 const LEAN_OUT = 0.35;
@@ -442,8 +447,24 @@ export function market(relief: Relief, floor: Look): MarketParts {
     }
   }
   // The people in the walkways, and in the aisles shopping.
-  for (let x = COLUMN_X + DEEP * 2; x < HALL.x1 - 1.6; x += COLUMN) crowds.push({ area: [x + 0.2, HALL.z0 + 2, x + 1.4, HALL.z1 - 2], count: 9, y: 0 });
-  for (const [x0, z0, x1, z1] of aisles) {
+  for (let x = COLUMN_X + DEEP * 2; x < HALL.x1 - 1.6; x += COLUMN) {
+    // Along Z, cut where it crosses an aisle that goes nowhere; each piece its share of the people.
+    let spans: [number, number][] = [[HALL.z0 + 2, HALL.z1 - 2]];
+    for (const { junction: [jx, jz], end: [ex, ez] } of deadEnds()) {
+      if (jz !== ez || x + 0.8 < Math.min(jx, ex) || x + 0.8 > Math.max(jx, ex)) continue;
+      spans = spans.flatMap(([a, b]): [number, number][] => [[a, Math.min(b, jz - WALKWAY_EMPTY)], [Math.max(a, jz + WALKWAY_EMPTY), b]]).filter(([a, b]) => b - a > 2);
+    }
+    for (const [a, b] of spans) crowds.push({ area: [x + 0.2, a, x + 1.4, b], count: Math.round((9 * (b - a)) / (HALL.z1 - HALL.z0 - 4)), y: 0 });
+  }
+  for (let [x0, z0, x1, z1] of aisles) {
+    // Nobody at the far end of an aisle that goes nowhere: only the stock stacked across it, and what was left by it.
+    for (const { at: [ex, ez], out } of branchEnds) {
+      if (ex < x0 - 0.5 || ex > x1 + 0.5 || ez < z0 - 0.5 || ez > z1 + 0.5) continue;
+      if (out[0] < 0) x0 = Math.max(x0, ex + BRANCH_EMPTY);
+      if (out[0] > 0) x1 = Math.min(x1, ex - BRANCH_EMPTY);
+      if (out[1] < 0) z0 = Math.max(z0, ez + BRANCH_EMPTY);
+      if (out[1] > 0) z1 = Math.min(z1, ez - BRANCH_EMPTY);
+    }
     const along = Math.max(x1 - x0, z1 - z0);
     crowds.push({ area: [x0 + 0.6, z0 + 0.6, x1 - 0.6, z1 - 0.6], count: Math.round(along / 2.2), y: 0 });
   }
