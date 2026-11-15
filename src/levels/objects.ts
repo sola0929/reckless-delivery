@@ -27,7 +27,7 @@ export interface ObjectPart {
 }
 
 /** What is thrown up when the object is first knocked. */
-export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers' | 'toys' | 'straw' | 'grain' | 'bees' | 'dust' | 'bamboo' | 'paper' | 'ash' | 'shards' | 'rice' | 'ice';
+export type KnockEffect = 'leaves' | 'water' | 'splinters' | 'sparks' | 'feathers' | 'toys' | 'straw' | 'grain' | 'bees' | 'dust' | 'bamboo' | 'paper' | 'ash' | 'shards' | 'rice' | 'ice' | 'balloons' | 'popcorn' | 'sugar';
 
 export interface ObjectKind {
   mass: number;
@@ -48,7 +48,7 @@ export interface ObjectKind {
   /** How long after: seconds. A mine does not wait. */
   fuse?: number;
   /** What it is when it goes off, for whoever tells the player; and how hard, beside a cylinder of gas. */
-  bang?: { kind: 'gas' | 'drum' | 'mine'; power: number };
+  bang?: { kind: 'gas' | 'drum' | 'mine' | 'firework'; power: number; radius?: number };
   /** Left alone by other blasts: neither thrown by them nor set off. A mine stays where it was laid. */
   stable?: boolean;
   /** Goes on banging and flashing for a while where it stood: a string of firecrackers. */
@@ -493,6 +493,8 @@ export const OBJECT_KINDS = {
   hydrant: { mass: 90, effect: 'water', geyser: true, parts: [cyl(0.14, 0.32, [0, 0.32, 0], 0xd0392c), cyl(0.18, 0.05, [0, 0.69, 0], 0xb02a20)] },
   mailbox: { mass: 45, parts: [foot(0.22, DARK), cyl(0.05, 0.4, [0, 0.4, 0], DARK), box([0.22, 0.3, 0.2], [0, 1.1, 0], 0x2f5fb8)] },
   barrel: { mass: 40, parts: [cyl(0.4, 0.55, [0, 0.55, 0], 0x3b7dd8)] },
+  /** A wooden barrel, its staves bellied, two iron hoops round it: it goes to staves. */
+  woodBarrel: { mass: 45, effect: 'splinters', parts: [cyl(0.38, 0.5, [0, 0.5, 0], 0x8a5a32), cyl(0.4, 0.04, [0, 0.25, 0], 0x3a3f46, { ghost: true }), cyl(0.4, 0.04, [0, 0.78, 0], 0x3a3f46, { ghost: true }), cyl(0.33, 0.01, [0, 1.0, 0], 0x6a4426, { ghost: true })] },
   barrier: { mass: 14, parts: [box([1.4, 0.4, 0.1], [0, 0.55, 0], 0xf2c230), box([0.06, 0.3, 0.35], [1.1, 0.3, 0], DARK), box([0.06, 0.3, 0.35], [-1.1, 0.3, 0], DARK)] },
   fence: { mass: 10, effect: 'splinters', parts: [box([1.0, 0.5, 0.04], [0, 0.55, 0], 0xd08a2e), box([0.05, 0.6, 0.05], [0.9, 0.6, 0], DARK), box([0.05, 0.6, 0.05], [-0.9, 0.6, 0], DARK)] },
   bollard: { mass: 40, parts: [cyl(0.1, 0.45, [0, 0.45, 0], 0xd9d9d9)] },
@@ -1055,6 +1057,21 @@ export const OBJECT_KINDS = {
   boulder: { mass: 650, sinks: true, effect: 'dust', parts: [box([0.75, 0.55, 0.65], [0, 0.55, 0], 0x7d7a72, { rot: [0.15, 0.4, 0.1] }), box([0.5, 0.35, 0.55], [0.35, 0.95, -0.1], 0x8b8880, { ghost: true, rot: [0.3, 0.9, 0.2] })] },
   /** A lump of rock small enough to shift. */
   rockSmall: { mass: 38, sinks: true, effect: 'dust', parts: [box([0.3, 0.22, 0.26], [0, 0.22, 0], 0x8b8880, { rot: [0.2, 0.5, 0.15] })] },
+  /** A snow-viewing lantern of stone standing in a pond on its three legs, its light box up out of the water, a wide roof: heavy, but it goes over. */
+  stoneLantern: {
+    mass: 280,
+    sinks: true,
+    effect: 'dust',
+    parts: [
+      ...[0, 2.09, 4.19].map((a) => cyl(0.09, 0.75, [Math.cos(a) * 0.45, 0.75, Math.sin(a) * 0.45], 0x9a9488)),
+      cyl(0.55, 0.06, [0, 1.56, 0], 0xb8b0a0),
+      box([0.28, 0.24, 0.28], [0, 1.86, 0], 0xd8d0c0, { weight: 2 }),
+      box([0.13, 0.12, 0.29], [0, 1.86, 0], 0xf2c12e, { ghost: true }),
+      box([0.29, 0.12, 0.13], [0, 1.86, 0], 0xf2c12e, { ghost: true }),
+      cone(0.85, 0.22, [0, 2.32, 0], 0x8a8478, { ghost: true }),
+      cyl(0.1, 0.08, [0, 2.6, 0], 0x8a8478, { ghost: true }),
+    ],
+  },
   /** A post with boards on it, saying which way and how far. */
   trailSign: { mass: 9, effect: 'splinters', parts: [foot(0.18, DARK), cyl(0.05, 0.9, [0, 0.9, 0], WOOD), box([0.4, 0.09, 0.02], [0.2, 1.6, 0], 0xe8d49a, { ghost: true }), box([0.35, 0.09, 0.02], [-0.18, 1.35, 0], 0xe8d49a, { ghost: true })] },
   /** Racks of logs that mushrooms are grown on. */
@@ -1900,6 +1917,564 @@ export const OBJECT_KINDS = {
     ],
   },
   umbrella: { mass: 25, parts: [foot(0.32, DARK), cyl(0.04, 1.2, [0, 1.2, 0], DARK), cone(1.2, 0.3, [0, 2.5, 0], 0xe8e2d0, { ghost: true })] },
+  // The amusement park's. A queue's post: chrome, on a round foot, its red belt run out to the next along +Z.
+  queuePost: { mass: 9, parts: [foot(0.18, 0xc8ccd0), cyl(0.03, 0.47, [0, 0.52, 0], 0xd8dce0), cyl(0.045, 0.035, [0, 0.99, 0], 0xd8dce0), box([0.015, 0.035, 0.9], [0, 0.93, 0.9], 0xc8372d, { ghost: true })] },
+  /** A misting fan over a queue on a pole: its head a round housing, a ring of nozzles round its face, a tank at its foot. */
+  mistFan: {
+    mass: 48,
+    effect: 'water',
+    parts: [
+      cyl(0.32, 0.12, [0, 0.12, 0], 0x5a6068, { weight: 10 }),
+      cyl(0.05, 1.3, [0, 1.45, 0], 0x9aa0a6),
+      cyl(0.36, 0.14, [0, 2.75, 0.12], 0x3a3f46, { rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.34, 0.012, [0, 2.75, 0.27], 0x8a9098, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.08, 0.04, [0, 2.75, 0.3], 0x24262a, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.39, 0.02, [0, 2.75, 0.24], 0xf2f2ee, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+      box([0.05, 0.12, 0.05], [0, 2.53, 0.05], 0x5a6068, { ghost: true }),
+    ],
+  },
+  /** A drinks machine: red, its window of cans in rows, the coin panel and the flap at the bottom. */
+  vending: {
+    mass: 260,
+    effect: 'toys',
+    parts: [
+      box([0.5, 0.92, 0.4], [0, 0.92, 0], 0xc8372d),
+      box([0.38, 0.55, 0.01], [-0.06, 1.2, 0.405], 0x1c2a36, { ghost: true }),
+      ...[0, 1, 2, 3].flatMap((r) => [0, 1, 2, 3, 4].map((c) => box([0.032, 0.06, 0.01], [-0.36 + c * 0.15, 0.82 + r * 0.24, 0.42], [0x3f7fd0, 0xf2c12e, 0x4fa86a, 0xe8544a, 0xf2efe6][(r + c) % 5], { ghost: true }))),
+      box([0.08, 0.18, 0.01], [0.38, 1.1, 0.41], 0xd8dce0, { ghost: true }),
+      box([0.3, 0.07, 0.01], [-0.06, 0.32, 0.41], 0x24262a, { ghost: true }),
+      box([0.51, 0.1, 0.41], [0, 1.88, 0], 0xf2efe6, { ghost: true }),
+    ],
+  },
+  /** A balloon seller's cart: a box on four wheels, a pole up from it, a bunch of balloons on their strings at the top. */
+  balloonCart: {
+    mass: 55,
+    effect: 'balloons',
+    parts: [
+      box([0.5, 0.3, 0.32], [0, 0.55, 0], 0x3f7fd0, { weight: 6 }),
+      box([0.52, 0.05, 0.34], [0, 0.88, 0], 0xf2efe6, { ghost: true }),
+      ...[[-0.38, -0.24], [0.38, -0.24], [-0.38, 0.24], [0.38, 0.24]].map(([x, z]) => cyl(0.13, 0.03, [x, 0.13, z], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      cyl(0.025, 0.8, [0.3, 1.65, 0], 0x9aa0a6, { ghost: true }),
+      ...[[0, 2.75, 0, 0xe8544a], [0.3, 2.95, 0.2, 0xf2c12e], [-0.3, 2.9, -0.1, 0x3f7fd0], [0.15, 3.2, -0.25, 0x4fa86a], [-0.2, 3.25, 0.25, 0xf08ac0], [0.45, 3.3, 0, 0x8a5ac8], [-0.45, 2.7, 0.2, 0xffffff], [0.05, 3.5, 0.05, 0xf2c12e], [0.35, 2.6, -0.3, 0xf08ac0], [-0.1, 3.0, 0.4, 0xe8544a], [-0.4, 3.45, -0.2, 0x3f7fd0], [0.5, 2.8, 0.35, 0x4fa86a]].map(([x, y, z, c]) =>
+        ({ shape: 'sphere' as const, size: [0.24, 0.29, 0.24] as Vec3, pos: [x + 0.3, y, z] as Vec3, color: c, ghost: true })),
+      ...[[0.1, 0.1], [-0.1, 0.05], [0.05, -0.12]].map(([x, z]) => leg([0.3, 2.4, 0], [0.3 + x * 3, 3.0, z * 3], 0.006, 0xf2f2ee)),
+    ],
+  },
+  /** A popcorn cart: red and white, its glass case full, a striped canopy over it, two big wheels. */
+  popcornCart: {
+    mass: 110,
+    effect: 'popcorn',
+    parts: [
+      box([0.62, 0.42, 0.4], [0, 0.72, 0], 0xd23a32, { weight: 4 }),
+      box([0.64, 0.04, 0.42], [0, 1.16, 0], 0xf2c12e, { ghost: true }),
+      box([0.5, 0.36, 0.34], [0, 1.56, 0], 0xe8f2f6, { ghost: true }),
+      box([0.46, 0.2, 0.3], [0, 1.4, 0], 0xfff2c8, { ghost: true }),
+      ...[-0.48, -0.16, 0.16, 0.48].map((x, k) => box([0.16, 0.05, 0.46], [x, 2.25, 0], k % 2 ? 0xffffff : 0xd23a32, { ghost: true })),
+      ...[-0.45, 0.45].map((x) => cyl(0.025, 0.36, [x, 1.92, 0], 0xd8dce0, { ghost: true })),
+      ...[-1, 1].map((s) => cyl(0.32, 0.04, [s * 0.66, 0.32, 0], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      box([0.04, 0.04, 0.4], [0.7, 0.95, 0], 0xd8dce0, { ghost: true }),
+    ],
+  },
+  /** A pushchair, hired at the gate: its frame, seat, hood, four little wheels. */
+  stroller: {
+    mass: 12,
+    parts: [
+      box([0.25, 0.2, 0.3], [0, 0.55, 0], 0x3f7fd0),
+      box([0.26, 0.2, 0.18], [0, 0.85, -0.18], 0x2a5a9a, { ghost: true, rot: [0.5, 0, 0] }),
+      ...[[-0.22, -0.3], [0.22, -0.3], [-0.22, 0.28], [0.22, 0.28]].map(([x, z]) => cyl(0.08, 0.03, [x, 0.08, z], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      leg([-0.24, 0.35, -0.3], [-0.24, 1.05, -0.45], 0.015, 0x9aa0a6), leg([0.24, 0.35, -0.3], [0.24, 1.05, -0.45], 0.015, 0x9aa0a6),
+      box([0.26, 0.015, 0.015], [0, 1.05, -0.45], 0x24262a, { ghost: true }),
+    ],
+  },
+  /** Someone in the park's bear costume, out for photographs: a big round head, ears, a belly in a lighter brown. */
+  mascotBear: {
+    mass: 70,
+    effect: 'toys',
+    parts: [
+      ...[-0.2, 0.2].map((x) => cyl(0.14, 0.3, [x, 0.3, 0], 0x8a5a30, { weight: 2 })),
+      { shape: 'sphere', size: [0.45, 0.5, 0.38], pos: [0, 1.05, 0], color: 0x9a6a3a },
+      { shape: 'sphere', size: [0.3, 0.34, 0.06], pos: [0, 1.02, 0.34], color: 0xe8c89a, ghost: true },
+      { shape: 'sphere', size: [0.46, 0.43, 0.43], pos: [0, 1.85, 0], color: 0x9a6a3a, ghost: true },
+      ...[-0.32, 0.32].map((x) => ({ shape: 'sphere' as const, size: [0.15, 0.15, 0.1] as Vec3, pos: [x, 2.22, 0] as Vec3, color: 0x8a5a30, ghost: true })),
+      { shape: 'sphere', size: [0.2, 0.14, 0.12], pos: [0, 1.75, 0.38], color: 0xe8c89a, ghost: true },
+      { shape: 'sphere', size: [0.07, 0.05, 0.04], pos: [0, 1.81, 0.49], color: 0x24262a, ghost: true },
+      ...[-0.16, 0.16].map((x) => ({ shape: 'sphere' as const, size: [0.05, 0.06, 0.03] as Vec3, pos: [x, 1.97, 0.38] as Vec3, color: 0x24262a, ghost: true })),
+      ...[-1, 1].map((s) => cyl(0.11, 0.3, [s * 0.5, 1.15, 0.05], 0x9a6a3a, { ghost: true, rot: [0, 0, s * 0.6] })),
+      box([0.18, 0.06, 0.03], [0, 1.45, 0.37], 0xd23a32, { ghost: true }),
+    ],
+  },
+  /** A park's lamp: a green post, fluted at its foot, a crosspiece and two globes, a finial. */
+  parkLamp: {
+    mass: 140,
+    effect: 'sparks',
+    parts: [
+      cyl(0.24, 0.35, [0, 0.35, 0], 0x2f4a3a, { weight: 8 }),
+      cyl(0.08, 1.75, [0, 2.1, 0], 0x2f4a3a),
+      box([0.55, 0.04, 0.04], [0, 3.6, 0], 0x2f4a3a, { ghost: true }),
+      ...[-0.5, 0.5].map((x) => ({ shape: 'sphere' as const, size: [0.2, 0.22, 0.2] as Vec3, pos: [x, 3.85, 0] as Vec3, color: 0xfff6dc, ghost: true })),
+      ...[-0.5, 0.5].map((x) => cyl(0.1, 0.04, [x, 4.08, 0], 0x2f4a3a, { ghost: true })),
+      cone(0.08, 0.15, [0, 4.0, 0], 0xd9a830, { ghost: true }),
+    ],
+  },
+  /** A palm: its ringed trunk leaning a little, its fronds out and down all round, coconuts under them. */
+  palm: {
+    mass: 650,
+    effect: 'leaves',
+    parts: [
+      foot(0.36, 0x6b5238),
+      cyl(0.2, 1.2, [0, 1.2, 0], 0x8a7050),
+      cyl(0.18, 1.1, [0.12, 3.3, 0], 0x7a6248, { ghost: true, rot: [0, 0, -0.1] }),
+      cyl(0.16, 0.9, [0.3, 5.2, 0], 0x8a7050, { ghost: true, rot: [0, 0, -0.18] }),
+      ...[0, 1, 2, 3, 4, 5, 6].map((k) => {
+        const a = (k / 7) * Math.PI * 2;
+        return box([0.28, 0.03, 1.4], [0.4 + Math.sin(a) * 1.1, 5.95, Math.cos(a) * 1.1], k % 2 ? 0x3f8a3a : 0x4f9a42, { ghost: true, rot: [0.45 * Math.cos(a) * 0 + 0.4, a, 0] });
+      }),
+      ...[[0.25, 0.1], [0.5, -0.12], [0.35, 0.22]].map(([x, z]) => ({ shape: 'sphere' as const, size: [0.13, 0.13, 0.13] as Vec3, pos: [x, 5.85, z] as Vec3, color: 0x6b5a2a, ghost: true })),
+    ],
+  },
+  /** A raft off the rapids ride: round, its fat ring of rubber in bands of colour, seats round a column in its middle. */
+  rideRaft: {
+    mass: 90,
+    effect: 'water',
+    parts: [
+      cyl(1.55, 0.5, [0, 0.5, 0], 0x2a2c30),
+      ...Array.from({ length: 12 }, (_, k) => {
+        const a = (k / 12) * Math.PI * 2;
+        return box([0.42, 0.34, 0.33], [Math.cos(a) * 1.5, 0.62, Math.sin(a) * 1.5], [0xf2c12e, 0x3f7fd0, 0xe8544a][k % 3], { ghost: true, rot: [0, -a, 0] });
+      }),
+      cyl(0.35, 0.3, [0, 1.25, 0], 0xf2c12e, { ghost: true }),
+      ...Array.from({ length: 6 }, (_, k) => {
+        const a = (k / 6) * Math.PI * 2;
+        return box([0.3, 0.08, 0.25], [Math.cos(a) * 0.85, 1.04, Math.sin(a) * 0.85], 0x3a3f46, { ghost: true, rot: [0, -a, 0] });
+      }),
+    ],
+  },
+  /** A board painted with the park's bear, a hole for a face, to have a photograph taken behind. */
+  cutout: {
+    mass: 7,
+    effect: 'splinters',
+    parts: [
+      box([0.6, 0.85, 0.025], [0, 0.95, 0], 0xf2c12e),
+      { shape: 'sphere', size: [0.45, 0.4, 0.03], pos: [0, 1.45, 0.02], color: 0x9a6a3a, ghost: true },
+      { shape: 'sphere', size: [0.14, 0.14, 0.035], pos: [0, 1.45, 0.03], color: 0x2a2c30, ghost: true },
+      box([0.03, 0.4, 0.2], [0, 0.4, -0.18], 0x8a6a40, { ghost: true, rot: [0.5, 0, 0] }),
+    ],
+  },
+  /** A turnstile at a gate: a steel post, three arms out from its head at a slant. */
+  turnstile: {
+    mass: 65,
+    effect: 'sparks',
+    parts: [
+      box([0.16, 0.48, 0.32], [0, 0.48, 0], 0xb8bec4, { weight: 3 }),
+      box([0.17, 0.05, 0.33], [0, 0.98, 0], 0x3a3f46, { ghost: true }),
+      ...[0, 1, 2].map((k) => {
+        const a = (k / 3) * Math.PI * 2;
+        return box([0.025, 0.025, 0.3], [0.2, 0.85 + Math.cos(a) * 0.18, Math.sin(a) * 0.18 + 0.28], 0xd8dce0, { ghost: true, rot: [a, 0, 0] });
+      }),
+      box([0.06, 0.04, 0.06], [0.08, 1.05, -0.2], 0x3fd07a, { ghost: true }),
+    ],
+  },
+  /** An ice cream cart: white and pink, a big cone on its roof, its parasol. */
+  iceCreamCart: {
+    mass: 90,
+    juice: 0xf6e8c8,
+    parts: [
+      box([0.6, 0.4, 0.38], [0, 0.7, 0], 0xf6f2ea, { weight: 4 }),
+      box([0.62, 0.08, 0.4], [0, 0.4, 0], 0xf08ac0, { ghost: true }),
+      ...[-1, 1].map((s) => cyl(0.25, 0.04, [s * 0.62, 0.25, 0], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      cone(0.22, 0.32, [0, 1.42, 0], 0xd9a860, { ghost: true, rot: [Math.PI, 0, 0] }),
+      { shape: 'sphere', size: [0.26, 0.24, 0.26], pos: [0, 1.8, 0], color: 0xf08ac0, ghost: true },
+      { shape: 'sphere', size: [0.22, 0.2, 0.22], pos: [0, 2.06, 0], color: 0xfff2dc, ghost: true },
+      cyl(0.025, 0.7, [-0.5, 1.8, 0], 0x9aa0a6, { ghost: true }),
+      cone(0.85, 0.22, [-0.5, 2.6, 0], 0x7fd3b8, { ghost: true }),
+    ],
+  },
+  /** A prize off a game stall: a teddy as big as a child. */
+  plushGiant: {
+    mass: 9,
+    effect: 'toys',
+    parts: [
+      { shape: 'sphere', size: [0.32, 0.36, 0.28], pos: [0, 0.4, 0], color: 0xf08ac0 },
+      { shape: 'sphere', size: [0.27, 0.25, 0.25], pos: [0, 0.95, 0], color: 0xf08ac0, ghost: true },
+      ...[-0.2, 0.2].map((x) => ({ shape: 'sphere' as const, size: [0.09, 0.09, 0.06] as Vec3, pos: [x, 1.18, 0] as Vec3, color: 0xf08ac0, ghost: true })),
+      { shape: 'sphere', size: [0.1, 0.08, 0.06], pos: [0, 0.9, 0.23], color: 0xfff2f2, ghost: true },
+    ],
+  },
+  /** A stall of the park's souvenirs: toys and hats on its counter, under a blue awning. */
+  souvenirStall: { ...stocked(0x3f7fd0, [0xf08ac0, 0xf2c12e, 0x7fb8ef, 0xffffff, 0xe8544a]), effect: 'toys' },
+  /** A game stall, its prizes on its counter. */
+  gameStall: { ...stocked(0xd23a32, [0xf08ac0, 0xf2c12e, 0x7fd3b8, 0xb79be8]), effect: 'toys' },
+  /** A ride's shirts out in front of its shop: a table with a cloth to the ground, the shirts folded on it in piles by colour, a price card. */
+  merchTable: {
+    mass: 35,
+    effect: 'paper',
+    parts: [
+      box([0.8, 0.38, 0.42], [0, 0.38, 0], 0xf6efe2),
+      box([0.815, 0.05, 0.435], [0, 0.72, 0], 0xd23a32, { ghost: true }),
+      ...[0xd23a32, 0xf2c12e, 0x2a2c30, 0x3f7fd0, 0xffffff, 0x4fa86a].map((c, k) => box([0.17, 0.04 + (k % 3) * 0.025, 0.15], [-0.55 + (k % 3) * 0.55, 0.8 + (k % 3) * 0.025, k < 3 ? -0.18 : 0.18], c, { ghost: true })),
+      box([0.12, 0.08, 0.01], [0.62, 0.95, 0.3], 0xffffff, { ghost: true, rot: [-0.3, 0, 0] }),
+    ],
+  },
+  /** A stand of the ride's caps, in tiers round a pole. */
+  capStand: {
+    mass: 10,
+    effect: 'paper',
+    parts: [
+      foot(0.3, DARK),
+      cyl(0.03, 0.85, [0, 0.9, 0], STEEL),
+      ...[0, 1, 2].flatMap((tier) => [0, 1, 2, 3].flatMap((k): ObjectPart[] => {
+        const a = (k / 4) * Math.PI * 2 + tier * 0.4, r = 0.22, y = 0.95 + tier * 0.33, c = [0xd23a32, 0x2a2c30, 0xf2c12e, 0x3f7fd0][(k + tier) % 4];
+        return [
+          { shape: 'sphere', size: [0.11, 0.08, 0.11], pos: [Math.cos(a) * r, y, Math.sin(a) * r], color: c, ghost: true },
+          box([0.07, 0.008, 0.06], [Math.cos(a) * (r + 0.12), y - 0.02, Math.sin(a) * (r + 0.12)], c, { ghost: true, rot: [0, -a, 0] }),
+        ];
+      })),
+    ],
+  },
+  // The midway's games, out in front of their booths. A board of balloons on its easel, to show what the darts are for.
+  balloonBoard: {
+    mass: 12,
+    effect: 'balloons',
+    parts: [
+      foot(0.35, 0x6a4a30),
+      box([0.05, 0.75, 0.05], [0, 0.75, -0.12], 0x6a4a30, { rot: [0.15, 0, 0] }),
+      box([0.55, 0.62, 0.03], [0, 1.2, 0.02], 0xf6e8d4, { rot: [-0.12, 0, 0] }),
+      box([0.58, 0.04, 0.05], [0, 0.56, 0.08], 0xd23a32, { ghost: true }),
+      ...[0, 1, 2, 3].flatMap((r) => [0, 1, 2, 3].map((c) => ({ shape: 'sphere' as const, size: [0.1, 0.12, 0.09] as Vec3, pos: [-0.39 + c * 0.26, 0.78 + r * 0.27, 0.1 - r * 0.033] as Vec3, color: [0xe8544a, 0xf2c12e, 0x3f7fd0, 0x4fa86a, 0xf08ac0][(r * 4 + c) % 5], ghost: true }))),
+    ],
+  },
+  /** The goldfish game: a long low tub of blue plastic full of water and fish, the paper scoops on its rim. Hit, it pours out. */
+  goldfishTub: {
+    mass: 140,
+    effect: 'water',
+    spills: true,
+    parts: [
+      box([1.6, 0.2, 0.5], [0, 0.2, 0], 0x3f8ac8),
+      box([1.64, 0.03, 0.54], [0, 0.4, 0], 0x7fb8ef, { ghost: true }),
+      box([1.5, 0.01, 0.42], [0, 0.36, 0], 0x7fd0e8, { ghost: true }),
+      ...Array.from({ length: 12 }, (_, k) => ({ shape: 'sphere' as const, size: [0.06, 0.025, 0.035] as Vec3, pos: [-1.35 + ((k * 0.53) % 2.7), 0.33, -0.3 + ((k * 0.37) % 0.6)] as Vec3, rot: [0, k * 1.3, 0] as Vec3, color: k % 4 ? 0xf28a2e : 0xf7f4ee, ghost: true })),
+      ...[-1.2, -0.4, 0.4, 1.2].map((x) => cyl(0.07, 0.01, [x, 0.44, 0.52], 0xffffff, { ghost: true, rot: [Math.PI / 2, 0, 0] })),
+    ],
+  },
+  /** A tin can, labelled, for knocking down with a ball: stacked in a pyramid on its table, the lot comes down together. */
+  tinCan: {
+    mass: 0.6,
+    effect: 'sparks',
+    collapse: true,
+    stacked: true,
+    spreads: [0.8, 1.2, 0.8],
+    parts: [cyl(0.075, 0.1, [0, 0.1, 0], 0xc8ccd0), cyl(0.077, 0.055, [0, 0.1, 0], 0xd23a32, { ghost: true }), cyl(0.077, 0.02, [0, 0.1, 0], 0xf2c12e, { ghost: true })],
+  },
+  /** The table the cans stand on: a cloth over it to the ground in the booth's stripes. */
+  canTable: {
+    mass: 14,
+    effect: 'splinters',
+    collapse: true,
+    stacked: true,
+    spreads: [0.8, 1.2, 0.8],
+    parts: [box([0.45, 0.42, 0.32], [0, 0.42, 0], 0xf2efe6), box([0.465, 0.055, 0.335], [0, 0.8, 0], 0xd23a32, { ghost: true }), box([0.465, 0.06, 0.335], [0, 0.4, 0], 0x3f7fd0, { ghost: true })],
+  },
+  // The ring-toss's prizes, set out on its mat in rows: bottles of soda, ducks, little bears.
+  tossBottle: { mass: 0.8, effect: 'shards', parts: [cyl(0.07, 0.13, [0, 0.13, 0], 0x4fa86a), cyl(0.03, 0.06, [0, 0.31, 0], 0x4fa86a, { ghost: true }), cyl(0.072, 0.04, [0, 0.14, 0], 0xf2efe6, { ghost: true }), cyl(0.032, 0.015, [0, 0.38, 0], 0xd23a32, { ghost: true })] },
+  tossDuck: { mass: 0.5, effect: 'toys', parts: [{ shape: 'sphere', size: [0.13, 0.1, 0.16], pos: [0, 0.1, 0], color: 0xf2c12e }, { shape: 'sphere', size: [0.08, 0.08, 0.08], pos: [0, 0.24, 0.08], color: 0xf2c12e, ghost: true }, box([0.035, 0.015, 0.05], [0, 0.23, 0.18], 0xf28a2e, { ghost: true })] },
+  tossBear: {
+    mass: 0.7,
+    effect: 'toys',
+    parts: [
+      { shape: 'sphere', size: [0.13, 0.14, 0.11], pos: [0, 0.14, 0], color: 0xc8915a },
+      { shape: 'sphere', size: [0.1, 0.1, 0.09], pos: [0, 0.34, 0], color: 0xc8915a, ghost: true },
+      ...[-0.07, 0.07].map((x) => ({ shape: 'sphere' as const, size: [0.035, 0.035, 0.025] as Vec3, pos: [x, 0.43, 0] as Vec3, color: 0xc8915a, ghost: true })),
+      box([0.06, 0.03, 0.01], [0, 0.26, 0.1], 0xd23a32, { ghost: true }),
+    ],
+  },
+  /** The test of strength: a mallet's pad on a box, the tower up from it marked off in colours to the bell. Tall, it goes over. */
+  highStriker: {
+    mass: 110,
+    effect: 'sparks',
+    parts: [
+      box([0.6, 0.18, 0.6], [0, 0.18, 0], 0xd23a32, { weight: 6 }),
+      box([0.22, 0.06, 0.22], [0, 0.4, 0.2], 0x2a2c30, { ghost: true }),
+      box([0.12, 2.3, 0.1], [0, 2.66, -0.35], 0xf2efe6),
+      ...[0x3f7fd0, 0x4fa86a, 0xf2c12e, 0xf28a2e, 0xe8544a].map((c, k) => box([0.125, 0.4, 0.02], [0, 0.85 + k * 0.82, -0.24], c, { ghost: true })),
+      box([0.04, 2.2, 0.03], [0, 2.66, -0.22], 0x8a8f96, { ghost: true }),
+      box([0.08, 0.05, 0.05], [0, 1.4, -0.2], 0xd23a32, { ghost: true }),
+      cyl(0.22, 0.14, [0, 5.1, -0.3], 0xf2c12e, { ghost: true }),
+      { shape: 'sphere', size: [0.12, 0.12, 0.12], pos: [0, 5.35, -0.35], color: 0xd23a32, ghost: true },
+      box([0.4, 0.22, 0.03], [0, 4.6, -0.22], 0xd23a32, { ghost: true }),
+      box([0.03, 0.45, 0.03], [0.5, 0.45, 0.35], 0x9a7448, { ghost: true, rot: [0, 0, -0.2] }),
+      box([0.16, 0.1, 0.1], [0.59, 0.88, 0.35], 0x6a4a30, { ghost: true }),
+    ],
+  },
+  /** A cart spinning candy floss: a glass case on wheels, the drum inside, sticks of it pink and blue in a rack on top. */
+  cottonCandyCart: {
+    mass: 70,
+    effect: 'sugar',
+    parts: [
+      box([0.6, 0.38, 0.38], [0, 0.66, 0], 0xf6c8dc, { weight: 4 }),
+      box([0.62, 0.05, 0.4], [0, 1.06, 0], 0xffffff, { ghost: true }),
+      ...[-1, 1].map((s) => cyl(0.24, 0.04, [s * 0.6, 0.24, 0], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      box([0.4, 0.25, 0.3], [0.1, 1.33, 0], 0xd8eef4, { ghost: true }),
+      { shape: 'sphere', size: [0.26, 0.16, 0.22], pos: [0.1, 1.3, 0], color: 0xf8c8e0, ghost: true },
+      ...[[-0.42, 0xf8b8d8], [-0.3, 0xa8d8f0], [-0.18, 0xf8b8d8]].map(([x, c]) => ({ shape: 'sphere' as const, size: [0.12, 0.15, 0.12] as Vec3, pos: [x, 1.62, 0.1] as Vec3, color: c, ghost: true })),
+      cyl(0.025, 0.8, [0.5, 1.9, 0], 0x9aa0a6, { ghost: true }),
+      cone(0.8, 0.22, [0.5, 2.75, 0], 0xf08ac0, { ghost: true }),
+    ],
+  },
+  // The wave pool's, afloat in it and so sliding over its floor on almost nothing. A swimming ring: a fat tube of plastic
+  // in two colours, round.
+  swimRing: {
+    slippery: true,
+    mass: 6,
+    effect: 'water',
+    parts: Array.from({ length: 10 }, (_, k) => {
+      const a = (k / 10) * Math.PI * 2;
+      return box([0.15, 0.13, 0.17], [Math.cos(a) * 0.42, 0.13, Math.sin(a) * 0.42], k % 2 ? 0xffffff : 0xf0609a, { rot: [0, -a, 0], ghost: k % 2 === 1 });
+    }),
+  },
+  swimRingBlue: {
+    slippery: true,
+    mass: 6,
+    effect: 'water',
+    parts: Array.from({ length: 10 }, (_, k) => {
+      const a = (k / 10) * Math.PI * 2;
+      return box([0.15, 0.13, 0.17], [Math.cos(a) * 0.42, 0.13, Math.sin(a) * 0.42], k % 2 ? 0xf6d55c : 0x3f9fe0, { rot: [0, -a, 0], ghost: k % 2 === 1 });
+    }),
+  },
+  /** An air mattress: long, its ribs along it, a pillow at one end. */
+  floatMat: {
+    slippery: true,
+    mass: 5,
+    effect: 'water',
+    parts: [
+      box([0.38, 0.07, 0.95], [0, 0.07, 0], 0x3fb0e0),
+      ...[-0.25, -0.08, 0.08, 0.25].map((x) => box([0.06, 0.02, 0.8], [x, 0.15, -0.1], 0x7fd0f2, { ghost: true })),
+      box([0.36, 0.06, 0.15], [0, 0.17, 0.75], 0xf6d55c, { ghost: true }),
+    ],
+  },
+  /** A banana boat: a long yellow tube, its nose up, handles along its back and a tube along each side to keep it upright. */
+  bananaBoat: {
+    slippery: true,
+    mass: 70,
+    effect: 'water',
+    parts: [
+      cyl(0.36, 2.0, [0, 0.36, 0], 0xf6d020, { rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.3, 0.5, [0, 0.62, 2.25], 0xf6d020, { ghost: true, rot: [Math.PI / 2 - 0.45, 0, 0] }),
+      { shape: 'sphere', size: [0.3, 0.3, 0.32], pos: [0, 0.85, 2.7], color: 0x6a8a20, ghost: true },
+      ...[-1, 1].map((x) => cyl(0.18, 1.6, [x * 0.55, 0.18, -0.2], 0x3f7fd0, { rot: [Math.PI / 2, 0, 0] })),
+      ...[-1.2, -0.4, 0.4, 1.2].map((z) => box([0.3, 0.03, 0.03], [0, 0.82, z], 0x2a2c30, { ghost: true })),
+      ...[-1.2, -0.4, 0.4, 1.2].map((z) => box([0.3, 0.04, 0.22], [0, 0.73, z - 0.25], 0xe0b818, { ghost: true })),
+    ],
+  },
+  /** A sun lounger of white plastic: its slatted bed on four short legs, its back raised. */
+  lounger: {
+    mass: 12,
+    effect: 'splinters',
+    parts: [
+      box([0.33, 0.04, 0.7], [0, 0.32, -0.25], 0xf4f4f0),
+      box([0.33, 0.04, 0.35], [0, 0.55, 0.7], 0xf4f4f0, { rot: [-0.75, 0, 0] }),
+      ...[-0.28, 0.28].flatMap((x) => [-0.85, 0.3].map((z) => box([0.03, 0.15, 0.03], [x, 0.15, z], 0xe0e0dc, { ghost: true }))),
+      box([0.3, 0.02, 0.62], [0, 0.37, -0.25], [0x3fb0e0, 0xf6d55c, 0xf0609a][0], { ghost: true }),
+    ],
+  },
+  /** A rack of swimming rings for hire: a frame of steel tube, rings hung on its pegs in two rows. */
+  ringRack: {
+    mass: 60,
+    effect: 'water',
+    parts: [
+      box([0.9, 0.05, 0.3], [0, 0.05, 0], 0x9aa0a6, { weight: 5 }),
+      ...[-0.85, 0.85].map((x) => cyl(0.04, 0.95, [x, 0.95, 0], 0x9aa0a6)),
+      box([0.9, 0.03, 0.03], [0, 1.85, 0], 0x9aa0a6, { ghost: true }),
+      ...[-0.55, 0, 0.55].flatMap((x, i) => [0.75, 1.45].map((y, j) => cyl(0.32, 0.09, [x, y, 0.12], [0xf0609a, 0x3f9fe0, 0xf6d55c, 0x7fd3b8][(i + j) % 4], { ghost: true, rot: [Math.PI / 2, 0, 0] }))),
+    ],
+  },
+  // The teacups' tea party. A sugar cube as big as a child, for photographs: of sugar, it bursts into lumps of it.
+  sugarCube: {
+    mass: 30,
+    effect: 'sugar',
+    parts: [
+      box([0.45, 0.45, 0.45], [0, 0.45, 0], 0xfbfaf4),
+      ...[-1, 1, 1, -1].map((x, k) => box([0.12, 0.08, 0.004], [x * 0.2, 0.3 + k * 0.14, 0.452], 0xeeeadc, { ghost: true })),
+      ...[[-1, 1], [1, -1], [0, 1]].map(([x, z], k) => box([0.004, 0.07, 0.11], [0.452, 0.25 + k * 0.2, x * 0.18 + z * 0.05], 0xeeeadc, { ghost: true })),
+      box([0.2, 0.004, 0.14], [0.08, 0.903, -0.1], 0xeeeadc, { ghost: true }),
+    ],
+  },
+  /** A cake cart: a glass case on wheels, a cake of three tiers in it, cream and strawberries; whoever hits it wears the cream. */
+  cakeCart: {
+    mass: 95,
+    juice: 0xfff4ea,
+    parts: [
+      box([0.62, 0.4, 0.4], [0, 0.66, 0], 0xf6e2ec, { weight: 4 }),
+      box([0.64, 0.05, 0.42], [0, 1.08, 0], 0xf28cb0, { ghost: true }),
+      ...[-1, 1].map((x) => cyl(0.28, 0.04, [x * 0.64, 0.28, 0], 0x24262a, { ghost: true, rot: [0, 0, Math.PI / 2] })),
+      cyl(0.42, 0.12, [0, 1.25, 0], 0xfff6ec, { ghost: true }),
+      cyl(0.32, 0.12, [0, 1.49, 0], 0xfff0f4, { ghost: true }),
+      cyl(0.22, 0.12, [0, 1.73, 0], 0xfff6ec, { ghost: true }),
+      ...[0, 1, 2, 3, 4, 5].map((k) => ({ shape: 'sphere' as const, size: [0.05, 0.05, 0.05] as Vec3, pos: [Math.cos(k) * 0.3, 1.63, Math.sin(k) * 0.3] as Vec3, color: 0xd8283a, ghost: true })),
+      { shape: 'sphere', size: [0.07, 0.07, 0.07], pos: [0, 1.9, 0], color: 0xd8283a, ghost: true },
+      box([0.5, 0.42, 0.46], [0, 1.55, 0], 0xe8f6fa, { ghost: true }),
+      box([0.04, 0.04, 0.42], [0.72, 0.95, 0], 0xd8dce0, { ghost: true }),
+    ],
+  },
+  /** A stall of cakes and macarons under a pink awning. */
+  dessertStall: { ...stocked(0xf28cb0, [0xf8c8d8, 0xf6e2a8, 0xc8e8d0, 0xd8c8f0, 0x8a5a3a]), effect: 'sugar' },
+  /** A kitchen's wire shelving, steel, four shelves of boxes and tins and stacked trays: knocked, it goes over and they go everywhere. */
+  wireShelf: {
+    mass: 45,
+    effect: 'paper',
+    parts: [
+      ...[-0.55, 0.55].flatMap((x) => [-0.22, 0.22].map((z) => cyl(0.018, 0.9, [x, 0.9, z], 0xc8ccd0))),
+      ...[0.1, 0.6, 1.1, 1.6].map((y) => box([0.58, 0.012, 0.24], [0, y, 0], 0xb8bec4, { ghost: true })),
+      ...[0, 1, 2].flatMap((r) => [-0.35, 0, 0.35].map((x, c) => box([0.15, 0.17, 0.17], [x, 0.29 + r * 0.5, 0], [0xd9a62e, 0xf2efe6, 0xc8372d, 0x3f7fd0, 0xe8c070][(r * 3 + c) % 5], { ghost: true }))),
+      box([0.4, 0.06, 0.2], [0, 1.68, 0], 0xd8dce0, { ghost: true }),
+    ],
+  },
+  /**
+   * A stand of flowers sent for an opening day, as they are lined up outside any new place: a tripod of thin legs, a
+   * fan of flowers at the top, a smaller spray halfway down, a red ribbon down each side with the sender's wishes in gold.
+   */
+  flowerStand: {
+    mass: 7,
+    effect: 'leaves',
+    parts: [
+      foot(0.3, 0x3a3f46),
+      leg([0, 0.1, 0], [0, 1.5, -0.12], 0.018, 0xd8dce0),
+      leg([-0.28, 0.05, 0.2], [0, 1.2, -0.08], 0.014, 0xd8dce0),
+      leg([0.28, 0.05, 0.2], [0, 1.2, -0.08], 0.014, 0xd8dce0),
+      { shape: 'sphere', size: [0.5, 0.42, 0.14], pos: [0, 1.62, -0.06], color: 0x4f8a3a, ghost: true },
+      ...[[0, 1.72, 0xe8544a], [-0.26, 1.62, 0xf2c12e], [0.26, 1.62, 0xf08ac0], [-0.14, 1.86, 0xffffff], [0.14, 1.86, 0xf2c12e], [0, 1.5, 0xf08ac0], [-0.36, 1.8, 0xe8544a], [0.36, 1.8, 0xffffff]].map(([x, y, c]) =>
+        ({ shape: 'sphere' as const, size: [0.13, 0.13, 0.08] as Vec3, pos: [x, y, 0.06] as Vec3, color: c, ghost: true })),
+      { shape: 'sphere', size: [0.26, 0.2, 0.1], pos: [0, 0.92, 0.02], color: 0x4f8a3a, ghost: true },
+      ...[[-0.1, 0.95, 0xf2c12e], [0.1, 0.9, 0xe8544a], [0, 1.02, 0xffffff]].map(([x, y, c]) => ({ shape: 'sphere' as const, size: [0.09, 0.09, 0.06] as Vec3, pos: [x, y, 0.1] as Vec3, color: c, ghost: true })),
+      ...[-0.34, 0.34].flatMap((x) => [box([0.06, 0.5, 0.005], [x, 0.98, 0.1], 0xd23a32, { ghost: true }), box([0.02, 0.4, 0.006], [x, 1.0, 0.106], 0xf2c12e, { ghost: true })]),
+    ],
+  },
+  /** One of the two posts a ribbon is tied across between, to be cut: gilt, half the ribbon reaching from it, half the bow. */
+  ribbonPost: {
+    mass: 8,
+    effect: 'paper',
+    parts: [
+      foot(0.2, 0xd4a83a),
+      cyl(0.03, 0.5, [0, 0.55, 0], 0xd4a83a),
+      { shape: 'sphere', size: [0.07, 0.07, 0.07], pos: [0, 1.1, 0], color: 0xd4a83a, ghost: true },
+      box([1.3, 0.07, 0.008], [1.3, 0.95, 0], 0xd23a32, { ghost: true }),
+      { shape: 'sphere', size: [0.22, 0.18, 0.06], pos: [2.5, 0.95, 0], color: 0xd23a32, ghost: true },
+      box([0.05, 0.2, 0.008], [2.45, 0.72, 0.01], 0xd23a32, { ghost: true, rot: [0, 0, 0.3] }),
+    ],
+  },
+  /** A tower of champagne glasses on a table under a white cloth, for the toast: glass everywhere. */
+  champagneTower: {
+    mass: 28,
+    effect: 'shards',
+    parts: [
+      box([0.6, 0.38, 0.6], [0, 0.38, 0], 0xf7f4ee, { weight: 4 }),
+      box([0.62, 0.012, 0.62], [0, 0.77, 0], 0xd23a32, { ghost: true }),
+      ...[0, 1, 2, 3, 4].map((k) => cyl(0.46 - k * 0.09, 0.07, [0, 0.86 + k * 0.15, 0], 0xdcecf2, { ghost: true })),
+      ...[0, 1, 2, 3, 4].map((k) => cyl(0.47 - k * 0.09, 0.012, [0, 0.93 + k * 0.15, 0], 0xf2d98a, { ghost: true })),
+      cyl(0.05, 0.16, [0.42, 0.94, 0.42], 0x2f5a3a, { ghost: true }),
+      cyl(0.02, 0.07, [0.42, 1.15, 0.42], 0xd4a83a, { ghost: true }),
+    ],
+  },
+  /** A marching band's bass drum, set down on its side: it rolls. */
+  bassDrum: {
+    mass: 9,
+    effect: 'paper',
+    parts: [
+      cyl(0.42, 0.2, [0, 0.42, 0], 0xd23a32, { rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.4, 0.205, [0, 0.42, 0], 0xf7f4ee, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.43, 0.02, [0, 0.42, 0.19], 0xd4a83a, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+      cyl(0.43, 0.02, [0, 0.42, -0.19], 0xd4a83a, { ghost: true, rot: [Math.PI / 2, 0, 0] }),
+    ],
+  },
+  /** A column of balloons on a weighted foot, as they stand either side of anything being opened. */
+  balloonColumn: {
+    mass: 6,
+    effect: 'balloons',
+    parts: [
+      foot(0.28, 0x3a3f46),
+      cyl(0.02, 1.2, [0, 1.2, 0], 0xd8dce0, { ghost: true }),
+      ...Array.from({ length: 9 }, (_, k) => [0, 1, 2].map((j) => {
+        const a = (j / 3) * Math.PI * 2 + k * 0.5;
+        return { shape: 'sphere' as const, size: [0.2, 0.22, 0.2] as Vec3, pos: [Math.cos(a) * 0.16, 0.35 + k * 0.27, Math.sin(a) * 0.16] as Vec3, color: [0xe8544a, 0xf2c12e, 0xffffff, 0x3f7fd0][(k + j) % 4], ghost: true };
+      })).flat(),
+      { shape: 'sphere', size: [0.34, 0.36, 0.34], pos: [0, 2.95, 0], color: 0xf2c12e, ghost: true },
+    ],
+  },
+  /** A barrier of planks nailed across a mine's working, a board on it: it goes to splinters. */
+  mineBarrier: {
+    mass: 14,
+    effect: 'splinters',
+    parts: [
+      box([1.5, 0.09, 0.03], [0, 0.55, 0], 0x8a6a40, { rot: [0, 0, 0.12] }),
+      box([1.5, 0.09, 0.03], [0, 1.0, 0], 0x7a5a34, { ghost: true, rot: [0, 0, -0.1] }),
+      box([0.07, 0.65, 0.05], [-1.3, 0.65, 0.02], 0x6a4a2a, { ghost: true }),
+      box([0.07, 0.65, 0.05], [1.3, 0.65, 0.02], 0x6a4a2a, { ghost: true }),
+      box([0.5, 0.2, 0.012], [0, 0.8, -0.04], 0xf2c12e, { ghost: true }),
+      box([0.4, 0.035, 0.014], [0, 0.8, -0.05], 0x2a2420, { ghost: true }),
+    ],
+  },
+  /** A dummy for trying a ride out before anyone is let on it: a man's shape in orange plastic, full of water. */
+  testDummy: {
+    mass: 60,
+    effect: 'water',
+    spills: true,
+    parts: [
+      box([0.24, 0.3, 0.16], [0, 0.72, 0], 0xf28a2e),
+      box([0.22, 0.2, 0.15], [0, 0.22, 0], 0xf28a2e, { ghost: true }),
+      { shape: 'sphere', size: [0.17, 0.2, 0.17], pos: [0, 1.22, 0], color: 0xf28a2e, ghost: true },
+      cyl(0.05, 0.03, [0, 1.44, 0], 0x2a2c30, { ghost: true }),
+      box([0.16, 0.05, 0.005], [0, 0.8, 0.165], 0x2a2c30, { ghost: true }),
+    ],
+  },
+  /** A keg of powder, black, a red band round it, its fuse out of the lid: knocked, it goes up. */
+  powderKeg: {
+    mass: 45,
+    explosive: true,
+    bang: { kind: 'drum', power: 1.2 },
+    parts: [cyl(0.36, 0.48, [0, 0.48, 0], 0x2a2420), cyl(0.375, 0.08, [0, 0.5, 0], 0xc8372d, { ghost: true }), cyl(0.3, 0.01, [0, 0.97, 0], 0x4a4038, { ghost: true }), cyl(0.02, 0.1, [0.12, 1.06, 0], 0xd8c8a0, { ghost: true })],
+  },
+  /** The clowns' props: a rack of skittles on legs, a hoop on a stand, a trunk to keep it all in. */
+  pinRack: {
+    mass: 15,
+    effect: 'toys',
+    parts: [
+      box([0.5, 0.03, 0.18], [0, 0.55, 0], 0x8a5a3a),
+      ...[-0.44, 0.44].map((x) => box([0.03, 0.27, 0.03], [x, 0.27, 0], 0x8a5a3a)),
+      ...[-0.36, -0.18, 0, 0.18, 0.36].map((x, k) => cyl(0.055, 0.17, [x, 0.75, 0], k % 2 ? 0xffffff : 0xf2c12e, { ghost: true })),
+      ...[-0.36, -0.18, 0, 0.18, 0.36].map((x) => cyl(0.057, 0.025, [x, 0.8, 0], 0xd8302a, { ghost: true })),
+    ],
+  },
+  hoopStand: {
+    mass: 12,
+    effect: 'toys',
+    parts: [
+      box([0.45, 0.04, 0.25], [0, 0.04, 0], 0x3f7fd0),
+      ...[-0.5, 0.5].map((x) => cyl(0.03, 0.6, [x, 0.6, 0], 0xd9a830)),
+      ...Array.from({ length: 12 }, (_, k) => { const a = (k / 12) * Math.PI * 2; return box([0.04, 0.12, 0.04], [Math.cos(a) * 0.48, 1.25 + Math.sin(a) * 0.48, 0], k % 2 ? 0xffffff : 0xd8302a, { ghost: true, rot: [0, 0, a] }); }),
+    ],
+  },
+  propTrunk: {
+    mass: 40,
+    effect: 'toys',
+    parts: [
+      box([0.55, 0.3, 0.33], [0, 0.32, 0], 0xc8372d),
+      box([0.57, 0.06, 0.35], [0, 0.66, 0], 0x2f3b4a),
+      ...[-0.4, 0.4].map((x) => box([0.04, 0.32, 0.345], [x, 0.33, 0], 0xd9a830, { ghost: true })),
+      box([0.12, 0.08, 0.02], [0, 0.55, 0.34], 0xd9a830, { ghost: true }),
+    ],
+  },
+  /** A clown's ball of fireworks, red with a gold band, its fuse lit: let go of, it goes off a moment later in coloured sparks. */
+  fireworkBall: {
+    mass: 3,
+    explosive: true,
+    fuse: 1.2,
+    bang: { kind: 'firework', power: 0.45, radius: 5 },
+    parts: [
+      { shape: 'sphere', size: [0.2, 0.2, 0.2], pos: [0, 0.2, 0], color: 0xd8302a },
+      cyl(0.205, 0.035, [0, 0.2, 0], 0xf2c12e, { ghost: true }),
+      cyl(0.02, 0.07, [0, 0.45, 0], 0x2a2c30, { ghost: true }),
+      { shape: 'sphere', size: [0.06, 0.06, 0.06], pos: [0, 0.53, 0], color: 0xffe07a, ghost: true },
+    ],
+  },
 } satisfies Record<string, ObjectKind>;
 
 export type ObjectKindId = keyof typeof OBJECT_KINDS;
@@ -1927,4 +2502,9 @@ export interface ObjectDesc {
   deck?: number;
   /** On a deck, and not lashed down: loose on it from the moment the deck starts to move, rolling and sliding as it leans. */
   free?: boolean;
+  /**
+   * Put down standing in still water, as a rock in a pond is: not something fallen in, so the water does not take it and
+   * let it sink through what is under it; as solid and as heavy as on land, knocked over or not.
+   */
+  wading?: boolean;
 }

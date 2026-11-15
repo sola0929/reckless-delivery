@@ -223,7 +223,7 @@ export function brakeLights(kind: VehicleKind): THREE.Mesh {
   return mesh;
 }
 
-export function vehicleMesh(kind: VehicleKind, color: number, n: number, over = false): THREE.Mesh {
+export function vehicleMesh(kind: VehicleKind, color: number, n: number, over = false, livery?: number): THREE.Mesh {
   const shapes = new Shapes();
   // Gone over, its underside is to be seen: what is drawn is open underneath, every box of it, as nothing standing on
   // its wheels shows its bottom. Closed off by its floor pan, dark, the width and length of it.
@@ -233,7 +233,7 @@ export function vehicleMesh(kind: VehicleKind, color: number, n: number, over = 
   }
   if (kind === 'taxi') car(shapes, 0xf2c12e, true);
   else if (kind === 'pickup') pickup(shapes, 0x2f62a8);
-  else if (kind === 'bus') bus(shapes, BUSES[n % BUSES.length]);
+  else if (kind === 'bus') bus(shapes, livery ?? BUSES[n % BUSES.length]);
   else if (kind === 'garbage') garbage(shapes);
   else if (kind === 'float') float(shapes);
   else if (kind === 'palanquin') palanquin(shapes);

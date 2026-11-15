@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Euler, Quaternion, Vector3 } from 'three';
+import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { GROUP, PHYSICS, groups } from '../config';
 import type { RigDesc } from '../levels/types';
 
@@ -14,7 +14,7 @@ import type { RigDesc } from '../levels/types';
  * (radius, half its length) standing up unless turned; a hull lofted between two outlines.
  */
 export interface RigShape {
-  kind: 'box' | 'ball' | 'cyl' | 'loft';
+  kind: 'box' | 'ball' | 'cyl' | 'loft' | 'orb';
   half: [number, number, number];
   pos: [number, number, number];
   /** Leaning about X, radians: a boom rising. */
@@ -27,6 +27,8 @@ export interface RigShape {
   hidden?: boolean;
   /** Faded while it stands between the camera and the truck. */
   fade?: boolean;
+  /** Drawn turning about an upright through [x, z], so many radians a second. */
+  twirl?: [number, number, number];
   /** A loft's outline at its foot, at y0, and at its top, at y1: the same number of corners, in order round. */
   lo?: [number, number][];
   hi?: [number, number][];
@@ -101,6 +103,48 @@ const v = new Vector3();
 
 /** A ship's hatches, half across, as a share of its half beam. A container, half its size: its length across the deck. */
 const SHIP_HATCH = 0.15;
+/** Each track, by its way: when its train's first car is at each metre of it, seconds into a lap, and how long a lap is. */
+const laps = new WeakMap<object, { at: number[]; lap: number }>();
+
+/** How fast a train goes at a point along its track, by its pace: evenly changing from one given point to the next, round. */
+function paceAt(pace: [number, number][], s: number, long: number): number {
+  for (let k = 0; k < pace.length; k++) {
+    const a = pace[k], b = pace[(k + 1) % pace.length];
+    const from = a[0], to = k + 1 < pace.length ? b[0] : b[0] + long;
+    const at = s < pace[0][0] ? s + long : s;
+    if (at >= from && at <= to) return a[1] + ((b[1] - a[1]) * (at - from)) / Math.max(0.001, to - from);
+  }
+  return pace[0][1];
+}
+
+/** Where something carried round a track is at a moment: on its deck there, facing along it, pitched to its slope. */
+function trackPose(track: NonNullable<RigDesc['track']>, time: number): Pose {
+  const { way } = track, n = way.length;
+  let table = laps.get(way);
+  if (!table) {
+    const at = [0];
+    for (let k = 0; k < n; k++) at.push(at[k] + 1 / Math.max(0.5, paceAt(track.pace, k + 0.5, n)) + (track.stop && Math.floor(track.stop[0]) === k ? track.stop[1] : 0));
+    table = { at, lap: at[n] };
+    laps.set(way, table);
+  }
+  const t = (((time - (track.delay ?? 0)) % table.lap) + table.lap) % table.lap;
+  let lo = 0, hi = n;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (table.at[mid] <= t) lo = mid; else hi = mid; }
+  const s = (((lo + (t - table.at[lo]) / (table.at[lo + 1] - table.at[lo]) - (track.lead ?? 0)) % n) + n) % n;
+  const k = Math.floor(s), f = s - k, a = way[k], b = way[(k + 1) % n], c = way[(k + n - 1) % n], d = way[(k + 2) % n];
+  // Its heading from the points either side of where it is, so that it turns evenly round a bend.
+  const dx = (b[0] - c[0]) * (1 - f) + (d[0] - a[0]) * f, dy = (b[1] - c[1]) * (1 - f) + (d[1] - a[1]) * f, dz = (b[2] - c[2]) * (1 - f) + (d[2] - a[2]) * f;
+  let turn: Quaternion;
+  if (track.ups) {
+    // Over on itself, round a loop: by the way along it and the way up from it there.
+    const ua = track.ups[k], ub = track.ups[(k + 1) % n];
+    const ahead = new Vector3(dx, dy, dz).normalize(), up = new Vector3(ua[0] + (ub[0] - ua[0]) * f, ua[1] + (ub[1] - ua[1]) * f, ua[2] + (ub[2] - ua[2]) * f);
+    const left = new Vector3().crossVectors(up, ahead).normalize();
+    turn = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(left, new Vector3().crossVectors(ahead, left), ahead));
+  } else turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.atan2(dx, dz)).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.atan2(dy, Math.hypot(dx, dz))));
+  return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: a[2] + (b[2] - a[2]) * f, rot: { x: turn.x, y: turn.y, z: turn.z, w: turn.w } };
+}
+
 /** How far down a boardwalk's piles go, from the quay's level. */
 const WALK_FOOT = -6.7;
 const CONTAINER: [number, number, number] = [3.03, 1.3, 1.22];
@@ -115,7 +159,8 @@ function floatPose(desc: RigDesc, time: number): { y: number; rot: { x: number; 
   // throw what is on it into the air.
   const k = (1 - (desc.lurch ?? 1)) * 4;
   const lean = k > 0.05 ? Math.tanh(k * Math.sin(a)) / Math.tanh(k) : Math.sin(a);
-  const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), desc.yaw)
+  // Turning round on its own middle, as a ride does, at so many radians a second: on and on, not to and fro.
+  const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), desc.yaw + (desc.spin ?? 0) * time)
     .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), (desc.roll ?? 0) * lean))
     .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), (desc.pitch ?? 0) * Math.sin(a + 2.1)));
   return { y: desc.pos[1] + (desc.heave ?? 0) * Math.sin(a + 0.9), rot: { x: turn.x, y: turn.y, z: turn.z, w: turn.w } };
@@ -159,8 +204,8 @@ function floatShapes(desc: RigDesc, box: (half: [number, number, number], pos: [
   if (desc.hull === 'vessel') {
     // Made as the level says, piece by piece.
     for (const p of desc.parts ?? []) {
-      if (p.shape === 'loft') shapes.push({ kind: 'loft', half: [0, 0, 0], pos: [0, 0, 0], color: p.color, solid: false, lo: p.lo, hi: p.hi, y0: p.y0, y1: p.y1 });
-      else shapes.push({ kind: p.shape, half: p.half ?? [0.5, 0.5, 0.5], pos: p.pos ?? [0, 0, 0], rot: p.rot, color: p.color, solid: !!p.solid, hidden: p.hidden, fade: p.fade });
+      if (p.shape === 'loft') shapes.push({ kind: 'loft', half: [0, 0, 0], pos: [0, 0, 0], color: p.color, solid: false, lo: p.lo, hi: p.hi, y0: p.y0, y1: p.y1, twirl: p.twirl });
+      else shapes.push({ kind: p.shape, half: p.half ?? [0.5, 0.5, 0.5], pos: p.pos ?? [0, 0, 0], rot: p.rot, color: p.color, solid: !!p.solid, hidden: p.hidden, fade: p.fade, twirl: p.twirl });
     }
   } else if (desc.hull === 'walk') {
     // A boardwalk on piles: planks across it, a beam under each side, piles down into the water every four metres or so.
@@ -300,6 +345,16 @@ export class Rigs {
     return toWorld(rig.pose, local.clone()).sub(toWorld(rig.was, local)).divideScalar(dt);
   }
 
+  /** A turntable one of these bodies belongs to: its middle and how fast it turns. */
+  spinning(bodies: readonly RAPIER.RigidBody[]): { x: number; z: number; spin: number; share: number } | null {
+    for (const rig of this.list) {
+      if (!rig.desc.spin || !rig.parts.some((part) => bodies.includes(part.body))) continue;
+      const on = bodies.filter((body) => rig.parts.some((part) => part.body === body)).length;
+      return { x: rig.desc.pos[0], z: rig.desc.pos[2], spin: rig.desc.spin, share: on / bodies.length };
+    }
+    return null;
+  }
+
   /** A body, fixed or moving, at a place in the rig's own frame (Z the way it works), with its shapes, the solid ones felt. */
   private part(desc: RigDesc, mode: 'fixed' | 'dynamic' | 'kinematic' | 'upright', at: [number, number, number], shapes: RigShape[], mass = 0, prop = false): RigPart {
     const [x, y, z] = this.place(desc, at);
@@ -313,10 +368,12 @@ export class Rigs {
     const body = this.world.createRigidBody(made.setTranslation(x, y, z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
     const solid = shapes.filter((s) => s.solid);
     for (const s of solid) {
-      const shape = s.kind === 'ball' ? RAPIER.ColliderDesc.ball(s.half[0]) : s.kind === 'cyl' ? RAPIER.ColliderDesc.cylinder(s.half[1], s.half[0]) : RAPIER.ColliderDesc.cuboid(...s.half);
+      const shape = s.kind === 'ball' || s.kind === 'orb' ? RAPIER.ColliderDesc.ball(s.half[0]) : s.kind === 'cyl' ? RAPIER.ColliderDesc.cylinder(s.half[1], s.half[0]) : RAPIER.ColliderDesc.cuboid(...s.half);
       // A bridge's deck is driven on: ground, which the wheels find. So are the decks of what floats, and a gangway.
       const driven = !prop && (desc.kind === 'sway' || desc.kind === 'float' || desc.kind === 'gangway' || desc.kind === 'plate');
       shape.setTranslation(...s.pos).setFriction(driven ? 0.8 : 0.6).setCollisionGroups(groups(driven ? GROUP.ground : GROUP.prop, GROUP.all));
+      // A bumper car rolls on its wheels, and its rubber gives and springs back.
+      if (desc.kind === 'bumper') shape.setFriction(0.04).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min).setRestitution(0.55).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max);
       if (s.tilt) {
         q.setFromAxisAngle(v.set(1, 0, 0), s.tilt);
         shape.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
@@ -371,6 +428,31 @@ export class Rigs {
       for (const part of rig.parts) if (!part.body.isFixed()) rig.start.push({ body: part.body, pos: part.body.translation(), rot: part.body.rotation() });
       return rig;
     }
+    if (desc.kind === 'bumper') {
+      // A bumper car: its shell on a low chassis, the thick rubber all round it, the seat and someone in it at the wheel,
+      // the pole up behind to the grid overhead. Light, and on wheels: what it meets that will not give, it bounces off.
+      rig.parts.push(this.part(desc, 'fixed', [0, -40, 0], []));
+      const shell = desc.color ?? 0xd23a32;
+      const car = this.part(desc, 'upright', [0, 0.3, 0], [
+        // Felt the whole height of its shell and rubber, up to where the truck's frame is; seen as the rubber only.
+        { ...box([0.72, 0.38, 1.08], [0, 0.12, 0], 0x1c1c1c), hidden: true },
+        { kind: 'box', half: [0.72, 0.16, 1.08], pos: [0, 0, 0], color: 0x1c1c1c, solid: false },
+        box([0.62, 0.2, 0.95], [0, 0.3, 0.02], shell, false),
+        box([0.6, 0.16, 0.34], [0, 0.56, 0.6], shell, false),
+        box([0.5, 0.06, 0.4], [0, 0.48, -0.15], 0x2a2c30, false),
+        box([0.5, 0.36, 0.08], [0, 0.72, -0.52], shell, false),
+        box([0.66, 0.025, 1.0], [0, 0.505, 0.02], 0xf2efe6, false),
+        box([0.18, 0.22, 0.12], [0, 0.7, -0.2], 0x3f7fd0, false),
+        { kind: 'ball', half: [0.13, 0.13, 0.13], pos: [0, 1.03, -0.2], color: 0xe8c4a0, solid: false },
+        { kind: 'cyl', half: [0.15, 0.02, 0.15], pos: [0, 0.82, 0.18], rot: [-0.9, 0, 0], color: 0x1c1c1c, solid: false },
+        box([0.025, 1.62, 0.025], [0, 2.38, -0.62], 0x8a8f96, false),
+        box([0.1, 0.03, 0.03], [0, 3.97, -0.62], 0xd9a830, false),
+      ], BUMPER_MASS);
+      car.body.setLinearDamping(0.4);
+      rig.parts.push(car);
+      for (const part of rig.parts) if (!part.body.isFixed()) rig.start.push({ body: part.body, pos: part.body.translation(), rot: part.body.rotation() });
+      return rig;
+    }
     if (desc.kind === 'sway') {
       // A hanging bridge's deck, steel plate on cross beams, a low kerb along each edge; its hangers up to the cables, which
       // hang from towers that do not move. It is all one body, rocking from side to side about its own length.
@@ -409,8 +491,13 @@ export class Rigs {
       }
       rig.lamp = { part: 0, at: [0, -5, 0] };
       for (const part of rig.parts) rig.start.push({ body: part.body, pos: part.body.translation(), rot: part.body.rotation() });
-      rig.pose = restPose(desc);
+      rig.pose = desc.track ? trackPose(desc.track, 0) : restPose(desc);
       rig.was = rig.pose;
+      if (desc.track) {
+        deck.body.setTranslation(rig.pose, false);
+        deck.body.setRotation(rig.pose.rot, false);
+        rig.start[0] = { body: deck.body, pos: deck.body.translation(), rot: deck.body.rotation() };
+      }
       return rig;
     }
     if (desc.kind === 'plate') {
@@ -576,15 +663,16 @@ export class Rigs {
       rig.time += dt;
       const frac = (rig.time / desc.period + desc.phase) % 1;
       const lead = 1 / desc.period;
-      if (desc.kind === 'forklift') {
+      if (desc.kind === 'forklift' || desc.kind === 'bumper') {
         this.drive(rig, frac, dt);
-        rig.warn = true;
+        rig.warn = desc.kind === 'forklift';
         continue;
       }
       if (desc.kind === 'float') {
         const deck = rig.parts[0].body;
         let { y, rot } = floatPose(desc, rig.time);
         let x = desc.pos[0], z = desc.pos[2];
+        if (desc.track) ({ x, y, z, rot } = trackPose(desc.track, rig.time));
         const surge = desc.surge;
         if (surge) {
           // Once the truck comes near, waiting for the wave to take it up (the game's waves say when: throw), carried
@@ -816,8 +904,15 @@ export class Rigs {
     const at = this.along(rig.desc, frac), ahead = this.along(rig.desc, (frac + dt / rig.desc.period) % 1);
     const p = body.translation(), v = body.linvel(), m = body.mass();
     const want = [(ahead.x - at.x) / dt + (at.x - p.x) * 2, (ahead.z - at.z) / dt + (at.z - p.z) * 2];
+    const bumper = rig.desc.kind === 'bumper';
+    if (bumper) {
+      // Knocked off its way or held up, a bumper car makes back for it no faster than its little motor goes.
+      const fast = Math.hypot(want[0], want[1]);
+      if (fast > BUMPER_TOP) want.forEach((_, k) => (want[k] *= BUMPER_TOP / fast));
+    }
     const f = [(want[0] - v.x) * 6 * m, (want[1] - v.z) * 6 * m];
-    const size = Math.hypot(f[0], f[1]), scale = size > FORK_FORCE ? FORK_FORCE / size : 1;
+    const most = bumper ? BUMPER_FORCE : FORK_FORCE;
+    const size = Math.hypot(f[0], f[1]), scale = size > most ? most / size : 1;
     body.resetForces(true);
     body.addForce({ x: f[0] * scale, y: 0, z: f[1] * scale }, true);
     // Round the corners it turns to its new way; going back along it, it keeps facing the way it came, reversing.
@@ -938,7 +1033,7 @@ export class Rigs {
       rig.angle = 0;
       rig.aim = undefined;
       for (const slip of rig.slips ?? []) slip.stuck = true;
-      if (rig.desc.kind === 'float') rig.pose = rig.was = restPose(rig.desc);
+      if (rig.desc.kind === 'float') rig.pose = rig.was = rig.desc.track ? trackPose(rig.desc.track, 0) : restPose(rig.desc);
       rig.surge = undefined;
       rig.armed = false;
       for (const { body, pos, rot } of rig.start) {
@@ -975,6 +1070,10 @@ export class Rigs {
 
 /** The most a forklift's engine pushes it with, newtons. */
 const FORK_FORCE = 70000;
+/** A bumper car with its rider, kilograms; the most its motor pushes it with, newtons; the fastest it goes, m/s. */
+const BUMPER_MASS = 300;
+const BUMPER_FORCE = 1100;
+const BUMPER_TOP = 3.2;
 const v3 = new Vector3();
 /** A hanging bridge's deck: how wide; how far it rocks to either side, radians, and how far it rises and falls, metres; how
  * high its cables are over it at the towers and in the middle. */

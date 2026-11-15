@@ -2,8 +2,33 @@
 
 export type Vec3 = [number, number, number];
 
+/** How many times a second the physics may be worked out: fewer is lighter on a slow machine, and rougher on the load. */
+export const PHYSICS_RATES = [60, 45, 30];
+const RATE_KEY = 'cargo-physics-rate';
+
+/** The rate the player has chosen, kept in the browser between visits; 60 where nothing is kept (and outside a browser). */
+export function loadRate(): number {
+  try {
+    const saved = Number(localStorage.getItem(RATE_KEY));
+    if (PHYSICS_RATES.includes(saved)) return saved;
+  } catch {
+    // Nothing saved, or nothing readable.
+  }
+  return 60;
+}
+
+/** Choose it: in force from the next step, in a run under way too. */
+export function saveRate(rate: number): void {
+  PHYSICS.dt = 1 / rate;
+  try {
+    localStorage.setItem(RATE_KEY, String(rate));
+  } catch {
+    // In force for this visit all the same.
+  }
+}
+
 export const PHYSICS = {
-  dt: 1 / 60,
+  dt: 1 / loadRate(),
   gravity: -9.81,
   solverIterations: 8,
   maxStepsPerFrame: 4,

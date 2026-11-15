@@ -1,7 +1,7 @@
 import { captureAccidentPhoto } from './ui/accident-photo';
 import { RouteProgress } from './ui/route-progress';
 import { Plane, Quaternion, Raycaster, SpotLight, Vector2, Vector3, type Object3D } from 'three';
-import { DRIVER, PHYSICS, TRUCK } from './config';
+import { DRIVER, PHYSICS, TRUCK, loadRate, saveRate } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
 import { bumpControls } from './controls';
@@ -19,17 +19,19 @@ import { ChaseCamera } from './render/camera';
 import { BattleView } from './render/battleView';
 import { CargoViews } from './render/cargoView';
 import { DriverView } from './render/driverView';
-import { Bursts, Smoke } from './render/effects';
+import { Bursts, Fireworks, Smoke } from './render/effects';
 import { LevelView } from './render/levelView';
 import { BodySync, TruckMesh } from './render/meshes';
 import { ObjectsView, PedestriansView } from './render/objectsView';
 import { RidersView } from './render/ridersView';
+import { ClownsView } from './render/clownsView';
 import { MachinesView } from './render/machinesView';
 import { RigsView } from './render/rigsView';
 import { RainView } from './render/rainView';
 import { StormView } from './render/stormView';
 import { WavesView } from './render/wavesView';
 import { WindView } from './render/windView';
+import { FlockView } from './render/flockView';
 import { LampsView } from './render/lampsView';
 import { OutageView } from './render/outageView';
 import { SkylightsView } from './render/skylightsView';
@@ -85,6 +87,16 @@ for (const button of qualityButtons) {
   });
 }
 showQuality();
+// And how often the physics is worked out: one of three.
+const rateButtons = [...document.querySelectorAll<HTMLButtonElement>('#gfx-rate button')];
+const showRate = () => rateButtons.forEach((button) => button.classList.toggle('on', Number(button.dataset.rate) === loadRate()));
+for (const button of rateButtons) {
+  button.addEventListener('click', () => {
+    saveRate(Number(button.dataset.rate));
+    showRate();
+  });
+}
+showRate();
 graphics.onStepDown = (quality) => {
   showQuality();
   hud.popup(quality === 'low' ? '畫面不順，已調到最低畫質' : '畫面不順，已自動降低畫質', window.innerWidth / 2, window.innerHeight * 0.3, 'big');
@@ -109,7 +121,8 @@ const wreckSmoke = new Smoke(0x1c1a19, 0.5, 6, 2.8);
 const PLUME = new Vector3(0.6, 2.2, 0.3);
 let engineTimer = 0;
 const bursts = new Bursts();
-view.scene.add(smoke.mesh, engineSmoke.mesh, wreckSmoke.mesh, bursts.mesh);
+const fireworks = new Fireworks();
+view.scene.add(smoke.mesh, engineSmoke.mesh, wreckSmoke.mesh, bursts.mesh, fireworks.mesh);
 
 setStage(2, 0.45);
 await settle();
@@ -130,12 +143,16 @@ const said = { start: false, below60: false, below30: false, near: false, hits: 
 const wreckage = new Wreckage(view.scene);
 const pedestriansView = new PedestriansView(view.scene, sim.pedestrians.list);
 const ridersView = new RidersView(view.scene, sim.riders.list);
+const clownsView = sim.clowns.list.length ? new ClownsView(view.scene, sim.clowns.list, () => sim.clowns.time) : null;
 const machinesView = new MachinesView(view.scene, sim.machines.list);
 const lampTruck = new Vector3();
 const rigsView = new RigsView(view.scene, sim.rigs.list, sim.droppers.rocks, sim.droppers.holes);
 const wavesView = sim.waves.list.length ? new WavesView(view.scene, sim.waves.list) : null;
 const windView = sim.wind.list.length ? new WindView(view.scene, sim.wind.list) : null;
-const lampsView = level.lamps?.length ? new LampsView(view.scene, level.lamps) : null;
+const flockView = level.flocks?.length ? new FlockView(view.scene, level.flocks) : null;
+// Those in a hall whose power goes drawn apart from the rest, for the outage to find them in it.
+const hall = level.outage?.area;
+const lampsView = level.lamps?.length ? new LampsView(view.scene, level.lamps, (x, z) => (hall && x > hall[0] && x < hall[2] && z > hall[1] && z < hall[3] ? 'hall' : '')) : null;
 // After everything else in the hall is made: what glows of itself in there goes dark with it.
 const outageView = level.outage ? new OutageView(view.scene, level.outage, truckMesh.root) : null;
 const skylightsView = sim.skylights.lights.length ? new SkylightsView(view.scene, sim.skylights) : null;
@@ -331,7 +348,7 @@ function stormAt(at: { x: number; y: number; z: number }, indoors: boolean): Sto
     const d = Math.hypot(Math.max(0, across - half[0]), Math.max(0, along - half[2]));
     if (pose && was) {
       const dot = Math.abs(pose.rot.x * was.rot.x + pose.rot.y * was.rot.y + pose.rot.z * was.rot.z + pose.rot.w * was.rot.w);
-      const turning = 2 * Math.acos(Math.min(1, dot)) * 60;
+      const turning = 2 * Math.acos(Math.min(1, dot)) / PHYSICS.dt;
       if (d < near) { near = d; rolling = turning / 0.1; }
     } else near = Math.min(near, d);
     // Containers loose on its deck, sliding.
@@ -474,8 +491,30 @@ function talk(dt: number): void {
   }
 }
 
+/** A ride's train going by near the truck: what those aboard cry out, by whether it is climbing, coming down or on the level. */
+const criers = sim.rigs.list.filter((rig) => rig.desc.track?.says).map((rig) => ({ rig, next: 0 }));
+function cry(dt: number): void {
+  const t = sim.truck.body.translation();
+  for (const crier of criers) {
+    const { pose, was, desc } = crier.rig;
+    if ((crier.next -= dt) > 0 || !pose || !was || Math.hypot(pose.x - t.x, pose.z - t.z) > 45) continue;
+    const spot = toScreen(pose, 2.8);
+    if (!spot || spot.x < 60 || spot.x > window.innerWidth - 60 || spot.y < 60 || spot.y > window.innerHeight - 60) {
+      crier.next = 0.3;
+      continue;
+    }
+    const rise = (pose.y - was.y) / PHYSICS.dt, says = desc.track!.says!;
+    const lines = rise > 0.8 ? says.up : rise < -0.8 ? says.down : says.level;
+    hud.popup(lines[Math.floor(Math.random() * lines.length)], spot.x, spot.y, rise < -0.8 ? 'big' : 'say');
+    crier.next = 1.1 + Math.random() * 0.9;
+  }
+}
+
 /** What people shout when they are sent flying. */
 const SHOUTS = ['喂！', '啊啊啊！', '看路啊！', '哎唷！', '搞什麼！'];
+const CLOWN_SHOUTS = ['我的煙火！', '快跑啊！', '哎呀呀～', '要炸了！'];
+const WOBBLE_SHOUTS = ['要倒了要倒了！', '快讓開啦～', '撐、撐不住了！', '別停在那裡！'];
+const TOPPLE_SHOUTS = ['哇啊啊啊！', '煙火掉了！', '大家快趴下！'];
 const RIDER_SHOUTS = ['我的車！', '會不會開車啊！', '哎唷喂！', '啊啊啊！', '長眼睛沒有！'];
 
 /**
@@ -522,7 +561,7 @@ const RUBBER = new Set(['tyre', 'tyreStack', 'yokohamaFender']);
 /** Hollow metal: a boom rather than a ring. */
 const HOLLOW = new Set(['barrel', 'bin']);
 /** Rock. */
-const STONE = new Set(['boulder', 'rockSmall', 'bricks']);
+const STONE = new Set(['boulder', 'rockSmall', 'bricks', 'stoneLantern']);
 /** Dead weight: a thump. */
 const WEIGHT = new Set(['gravelPile', 'culvert', 'culvertStack', 'pipe', 'concretePipe']);
 
@@ -764,6 +803,8 @@ function showKnock(knock: KnockEvent): void {
   }
   if (kind.effect === 'leaves') bursts.emit(at.setY(knock.at.y + 3), 'leaves', 26, 4);
   else if (kind.effect === 'paper') bursts.emit(at.setY(knock.at.y + 0.4), 'paper', 90, 5, 1.6);
+  else if (kind.effect === 'balloons') bursts.emit(at.setY(knock.at.y + 2.6), 'balloons', 16, 2, 1.5);
+  else if (kind.effect === 'popcorn') bursts.emit(at.setY(knock.at.y + 1.2), 'popcorn', 70, 4, 1.4);
   else if (kind.effect === 'ash') {
     // A furnace knocked over: a cloud of ash and smoke, dust, burning paper and sparks.
     const from = at.setY(knock.at.y + 1.6);
@@ -889,13 +930,22 @@ function sparkLive(dt: number): void {
 }
 
 /** What is said over each kind of explosion. A shell landing says nothing: there are too many. */
-const BLAST_WORDS: Record<string, string> = { gas: '瓦斯爆炸！', drum: '油桶爆炸！', mine: '地雷！', rocket: '火箭彈！', tank: '坦克砲！' };
+const BLAST_WORDS: Record<string, string> = { firework: '煙火！', gas: '瓦斯爆炸！', drum: '油桶爆炸！', mine: '地雷！', rocket: '火箭彈！', tank: '坦克砲！' };
 
 /** Something going off: a ball of fire, smoke after it, and everything in earshot knows. */
 function showBlast(at: { x: number; y: number; z: number; kind?: string }): void {
   splashAt.set(at.x, at.y + 0.6, at.z);
-  bursts.emit(splashAt, 'fire', 190, 16, 1.1);
-  bursts.emit(splashAt, 'sparks', 110, 20, 1);
+  // A ball of fireworks: a flash and stars of every colour, a little fire.
+  if (at.kind === 'firework') {
+    bursts.emit(splashAt, 'flash', 12, 4, 1);
+    bursts.emit(splashAt, 'fireworks', 220, 13, 1.3);
+    bursts.emit(splashAt, 'fire', 40, 8, 1.1);
+    // And what was packed in it goes up: a shell or two, bursting over the show.
+    fireworks.launch(splashAt, 1 + Math.floor(Math.random() * 2));
+  } else {
+    bursts.emit(splashAt, 'fire', 190, 16, 1.1);
+    bursts.emit(splashAt, 'sparks', 110, 20, 1);
+  }
   for (let i = 0; i < 30; i++) engineSmoke.emit(contact.set(at.x + (Math.random() - 0.5) * 4.5, at.y + 0.4 + Math.random() * 2.5, at.z + (Math.random() - 0.5) * 4.5), RISING);
   const truckAt = sim.truck.body.translation();
   const near = Math.max(0, 1 - Math.hypot(at.x - truckAt.x, at.z - truckAt.z) / 45);
@@ -1127,6 +1177,7 @@ function resetRun(toSave = false): void {
   engineSmoke.clear();
   wreckSmoke.clear();
   bursts.clear();
+  fireworks.clear();
   pendingLoss.clear();
   hud.clearPopups();
   if (!toSave) {
@@ -1219,7 +1270,7 @@ function updatePrompt(): void {
       // Oil, unless what it is on is gravel spilt from a lorry, or crushed ice.
       const at = truck.body.translation();
       const look = sim.level.slicks?.find((k) => Math.abs(at.x - k.pos[0]) < k.half[0] && Math.abs(at.z - k.pos[1]) < k.half[1])?.look;
-      return hud.setPrompt(look === 'gravel' ? '路面有砂石，小心打滑' : look === 'ice' ? '路面結冰，小心打滑' : '路面有油，小心打滑', true);
+      return hud.setPrompt(look === 'gravel' ? '路面有砂石，小心打滑' : look === 'ice' ? '路面結冰，小心打滑' : look === 'metal' ? '鐵板地面很滑，小心打滑' : '路面有油，小心打滑', true);
     }
     const slow = Math.abs(truck.forwardSpeed()) < DRIVER.exitSpeed;
     // Something found lying along the way is only worth getting out for once it is close.
@@ -1496,6 +1547,14 @@ function frame(now: number): void {
         if (spout.lifted) audio.thud('metal', Math.max(0.2, 1 - away / 40), 0.6);
       }
     }
+    for (const clown of sim.clowns.fresh) showHit(clown.person, CLOWN_SHOUTS, false);
+    // A clown held up on the spot, losing their balance: they shout; and going over, they shout again.
+    for (const [list, shouts] of [[sim.clowns.wobbling, WOBBLE_SHOUTS], [sim.clowns.toppled, TOPPLE_SHOUTS]] as const) {
+      for (const clown of list) {
+        const spot = toScreen({ x: clown.x, y: 0, z: clown.z }, 2.6);
+        if (spot) hud.popup(shouts[Math.floor(Math.random() * shouts.length)], spot.x, spot.y, 'big');
+      }
+    }
     for (const rider of sim.drainRiderHits()) {
       if (rider.kind !== 'scooter') {
         // A god's chair, or a mover's sofa or wardrobe: wood splitting, stuffing, and the bearers' cries.
@@ -1524,6 +1583,7 @@ function frame(now: number): void {
   const alpha = accumulator / PHYSICS.dt;
   levelView.apply(alpha);
   ridersView.apply(alpha);
+  clownsView?.update();
   machinesView.apply(alpha);
   truckSync.apply(alpha);
   cargoViews.apply(alpha);
@@ -1637,7 +1697,9 @@ function frame(now: number): void {
   squallUpdate(dt, !!outageView?.under(focus));
   if (crewLights.length) aimCrewLights();
   if (talkers.length) talk(dt);
+  if (criers.length) cry(dt);
   windView?.update(dt);
+  flockView?.update(dt, sim.truck.body.translation(), view.camera.position);
   if (lampsView) {
     const r = sim.truck.body.rotation();
     lampsView.update(dt, sim.truck.body.translation(), Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x)), sim.truck.forwardSpeed());
@@ -1652,6 +1714,7 @@ function frame(now: number): void {
   engineSmoke.update(dt);
   wreckSmoke.update(dt);
   bursts.update(dt);
+  fireworks.update(dt);
   levelView.update(dt, view.camera, focus);
   aimSun(view, focus);
 
@@ -1743,11 +1806,15 @@ view.renderer.compile(view.scene, view.camera);
 {
   const was: [Object3D, boolean, boolean][] = [];
   view.scene.traverse((o) => { was.push([o, o.visible, o.frustumCulled]); o.visible = true; o.frustumCulled = false; });
-  view.renderer.render(view.scene, view.camera);
-  // Again with what fades faded: its see-through shaders.
-  levelView.seeThrough(true);
-  view.renderer.render(view.scene, view.camera);
-  levelView.seeThrough(false);
+  // Where the power goes, both with the spot lights of the dark and without: each way is its own set of shaders.
+  for (const spots of outageView ? [false, true] : [true]) {
+    outageView?.light(spots);
+    view.renderer.render(view.scene, view.camera);
+    // Again with what fades faded: its see-through shaders.
+    levelView.seeThrough(true);
+    view.renderer.render(view.scene, view.camera);
+    levelView.seeThrough(false);
+  }
   for (const [o, visible, culled] of was) { o.visible = visible; o.frustumCulled = culled; }
 }
 // Going before the loading screen fades: what it fades off is the game as it is, not the picture drawn to make ready,

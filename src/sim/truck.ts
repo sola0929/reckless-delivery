@@ -36,6 +36,11 @@ export class Truck {
   drag = 0;
   /** Whether it runs away down a hill when it is left without the handbrake on. Otherwise it stays wherever it stops. */
   rolls = false;
+  /**
+   * A turntable under its wheels, turning: its middle and how fast, radians a second. The tyres hold to it as to any
+   * ground, and so the truck goes round with it: they are reckoned against the ground going by under them, not the world.
+   */
+  deck: { x: number; z: number; spin: number; share: number } | null = null;
   private dragged = 0;
   /** 0 when off the brakes, up to 1 for a full emergency stop. */
   brakeLevel = 0;
@@ -95,6 +100,41 @@ export class Truck {
 
   /** Call once per physics step, before world.step(). */
   update(dt: number, input: DriveInput): void {
+    // On a turntable, all that follows is as the truck goes over it: its going, less the going of the ground under it.
+    const deck = this.deck;
+    const carry = deck && this.carried(deck);
+    if (carry) this.shift(-carry.x, -carry.z, -deck.spin * deck.share);
+    this.drive(dt, input);
+    if (carry) this.shift(carry.x, carry.z, deck.spin * deck.share);
+  }
+
+  /**
+   * How fast the ground of a turntable is going where the truck is on it, m/s: by as many of its wheels as are on it, of
+   * those on anything, the rest being on ground that is still.
+   */
+  private carried(deck: { x: number; z: number; spin: number; share: number }): { x: number; z: number } {
+    const p = this.body.translation();
+    return { x: deck.spin * deck.share * (p.z - deck.z), z: -deck.spin * deck.share * (p.x - deck.x) };
+  }
+
+  private shift(x: number, z: number, spin: number): void {
+    const lv = this.body.linvel(), av = this.body.angvel();
+    this.body.setLinvel({ x: lv.x + x, y: lv.y, z: lv.z + z }, true);
+    this.body.setAngvel({ x: av.x, y: av.y + spin, z: av.z }, true);
+  }
+
+  /** What each wheel that touches anything is on: a body for each, so that one under two wheels is there twice. */
+  underWheels(): RAPIER.RigidBody[] {
+    const under: RAPIER.RigidBody[] = [];
+    for (let i = 0; i < 4; i++) {
+      const collider = this.controller.wheelIsInContact(i) ? this.controller.wheelGroundObject(i) : null;
+      const body = collider?.parent();
+      if (body) under.push(body);
+    }
+    return under;
+  }
+
+  private drive(dt: number, input: DriveInput): void {
     const speed = this.forwardSpeed();
     const mass = this.body.mass();
     // Engine force falls off toward top speed, but stays strong through the mid range.

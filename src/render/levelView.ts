@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { drawStillTogether } from './merge';
 import { surfaceTexture } from './textures';
 import { mulberry32 } from '../levels/sandbox';
 import { heightAt } from '../levels/terrain';
@@ -15,6 +17,12 @@ const FADED_OPACITY = 0.16;
 /** How see-through overhead plant becomes, and how near the camera's line to the truck it has to come, metres. */
 const OVERHEAD_OPACITY = 0.08;
 const OVERHEAD_PAD = 3.5;
+/**
+ * Plain things that fade are drawn together, one mesh for all of them in a square this many metres a side and a layer this
+ * high, and fade together when any of them is in the way: drawn one by one, level 4's market was a thousand draws.
+ */
+const FADE_CELL = 4;
+const FADE_LAYER = 3;
 const FADE_RATE = 8;
 /** A storey whose underside is more than this above the truck, metres, is taken away: the truck is seen from above, inside. */
 const CUT_ABOVE = 2.4;
@@ -23,6 +31,8 @@ const DECAL_Y = 0.02;
 interface Fader {
   materials: THREE.Material[];
   box: THREE.Box3;
+  /** Several things drawn as one: each one's own box; `box` is then the box round them all. */
+  boxes?: THREE.Box3[];
   opacity: number;
   mesh: THREE.Object3D;
   /** For a storey of a building driven up through: how high its underside is. It is not drawn while that is above the truck. */
@@ -81,7 +91,7 @@ function slickMesh(slicks: SlickDesc[]): THREE.Group {
     group.add(mesh);
   };
   for (const { pos, half, y, look } of slicks) {
-    if (look === 'gravel' || look === 'ice') continue;
+    if (look === 'gravel' || look === 'ice' || look === 'metal') continue;
     ground = y ?? 0;
     const count = Math.round((half[0] * half[1]) / 7);
     const inside = (radius: number): [number, number] => [
@@ -380,9 +390,29 @@ function arrowTexture(kind: 'uturn' | 'detour' | 'ahead'): THREE.Texture {
   return texture;
 }
 
+/**
+ * A board: a box whose back and edges are one material and whose face (front, or front and back) is another, drawn in two
+ * goes rather than one for each of its six sides. Material 0 is the back, 1 the face.
+ */
+function boardGeometry(w: number, h: number, d: number, twoFaced: boolean): THREE.BoxGeometry {
+  const box = new THREE.BoxGeometry(w, h, d);
+  const index = box.index!;
+  // A box's sides come in its index six apiece: +x, -x, +y, -y, +z (front), -z (back).
+  const side = (k: number) => Array.from({ length: 6 }, (_, i) => index.getX(k * 6 + i));
+  const back = [0, 1, 2, 3, ...(twoFaced ? [] : [5])].flatMap(side);
+  const face = (twoFaced ? [4, 5] : [4]).flatMap(side);
+  box.setIndex([...back, ...face]);
+  box.clearGroups();
+  box.addGroup(0, back.length, 0);
+  box.addGroup(back.length, face.length, 1);
+  return box;
+}
+
 /** The signs; those that fade added to the faders given. */
-function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
+function signMeshes(signs: SignDesc[], faders: Fader[], apart?: (at: THREE.Vector3) => string): THREE.Group {
   const group = new THREE.Group();
+  group.name = 'signs';
+  const fading = new Set<THREE.Object3D>();
   const faces: Partial<Record<SignDesc['kind'], THREE.Material>> = {};
   const faceOf = (kind: SignDesc['kind']) => (faces[kind] ??= new THREE.MeshBasicMaterial({ map: kind === 'pedestrian' ? pedestrianTexture() : kind === 'slippery' ? slipperyTexture() : kind === 'school' || kind === 'works' || kind === 'bends' ? noticeTexture(kind) : kind === 'schoolName' ? nameTexture() : kind === 'gasShop' ? nameTexture('瓦斯行', '#c8262a', '#f2efe6') : kind === 'loadOut' ? nameTexture('裝料區', '#f2c12e', '#24262a', '#1f2a36') : kind === 'safety' ? nameTexture('安全第一', '#1f7a3a', '#f2efe6') : kind === 'pondWorks' ? nameTexture('沉澱池工區', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'pumpStation' ? nameTexture('抽水站', '#1f4f9a', '#e8e8e2') : kind === 'floodGate' ? nameTexture('防汛陸閘', '#f2c12e', '#24262a', '#1f2a36') : kind === 'unload' ? nameTexture('卸貨區', '#2f7a3a', '#f2efe6') : kind === 'brokenBridge' ? nameTexture('前方斷橋', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'freight' ? nameTexture('福安貨運', '#1f4f9a', '#f2efe6') : kind === 'canteen' ? nameTexture('阿月小吃部', '#c8262a', '#f2efe6') : kind === 'bento' ? nameTexture('自助餐 便當', '#f2c12e', '#c8262a', '#1f2a36') : kind === 'concert' ? nameTexture('熱音社 成果發表會', '#2a3a6a', '#ffd166') : kind === 'aYu' ? nameTexture('阿玉豆花', '#2f6fb0', '#f2efe6') : arrowTexture(kind as 'uturn' | 'detour' | 'ahead') }));
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.6 });
@@ -406,8 +436,8 @@ function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
       const own = sign.kind === 'name' ? nameOf(sign) : faceOf(sign.kind);
       const [back, face] = sign.fadeZone ? [steel.clone(), own.clone()] : [steel, own];
       const plate = sign.tall
-        ? new THREE.Mesh(new THREE.BoxGeometry(wide * 0.25, wide, 0.12), [back, back, back, back, face, face])
-        : new THREE.Mesh(new THREE.BoxGeometry(wide, wide * 0.218, 0.1), [back, back, back, back, face, back]);
+        ? new THREE.Mesh(boardGeometry(wide * 0.25, wide, 0.12, true), [back, face])
+        : new THREE.Mesh(boardGeometry(wide, wide * 0.218, 0.1, false), [back, face]);
       if (sign.lie !== undefined) {
         // Come down face up, its far end raised.
         const laid = new THREE.Group();
@@ -420,7 +450,10 @@ function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
         plate.rotation.x = -sign.lean;
         root.add(plate);
       } else root.add(plate);
-      if (sign.fadeZone) faders.push({ materials: [back, face], box: new THREE.Box3(new THREE.Vector3(...sign.fadeZone[0]), new THREE.Vector3(...sign.fadeZone[1])), opacity: 1, mesh: plate, overhead: true, zone: true });
+      if (sign.fadeZone) {
+        faders.push({ materials: [back, face], box: new THREE.Box3(new THREE.Vector3(...sign.fadeZone[0]), new THREE.Vector3(...sign.fadeZone[1])), opacity: 1, mesh: plate, overhead: true, zone: true });
+        fading.add(plate);
+      }
       group.add(root);
       continue;
     }
@@ -428,14 +461,86 @@ function signMeshes(signs: SignDesc[], faders: Fader[]): THREE.Group {
     post.position.y = 1.1;
     post.castShadow = true;
     // Leaning well back: the game is watched from above, and a sign stood upright would be edge-on.
-    const board = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.06), [steel, steel, steel, steel, faceOf(sign.kind), steel]);
+    const board = new THREE.Mesh(boardGeometry(2, 2.5, 0.06, false), [steel, faceOf(sign.kind)]);
     board.position.set(0, 2.5, -0.5);
     board.rotation.x = -0.9;
     board.castShadow = true;
     root.add(post, board);
     group.add(root);
   }
+  drawSignsTogether(group, fading, apart);
   return group;
+}
+
+/** Sign faces are copied onto sheets this many pixels a side. */
+const SIGN_SHEET = 2048;
+/** Round each face on a sheet, its own edge drawn out this far: a far sign, drawn from a smaller copy of the sheet, then
+ * takes in none of the face beside it. */
+const SIGN_GUTTER = 16;
+
+/**
+ * The signs that never fade, drawn together: their faces copied onto a few sheets, and every board, face and post that is
+ * drawn alike made one mesh. A level of shop signs (a hundred and more, each its own words) is otherwise two draws a sign.
+ * Those that fade keep their own meshes and materials.
+ */
+function drawSignsTogether(group: THREE.Group, fading: Set<THREE.Object3D>, apart?: (at: THREE.Vector3) => string): void {
+  group.updateMatrixWorld(true);
+  const meshes: THREE.Mesh[] = [];
+  group.traverse((o) => { if (o instanceof THREE.Mesh && !fading.has(o)) meshes.push(o); });
+  if (meshes.length < 2) return;
+  const materialsOf = (mesh: THREE.Mesh) => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.Material[];
+
+  // The faces, each a picture drawn on a canvas, laid on the sheets in rows, tallest first.
+  const faces = [...new Set(meshes.flatMap(materialsOf))].filter((m): m is THREE.MeshBasicMaterial => m instanceof THREE.MeshBasicMaterial && m.map?.image instanceof HTMLCanvasElement);
+  const spots = new Map<THREE.Material, { sheet: number; x: number; y: number; w: number; h: number }>();
+  const sheets: HTMLCanvasElement[] = [];
+  let x = SIGN_SHEET, y = 0, row = 0;
+  const heightOf = (face: THREE.MeshBasicMaterial) => (face.map!.image as HTMLCanvasElement).height;
+  for (const face of [...faces].sort((a, b) => heightOf(b) - heightOf(a))) {
+    const image = face.map!.image as HTMLCanvasElement;
+    const w = image.width + 2 * SIGN_GUTTER, h = image.height + 2 * SIGN_GUTTER;
+    if (x + w > SIGN_SHEET) { x = 0; y += row; row = 0; }
+    if (!sheets.length || y + h > SIGN_SHEET) {
+      const sheet = document.createElement('canvas');
+      sheet.width = sheet.height = SIGN_SHEET;
+      sheets.push(sheet);
+      x = y = row = 0;
+    }
+    const g = sheets[sheets.length - 1].getContext('2d')!;
+    // The gutter is the face's outermost pixels drawn out across it, as a texture of its own is clamped at its edge.
+    const [iw, ih, G] = [image.width, image.height, SIGN_GUTTER];
+    g.imageSmoothingEnabled = false;
+    for (const [sx, sw, dx, dw] of [[0, 1, x, G], [0, iw, x + G, iw], [iw - 1, 1, x + G + iw, G]] as const) {
+      for (const [sy, sh, dy, dh] of [[0, 1, y, G], [0, ih, y + G, ih], [ih - 1, 1, y + G + ih, G]] as const) g.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+    spots.set(face, { sheet: sheets.length - 1, x: x + SIGN_GUTTER, y: y + SIGN_GUTTER, w: image.width, h: image.height });
+    x += w;
+    row = Math.max(row, h);
+  }
+  const sheetMaterials = sheets.map((sheet) => {
+    const map = new THREE.CanvasTexture(sheet);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = 8;
+    return new THREE.MeshBasicMaterial({ map });
+  });
+
+  // The faces' own pictures are no longer drawn, unless a sign that fades wears one too.
+  const worn = new Set<THREE.Texture>();
+  for (const o of fading) if (o instanceof THREE.Mesh) for (const m of materialsOf(o)) if (m instanceof THREE.MeshBasicMaterial && m.map) worn.add(m.map);
+  // Every board, face and post, a mesh to each material: a face on its sheet, its picture's corner of it there (a canvas's
+  // top is a texture's v = 1). Those inside a hall that goes dark kept apart from those outside it.
+  drawStillTogether(meshes, group, (own) => {
+    const spot = spots.get(own);
+    if (!spot) return { material: own };
+    return { material: sheetMaterials[spot.sheet], uv: (u, v) => [(spot.x + u * spot.w) / SIGN_SHEET, 1 - (spot.y + (1 - v) * spot.h) / SIGN_SHEET] };
+  }, apart);
+  // What then holds nothing that is drawn.
+  for (const root of [...group.children]) {
+    let drawn = false;
+    root.traverse((o) => { if (o instanceof THREE.Mesh) drawn = true; });
+    if (!drawn) group.remove(root);
+  }
+  for (const face of faces) if (!worn.has(face.map!)) face.map!.dispose();
 }
 
 /** Unit shapes that an instance matrix scales up to a prop's size. */
@@ -765,19 +870,41 @@ export class LevelView {
       if (!p.vehicle) continue;
       // A vehicle come to grief, left where it is.
       const over = !!p.rot && (Math.abs(p.rot[0]) > 0.3 || Math.abs(p.rot[2]) > 0.3);
-      const mesh = vehicleMesh(p.vehicle, p.vehicle === 'sng' ? p.color : 0xe8e6de, 0, over);
+      // A news van in its channel's colours, a car parked in its own; anything else as it always was.
+      // A coach parked in its operator's colours.
+      const mesh = vehicleMesh(p.vehicle, p.vehicle === 'sng' || p.vehicle === 'car' ? p.color : 0xe8e6de, 0, over, p.vehicle === 'bus' ? p.color : undefined);
       mesh.position.set(...p.pos);
       if (p.rot) mesh.rotation.set(...p.rot);
       scene.add(mesh);
     }
     const paved = props.filter((p) => p.paving);
     if (paved.length) scene.add(pavedMesh(paved));
+    // Plain things that fade, near one another, are drawn as one and fade together (see FADE_CELL); each is still judged
+    // in the way by its own box.
+    const together = new Map<string, PropDesc[]>();
     for (const desc of props) {
       if (!desc.fade && !desc.cutaway) continue;
-      const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
       const lid = lidOf(desc);
+      if (!desc.building && !desc.cutaway && !desc.fadeZone && !desc.openFrom && desc.mass === undefined) {
+        const key = `${lid}|${desc.overhead ? 1 : 0}|${Math.floor(desc.pos[0] / FADE_CELL)}|${Math.floor(desc.pos[2] / FADE_CELL)}|${Math.floor(desc.pos[1] / FADE_LAYER)}`;
+        (together.get(key) ?? together.set(key, []).get(key)!).push(desc);
+        continue;
+      }
+      const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
       (lid < 0 ? scene : this.lids[lid].group).add(mesh);
       this.faders.push(this.fader(mesh, desc));
+    }
+    for (const group of together.values()) {
+      const lid = lidOf(group[0]);
+      const fader = group.length === 1 ? null : this.faderOfMany(group);
+      if (fader) {
+        (lid < 0 ? scene : this.lids[lid].group).add(fader.mesh);
+        this.faders.push(fader);
+        continue;
+      }
+      const mesh = propMesh(group[0]);
+      (lid < 0 ? scene : this.lids[lid].group).add(mesh);
+      this.faders.push(this.fader(mesh, group[0]));
     }
     for (const prop of sim.props) {
       if (prop.desc.mass === undefined) continue;
@@ -814,8 +941,11 @@ export class LevelView {
     // A sign up on a roof that lifts away goes with it.
     const lidOfSign = (s: SignDesc) => lidOf({ pos: s.pos } as PropDesc);
     const loose = (sim.level.signs ?? []).filter((s) => lidOfSign(s) < 0);
-    if (loose.length) scene.add(signMeshes(loose, this.faders));
-    this.lids.forEach((lid, k) => { const on = (sim.level.signs ?? []).filter((s) => lidOfSign(s) === k); if (on.length) lid.group.add(signMeshes(on, this.faders)); });
+    // Signs in a hall whose power goes are darkened with it (OutageView, which goes by where each mesh is): drawn apart.
+    const hall = sim.level.outage?.area;
+    const apart = hall ? (p: THREE.Vector3) => (p.x > hall[0] && p.x < hall[2] && p.z > hall[1] && p.z < hall[3] ? 'hall' : '') : undefined;
+    if (loose.length) scene.add(signMeshes(loose, this.faders, apart));
+    this.lids.forEach((lid, k) => { const on = (sim.level.signs ?? []).filter((s) => lidOfSign(s) === k); if (on.length) lid.group.add(signMeshes(on, this.faders, apart)); });
 
     if (decals.length) scene.add(this.decalMesh(sim));
     // Still water over the ponds, its ripples drifting.
@@ -1086,9 +1216,13 @@ export class LevelView {
     this.ray.origin.copy(camera.position);
     this.ray.direction.copy(truck).sub(camera.position).normalize();
     const ease = 1 - Math.exp(-FADE_RATE * dt);
+    const inTheWay = (box: THREE.Box3) => {
+      const point = this.ray.intersectBox(box, this.hit);
+      return point !== null && point.distanceTo(camera.position) < reach;
+    };
     for (const f of this.faders) {
-      const point = this.ray.intersectBox(f.box, this.hit);
-      const blocking = (point !== null && point.distanceTo(camera.position) < reach) || (f.zone === true && f.box.containsPoint(camera.position));
+      // Several drawn as one: any one of them in the way, and they fade; none, and the box round them all need not be tried.
+      const blocking = f.boxes ? inTheWay(f.box) && f.boxes.some(inTheWay) : inTheWay(f.box) || (f.zone === true && f.box.containsPoint(camera.position));
       const cut = f.cut !== undefined && f.cut > truck.y + CUT_ABOVE;
       const target = cut ? 0 : blocking ? (f.room?.containsPoint(truck) ? 0 : f.overhead ? OVERHEAD_OPACITY : FADED_OPACITY) : 1;
       if (f.opacity === target) continue;
@@ -1143,6 +1277,32 @@ export class LevelView {
       lamp.scale.set(1, 1.6, 1.2);
       scene.add(lamp, box);
     }
+  }
+
+  /** Several plain things that fade, drawn as one mesh, in their own colours: faded when any one of them is in the way. */
+  private faderOfMany(descs: PropDesc[]): Fader {
+    const geometries: THREE.BufferGeometry[] = [];
+    const boxes: THREE.Box3[] = [];
+    for (const desc of descs) {
+      const mesh = propMesh(desc);
+      boxes.push(this.fader(mesh, desc).box);
+      mesh.updateMatrix();
+      const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrix);
+      const color = (mesh.material as THREE.MeshStandardMaterial).color;
+      const count = geometry.getAttribute('position').count;
+      const colors = new Float32Array(count * 3);
+      for (let k = 0; k < count; k++) colors.set([color.r, color.g, color.b], k * 3);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geometries.push(geometry);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    const material = new THREE.MeshStandardMaterial({ roughness: 0.8, vertexColors: true });
+    const mesh = new THREE.Mesh(mergeGeometries(geometries), material);
+    for (const g of geometries) g.dispose();
+    mesh.castShadow = mesh.receiveShadow = true;
+    const box = boxes.reduce((all, b) => all.union(b), new THREE.Box3());
+    return { materials: [material], box, boxes, opacity: 1, mesh, overhead: descs[0].overhead };
   }
 
   private fader(mesh: THREE.Mesh, desc: PropDesc): Fader {

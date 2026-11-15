@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TRUCK, type Vec3 } from '../config';
 import type { PropDesc } from '../levels/types';
 import type { Truck } from '../sim/truck';
@@ -157,8 +158,8 @@ export class TruckMesh {
   private readonly steerPivots: THREE.Group[] = [];
   private readonly wheels: THREE.Mesh[] = [];
   private readonly brakeLamp = new THREE.MeshStandardMaterial({ color: 0x7a1010, emissive: 0xff2010, emissiveIntensity: 0 });
-  /** Splashes of whatever the truck has driven through. */
-  private readonly stains: THREE.Mesh[] = [];
+  /** Splashes of whatever the truck has driven through: a mesh to each, of its blots. */
+  private readonly stains: { mesh: THREE.Mesh; blots: number }[] = [];
   /** How many splashes there have been since the last wash, for drawing each over the last. */
   private layer = 0;
   private readonly blot = new THREE.CircleGeometry(1, 9);
@@ -240,6 +241,36 @@ export class TruckMesh {
       this.root.add(pivot);
       this.steerPivots.push(pivot);
       this.wheels.push(wheel);
+    }
+    this.drawFixedPartsTogether();
+  }
+
+  /**
+   * The parts that never move on the truck (all but the dented cab, the bumper that hangs, what comes off, the wheels),
+   * a mesh to each material: some ninety parts are otherwise as many draws, every frame of every level. Each material
+   * is still the one the parts were made with, so a lamp put out or the paint scuffed shows on them all as before.
+   */
+  private drawFixedPartsTogether(): void {
+    const fixed = this.root.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh && o !== this.cab && o !== this.bumper && !Array.isArray(o.material));
+    const parts = new Map<string, { material: THREE.Material; castShadow: boolean; receiveShadow: boolean; geometries: THREE.BufferGeometry[] }>();
+    for (const mesh of fixed) {
+      mesh.updateMatrix();
+      // Merging wants the same attributes in each: these all come with positions, normals and uvs, and an index.
+      const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrix);
+      const material = mesh.material as THREE.Material;
+      const key = `${material.uuid}|${mesh.castShadow}|${mesh.receiveShadow}`;
+      const entry = parts.get(key) ?? { material, castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow, geometries: [] };
+      entry.geometries.push(geometry);
+      parts.set(key, entry);
+      this.root.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    for (const { material, castShadow, receiveShadow, geometries } of parts.values()) {
+      const mesh = new THREE.Mesh(mergeGeometries(geometries), material);
+      for (const geometry of geometries) geometry.dispose();
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = receiveShadow;
+      this.root.add(mesh);
     }
   }
 
@@ -400,14 +431,15 @@ export class TruckMesh {
     const [sx, sy, sz] = TRUCK.sideWall.pos;
     const [, shy, shz] = TRUCK.sideWall.half;
     const between = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+    const blots: THREE.BufferGeometry[] = [];
+    const place = new THREE.Object3D();
     const blot = (x: number, y: number, z: number, turnX: number, turnY: number, size: number) => {
-      const mesh = new THREE.Mesh(this.blot, material);
-      mesh.position.set(x, y, z);
-      mesh.rotation.set(turnX, turnY, 0);
+      place.position.set(x, y, z);
+      place.rotation.set(turnX, turnY, 0);
       // Never round: longer one way than the other, and down the panel where it has run.
-      mesh.scale.set(size * between(0.7, 1.2), size * between(0.8, 1.6), 1);
-      this.root.add(mesh);
-      this.stains.push(mesh);
+      place.scale.set(size * between(0.7, 1.2), size * between(0.8, 1.6), 1);
+      place.updateMatrix();
+      blots.push(this.blot.clone().applyMatrix4(place.matrix));
     };
     for (let i = 0; i < 4; i++) blot(between(-cw, cw) * 0.85, cy + between(-ch, ch) * 0.8, cz + cl + 0.045, 0, 0, between(0.12, 0.3));
     for (let i = 0; i < 4; i++) blot(between(-cw, cw) * 0.85, cy + ch + 0.105, cz + between(-cl, cl) * 0.85, -Math.PI / 2, 0, between(0.14, 0.34));
@@ -415,13 +447,26 @@ export class TruckMesh {
       blot(side * (cw + 0.03), cy + between(-ch, ch) * 0.7, cz + between(-cl, cl) * 0.6, 0, (side * Math.PI) / 2, between(0.12, 0.26));
       for (let i = 0; i < 2; i++) blot(side * (sx + 0.06), sy - shy * between(0.2, 0.8), sz + between(-shz, shz) * 0.9, 0, (side * Math.PI) / 2, between(0.12, 0.28));
     }
-    while (this.stains.length > 90) this.stains.shift()!.removeFromParent();
+    // The splash drawn as one: its blots are otherwise a draw each, and a muddy truck ninety draws.
+    const mesh = new THREE.Mesh(mergeGeometries(blots), material);
+    for (const geometry of blots) geometry.dispose();
+    this.root.add(mesh);
+    this.stains.push({ mesh, blots: blots.length });
+    // At most ninety blots, the oldest splash gone first.
+    while (this.stains.reduce((n, stain) => n + stain.blots, 0) > 90) this.dropStain();
+  }
+
+  /** The oldest splash washed off. */
+  private dropStain(): void {
+    const { mesh } = this.stains.shift()!;
+    mesh.removeFromParent();
+    mesh.geometry.dispose();
+    (mesh.material as THREE.Material).dispose();
   }
 
   /** As it left the depot. */
   wash(): void {
-    for (const stain of this.stains) stain.removeFromParent();
-    this.stains.length = 0;
+    while (this.stains.length) this.dropStain();
     this.layer = 0;
   }
 

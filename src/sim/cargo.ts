@@ -85,7 +85,7 @@ const e = new Euler();
 const v = new Vector3();
 const UP = new Vector3(0, 1, 0);
 
-function partRotation(part: PartDesc, target: Quaternion): Quaternion {
+function partRotation(part: Pick<PartDesc, 'rot'>, target: Quaternion): Quaternion {
   const [x, y, z] = part.rot ?? [0, 0, 0];
   return target.setFromEuler(e.set(x, y, z));
 }
@@ -250,7 +250,17 @@ export class CargoSystem {
         return collider;
       };
       if (type.hull) add(shapeCollider(type.hull.shape, type.hull.size), item.mass);
-      else {
+      else if (type.solids) {
+        // Fewer shapes than parts: each stands for the parts it covers, and goes when they come off.
+        for (const solid of type.solids) {
+          partRotation(solid, q);
+          const desc = shapeCollider(solid.shape, solid.size, solid.flat, solid.scale)
+            .setTranslation(...solid.pos)
+            .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
+          const collider = add(desc, solid.mass);
+          for (const i of solid.parts) item.partColliders[i] = collider;
+        }
+      } else {
         type.parts.forEach((part, i) => {
           if (part.ghost) return;
           partRotation(part, q);
@@ -558,12 +568,7 @@ export class CargoSystem {
   private detach(item: CargoItem, index: number): void {
     const part = item.type.parts[index];
     item.attached[index] = false;
-    const collider = item.partColliders[index];
-    if (collider) {
-      this.byCollider.delete(collider.handle);
-      this.world.removeCollider(collider, true);
-      item.partColliders[index] = null;
-    }
+    this.dropCollider(item, index);
     const debris = this.spawnDebris(item, part);
     this.events.push({ kind: 'detach', item, part: index, debris });
   }
@@ -659,13 +664,19 @@ export class CargoSystem {
       s.attached.forEach((on, k) => {
         if (on || !item.attached[k]) return;
         item.attached[k] = false;
-        const collider = item.partColliders[k];
-        if (collider) {
-          this.byCollider.delete(collider.handle);
-          this.world.removeCollider(collider, true);
-          item.partColliders[k] = null;
-        }
+        this.dropCollider(item, k);
       });
+    });
+  }
+
+  /** A part come off: what it collided as goes, and with it whatever else that stood for (see CargoType.solids). */
+  private dropCollider(item: CargoItem, part: number): void {
+    const collider = item.partColliders[part];
+    if (!collider) return;
+    this.byCollider.delete(collider.handle);
+    this.world.removeCollider(collider, true);
+    item.partColliders.forEach((c, i) => {
+      if (c === collider) item.partColliders[i] = null;
     });
   }
 

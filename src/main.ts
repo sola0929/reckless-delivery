@@ -5,10 +5,11 @@ import { bumpControls, drawControls } from './controls';
 import { STARS } from './levels/types';
 import { namePadKeys, Pad, padNavigate, stepFocus } from './gamepad';
 import { setStage, startLoading } from './loading';
+import { loadRate, saveRate } from './config';
 import { loadChoice, saveChoice, type QualityChoice } from './graphics-choice';
 import { playMusic, soundButtons, uiSound, wakeMusic } from './jukebox';
 import { soundSettings } from './sound-settings';
-import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST, TUTORIAL } from './levels';
+import { FIRST_LEVEL, FREE_PLAY, LEVELS, LEVEL_LIST, TUTORIAL, GRADES } from './levels';
 
 /** Turn the level page's preview on by a picture, or back; set once the page is built. */
 // Declared before the menu is shown below, which uses it.
@@ -164,7 +165,9 @@ function showMenu(): void {
     list.before(strip);
   }
   let earned = 0;
-  LEVEL_LIST.forEach(({ id, name, badge, note }, i) => {
+  // How hard it is, a word in its colour.
+  const gradeTag = (grade?: number) => (grade ? `<span class="level-grade g${grade}">${GRADES[grade]}</span>` : '');
+  LEVEL_LIST.forEach(({ id, name, badge, note, grade }, i) => {
     const state = states[i];
     const best = state === 'done' ? loadBest(id) : null;
     earned += best?.stars ?? 0;
@@ -187,7 +190,7 @@ function showMenu(): void {
     card.innerHTML =
       `<div class="level-thumb ${id}"><span>${badge}</span>${state === 'locked' ? LOCK : ''}</div>` +
       `<div class="level-state">${LABEL[state]}</div>` +
-      `<div class="level-name">${name}</div><div class="level-note">${note}</div>` +
+      `<div class="level-name">${name}${gradeTag(grade)}</div><div class="level-note">${note}</div>` +
       `<div class="level-marks"><div class="level-stars">${stars}</div>${slots}</div><div class="level-best">${record}</div>`;
     hook(id, card);
     list.append(card);
@@ -274,7 +277,7 @@ function showMenu(): void {
     show(0);
     rotate();
     const delivery = LEVEL_LIST.find((level) => level.id === id);
-    preview.querySelector('.preview-tag')!.textContent = delivery ? `第 ${delivery.badge} 關` : '教學';
+    preview.querySelector('.preview-tag')!.innerHTML = delivery ? `第 ${delivery.badge} 關${gradeTag(delivery.grade)}` : '教學';
     const best = state === 'done' ? loadBest(id) : null;
     // The name, and beside it the stars won so far.
     const won = best?.stars ?? 0;
@@ -335,6 +338,15 @@ function showMenu(): void {
     });
   }
   showQuality();
+  const rates = [...menu.querySelectorAll<HTMLButtonElement>('#set-rate button')];
+  const showRate = () => rates.forEach((button) => button.classList.toggle('on', Number(button.dataset.rate) === loadRate()));
+  for (const button of rates) {
+    button.addEventListener('click', () => {
+      saveRate(Number(button.dataset.rate));
+      showRate();
+    });
+  }
+  showRate();
 
   // "Start", the first time, offers the tutorial first to whoever has not done it.
   document.getElementById('menu-start')!.addEventListener('click', () => {

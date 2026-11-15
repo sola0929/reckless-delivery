@@ -12,19 +12,34 @@ const TRUCK_TOP = 3.3;
 const DAMP = 0.6;
 
 interface Lamp {
-  pivot: THREE.Group;
+  /** Its flex, shade and bulb: an instance in each of a set's three meshes. */
+  set: THREE.InstancedMesh[];
+  index: number;
+  /** Where it is hung from, in its set's meshes' space. */
+  from: THREE.Vector3;
   /** Its swing, radians, about X and about Z; and how fast each is going. */
   ax: number;
   az: number;
   vx: number;
   vz: number;
   at: THREE.Vector3;
+  /** Hanging still, as it was last drawn. */
+  still: boolean;
 }
 
 export class LampsView {
   private readonly lamps: Lamp[] = [];
+  private readonly matrix = new THREE.Matrix4();
+  private readonly turn = new THREE.Quaternion();
+  private readonly euler = new THREE.Euler();
+  private readonly one = new THREE.Vector3(1, 1, 1);
 
-  constructor(scene: THREE.Scene, hung: [number, number, number][]) {
+  /**
+   * The lamps are drawn as instances, a flex, a shade and a bulb, three draws for them all. Those for which `apart` gives
+   * another answer (in a hall whose power goes, or not: OutageView goes by where a mesh is) are a set of their own, put
+   * where their middle is.
+   */
+  constructor(scene: THREE.Scene, hung: [number, number, number][], apart: (x: number, z: number) => string = () => '') {
     const flex = new THREE.MeshStandardMaterial({ color: 0x2a2c30 });
     // An enamelled shade, white inside and out, as over every market stall.
     const shade = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, side: THREE.DoubleSide });
@@ -32,12 +47,34 @@ export class LampsView {
     const flexGeo = new THREE.CylinderGeometry(0.012, 0.012, FLEX, 4).translate(0, -FLEX / 2, 0);
     const shadeGeo = new THREE.ConeGeometry(0.28, 0.2, 12, 1, true).translate(0, -FLEX - 0.05, 0);
     const bulbGeo = new THREE.SphereGeometry(0.1, 8, 6).translate(0, -FLEX - 0.13, 0);
-    for (const [x, y, z] of hung) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, z);
-      pivot.add(new THREE.Mesh(flexGeo, flex), new THREE.Mesh(shadeGeo, shade), new THREE.Mesh(bulbGeo, bulb));
-      scene.add(pivot);
-      this.lamps.push({ pivot, ax: 0, az: 0, vx: 0, vz: 0, at: new THREE.Vector3(x, y - FLEX - 0.1, z) });
+    const sides = new Map<string, [number, number, number][]>();
+    for (const p of hung) (sides.get(apart(p[0], p[2])) ?? sides.set(apart(p[0], p[2]), []).get(apart(p[0], p[2]))!).push(p);
+    for (const side of sides.values()) {
+      const middle = new THREE.Vector3();
+      for (const [x, y, z] of side) middle.add(new THREE.Vector3(x, y, z));
+      middle.divideScalar(side.length);
+      const set = ([[flexGeo, flex], [shadeGeo, shade], [bulbGeo, bulb]] as const).map(([geometry, material]) => {
+        const mesh = new THREE.InstancedMesh(geometry, material, side.length);
+        mesh.position.copy(middle);
+        // They swing: the bounds of where they hang would not hold them.
+        mesh.frustumCulled = false;
+        scene.add(mesh);
+        return mesh;
+      });
+      side.forEach(([x, y, z], index) => {
+        const lamp: Lamp = { set, index, from: new THREE.Vector3(x, y, z).sub(middle), ax: 0, az: 0, vx: 0, vz: 0, at: new THREE.Vector3(x, y - FLEX - 0.1, z), still: false };
+        this.lamps.push(lamp);
+        this.pose(lamp);
+      });
+    }
+  }
+
+  /** Draw a lamp as it now hangs. */
+  private pose(lamp: Lamp): void {
+    this.matrix.compose(lamp.from, this.turn.setFromEuler(this.euler.set(lamp.ax, 0, lamp.az)), this.one);
+    for (const mesh of lamp.set) {
+      mesh.setMatrixAt(lamp.index, this.matrix);
+      mesh.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -60,7 +97,11 @@ export class LampsView {
       lamp.vz *= 1 - DAMP * step;
       lamp.ax += lamp.vx * step;
       lamp.az += lamp.vz * step;
-      lamp.pivot.rotation.set(lamp.ax, 0, lamp.az);
+      // Come to rest (the swing dies away, never quite to nothing): drawn as it was, from then on.
+      if (Math.max(Math.abs(lamp.ax), Math.abs(lamp.az), Math.abs(lamp.vx), Math.abs(lamp.vz)) < 1e-4) lamp.ax = lamp.az = lamp.vx = lamp.vz = 0;
+      const still = lamp.ax === 0 && lamp.az === 0 && lamp.vx === 0 && lamp.vz === 0;
+      if (!still || !lamp.still) this.pose(lamp);
+      lamp.still = still;
     }
   }
 }

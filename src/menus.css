@@ -494,6 +494,29 @@ body.using-pad .pause-foot {
   letter-spacing: 2px;
 }
 
+/* How hard it is, beside its name: green to red. */
+.level-grade {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  vertical-align: 3px;
+  color: #10161f;
+}
+
+.level-grade.g1 { background: #6fcf8a; }
+.level-grade.g2 { background: #f2cf5b; }
+.level-grade.g3 { background: #f29a4a; }
+.level-grade.g4 { background: #ef6a5a; }
+
+.preview-tag .level-grade {
+  letter-spacing: 1px;
+  vertical-align: 1px;
+}
+
 .level-note {
   margin-top: 3px;
   padding: 0 4px;

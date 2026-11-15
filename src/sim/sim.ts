@@ -22,6 +22,7 @@ import { Droppers } from './droppers';
 import { Rigs } from './rigs';
 import { Pedestrians, type Pedestrian, type Vehicle } from './pedestrians';
 import { Riders, SCOOTER_MASS, type Rider } from './riders';
+import { Clowns } from './clowns';
 import { Traffic } from './traffic';
 import { Trains } from './trains';
 import { Truck, type DriveInput } from './truck';
@@ -90,6 +91,41 @@ export interface Result {
 
 /** Half the depth of the ground slab: deep enough to wall in any pit. */
 const GROUND_THICKNESS = 5;
+/** Ground that rises and falls is made solid in squares this many metres a side. */
+const TERRAIN_TILE = 32;
+
+/**
+ * A mesh's triangles in squares across the ground, by where the middle of each is: each square's triangles with only the
+ * corners they use. Corners on the edge of a square are in both, at exactly the same place.
+ */
+function meshTiles(positions: Float32Array, indices: Uint32Array, size: number): { positions: Float32Array; indices: Uint32Array }[] {
+  const squares = new Map<string, number[]>();
+  for (let t = 0; t < indices.length; t += 3) {
+    let x = 0, z = 0;
+    for (let k = 0; k < 3; k++) {
+      x += positions[indices[t + k] * 3];
+      z += positions[indices[t + k] * 3 + 2];
+    }
+    const key = `${Math.floor(x / 3 / size)},${Math.floor(z / 3 / size)}`;
+    let square = squares.get(key);
+    if (!square) squares.set(key, (square = []));
+    square.push(indices[t], indices[t + 1], indices[t + 2]);
+  }
+  return [...squares.values()].map((own) => {
+    const renumbered = new Map<number, number>();
+    const corners: number[] = [];
+    const tile = new Uint32Array(own.length);
+    own.forEach((i, n) => {
+      let j = renumbered.get(i);
+      if (j === undefined) {
+        renumbered.set(i, (j = renumbered.size));
+        corners.push(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      }
+      tile[n] = j;
+    });
+    return { positions: new Float32Array(corners), indices: tile };
+  });
+}
 /** The truck this far below the road, for this long, has fallen into a pit. */
 const PIT_DEPTH = 0.6;
 const PIT_SECONDS = 1;
@@ -150,9 +186,12 @@ export class Sim {
   readonly world: RAPIER.World;
   readonly truck: Truck;
   readonly props: PropInstance[] = [];
+  /** Props the tyres hold less well on, by their bodies: how well. */
+  private readonly grips = new Map<RAPIER.RigidBody, number>();
   readonly cargoSystem: CargoSystem;
   readonly traffic: Traffic;
   readonly riders: Riders;
+  readonly clowns: Clowns;
   readonly machines: Machines;
   readonly rigs: Rigs;
   readonly waves: Waves;
@@ -231,6 +270,10 @@ export class Sim {
 
   private constructor(readonly level: LevelDef) {
     this.world = new RAPIER.World({ x: 0, y: PHYSICS.gravity, z: 0 });
+    // After every step Rapier 0.21.0 goes through every body and collider there is, to find any a soft body has made or
+    // done away with; there are no soft bodies here, and with a level's thousands of colliders that was a fifth to two
+    // fifths of the step (dimforge/rapier#1039). What is made or removed from here is filed there and then without it.
+    this.world.mapNewSoftBodies = () => {};
     this.world.timestep = PHYSICS.dt;
     this.world.numSolverIterations = PHYSICS.solverIterations;
     this.eventQueue = new RAPIER.EventQueue(true);
@@ -238,8 +281,12 @@ export class Sim {
     const groundGroups = groups(GROUP.ground, GROUP.all);
     if (level.terrain) {
       // Ground that rises and falls: its triangles, as they are drawn. A box sliding over the joins between them is not to catch on them.
+      // In squares (see TERRAIN_TILE), each a mesh of its own: as one, everything tumbling on it cost the physics something
+      // for the size of the whole of it, every step, and level 4's storm sends a lot tumbling (dev/_mesh-flags.ts).
       const { positions, indices } = terrainMesh(level.terrain);
-      this.world.createCollider(RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0.9).setCollisionGroups(groundGroups));
+      for (const tile of meshTiles(positions, indices, TERRAIN_TILE)) {
+        this.world.createCollider(RAPIER.ColliderDesc.trimesh(tile.positions, tile.indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0.9).setCollisionGroups(groundGroups));
+      }
     }
     for (const [x0, z0, x1, z1] of level.terrain ? [] : groundTiles(level)) {
       this.world.createCollider(
@@ -288,6 +335,7 @@ export class Sim {
       else shape.setDensity(0);
       this.world.createCollider(shape, body);
       this.props.push({ desc, body });
+      if (desc.grip !== undefined) this.grips.set(body, desc.grip);
       if (dynamic) this.startPoses.push({ body, pos: body.translation(), rot: body.rotation() });
     }
 
@@ -309,10 +357,11 @@ export class Sim {
     this.water = new Water(level.pits ?? []);
     this.afloat = new Afloat(level.stillWater ?? []);
     this.trains = new Trains(this.world, level.tracks ?? [], level.bounds[0][0], level.bounds[1][0]);
-    this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? []), ...Wind.waiting(level.gusts ?? [])], !!level.terrain);
+    this.objects = new ObjectSystem(this.world, [...(level.objects ?? []), ...Rollers.waiting(level.rollers ?? []), ...Wind.waiting(level.gusts ?? []), ...Clowns.waiting(level.clowns ?? [])], !!level.terrain);
     if (level.terrain) this.objects.ground = (x, z) => heightAt(level.terrain!, x, z);
     this.rollers = new Rollers(this.objects, level.rollers ?? [], level.objects?.length ?? 0, (x, z) => heightAt(level.terrain, x, z));
     this.wind = new Wind(level.gusts ?? [], this.objects, (level.objects?.length ?? 0) + Rollers.waiting(level.rollers ?? []).length, this.hits);
+    this.clowns = new Clowns(this.objects, level.clowns ?? [], (level.objects?.length ?? 0) + Rollers.waiting(level.rollers ?? []).length + Wind.waiting(level.gusts ?? []).length);
     // Heavy stock stacked at the stalls, and what hangs to come down: followed from the first, to tell when it and the truck meet.
     for (const object of this.objects.objects) if (object.kind.crushes || object.desc.letGoWithin !== undefined) this.hits.track(object);
     this.objects.onMeet = (object, speed) => this.hits.ram(object, speed);
@@ -339,9 +388,12 @@ export class Sim {
    */
   step(input: DriveInput, foot: FootInput = NO_FOOT_INPUT): void {
     const driving = this.driver.mode === 'driving' && !this.result;
+    // The step's length is the player's to choose, in a run under way too.
+    this.world.timestep = PHYSICS.dt;
     this.truck.grip = this.gripAt(this.truck.body.translation());
     this.truck.drag = this.dragAt(this.truck.body.translation());
     this.truck.sideGrip = (this.level.fords && this.fordAt(this.truck.body.translation())?.sideGrip) ?? 1;
+    this.truck.deck = this.level.rigs?.some((rig) => rig.spin) ? this.rigs.spinning(this.truck.underWheels()) : null;
     this.flung -= PHYSICS.dt;
     this.truck.update(PHYSICS.dt, driving ? input : PARKED);
     // Wading in a river, the current takes them downstream: shallow water with a surface, their feet under it.
@@ -404,6 +456,7 @@ export class Sim {
     this.pileups.push(...this.traffic.pileups);
     this.horns.push(...this.traffic.horns);
     this.riders.update(PHYSICS.dt, this.truck, this.traffic, walkers);
+    if (this.clowns.list.length) this.clowns.update(PHYSICS.dt, this.truck);
     if (this.machines.list.length) this.machines.update(PHYSICS.dt, this.truck.body.translation());
     if (this.rigs.list.length) {
       this.rigs.update(PHYSICS.dt, this.truck.body.translation());
@@ -420,7 +473,8 @@ export class Sim {
       // Waves running in over a sea wall drag the truck and whatever is loose on it: not its load.
       this.waves.update(PHYSICS.dt);
       this.waves.push(this.truck.body, PHYSICS.dt, true);
-      for (const object of this.objects.objects) if (object.body.isEnabled() && object.body.isDynamic()) this.waves.push(object.body, PHYSICS.dt, false);
+      // In a wave pool, what floats is let go by the wave that reaches it, to go with it.
+      for (const object of this.objects.objects) if (object.body.isEnabled() && object.body.isDynamic() && this.waves.push(object.body, PHYSICS.dt, false)) object.near = true;
     }
     if (this.wind.list.length) {
       // Gusts out of the alleys: on what is loose, never on the truck.
@@ -431,6 +485,11 @@ export class Sim {
     this.wade();
     this.world.step(this.eventQueue);
     this.skylights.update(this.truck.controller);
+    // Hit by a ride's train, which stops for nothing: as with a railway's, it leaves it no faster than so.
+    if (this.level.rigs?.some((rig) => rig.track)) {
+      const v = this.truck.body.linvel(), fast = Math.hypot(v.x, v.y, v.z);
+      if (fast > FLING_MAX) this.truck.body.setLinvel({ x: (v.x * FLING_MAX) / fast, y: (v.y * FLING_MAX) / fast, z: (v.z * FLING_MAX) / fast }, true);
+    }
     // A machine's bucket, hammer, ball or boom come against the truck checks it as a car run into it would; the load feels it.
     if (this.rigs.list.length) {
       const struck = this.rigs.struck(this.truck.body);
@@ -802,6 +861,7 @@ export class Sim {
     this.tripBefore = null;
     this.retries = 0;
     this.objects.reset();
+    this.clowns.reset();
     this.rollers.reset();
     this.wind.reset();
     this.hits.reset();
@@ -901,6 +961,11 @@ export class Sim {
   }
 
   private gripAt(p: { x: number; y: number; z: number }): number {
+    if (this.grips.size) {
+      // On something slippery, as much as the wheels are on it.
+      const under = this.truck.underWheels().map((body) => this.grips.get(body)).filter((g) => g !== undefined);
+      if (under.length) return Math.min(...under);
+    }
     const wet = this.wetAt(p);
     if (wet) return wet.grip;
     for (const s of this.level.slicks ?? []) if (Math.abs(p.x - s.pos[0]) < s.half[0] && Math.abs(p.z - s.pos[1]) < s.half[1]) return s.grip;
@@ -935,6 +1000,7 @@ export class Sim {
     const reach = at.radius ?? BLAST_RADIUS;
     this.pedestrians.blast(at.x, at.z, reach);
     this.riders.blast(at.x, at.z, reach);
+    this.clowns.blast(at.x, at.z, reach);
     this.driver.blast(at.x, at.z, reach, this.cargoSystem);
     const t = this.truck.body.translation();
     const dx = t.x - at.x;
@@ -1072,7 +1138,7 @@ export class Sim {
       const floats = (item: CargoItem) => ['splinters', 'pulp', 'water'].includes(item.type.burst);
       for (const item of this.cargo) if (item.body && !item.held) this.afloat.step(item.body, !floats(item), PHYSICS.dt);
       for (const piece of this.cargoSystem.debris) this.afloat.step(piece.body, !floats(piece.owner), PHYSICS.dt);
-      for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled() && !object.riding) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
+      for (const object of this.objects.objects) if ((object.knocked || !object.body.isSleeping()) && object.body.isEnabled() && !object.riding && !object.desc.wading) this.afloat.step(object.body, object.kind.sinks === true, PHYSICS.dt);
       for (const car of this.traffic.cars) if (car.knocked > 0) this.afloat.step(car.body, true, PHYSICS.dt);
     }
     // In the water, or down on ground the level counts as sinking (a pond drawn as its surface, a drop): fished out.
@@ -1109,6 +1175,9 @@ export class Sim {
    */
   private unpinHidden(): void {
     const t = this.truck.body.translation();
+    // Where things are going by fast enough to stir one: found once, the first time it is wanted, and not again for each
+    // hidden thing, through the thousands there are, every step. Nothing done here moves them.
+    let stirring: { x: number; y: number; z: number }[] | null = null;
     for (const item of this.cargo) {
       // Lost in the water, and not yet brought aboard: after a moment it is back where it was left, to be fetched again.
       if (item.home && !item.held && !item.pinned && item.body && !this.truck.isOnBed(item.body.translation())) {
@@ -1125,15 +1194,21 @@ export class Sim {
       if (!item.pinned || !item.body) continue;
       const p = item.body.translation();
       const near = Math.hypot(p.x - t.x, p.y - t.y, p.z - t.z) < 6;
-      const stirred = !near && this.objects.objects.some((o) => {
-        if (!o.body.isEnabled() || o.body.isSleeping()) return false;
-        const q = o.body.translation();
-        if (Math.abs(q.x - p.x) > 2.5 || Math.abs(q.z - p.z) > 2.5 || Math.abs(q.y - p.y) > 3) return false;
-        const v = o.body.linvel();
-        return Math.hypot(v.x, v.y, v.z) > 0.5;
-      });
+      if (!near) stirring ??= this.stirring();
+      const stirred = !near && stirring!.some((q) => !(Math.abs(q.x - p.x) > 2.5 || Math.abs(q.z - p.z) > 2.5 || Math.abs(q.y - p.y) > 3));
       if (near || stirred) this.cargoSystem.unpin(item);
     }
+  }
+
+  /** Where the things that can be knocked about are that are awake and going faster than 0.5 m/s. */
+  private stirring(): { x: number; y: number; z: number }[] {
+    const out: { x: number; y: number; z: number }[] = [];
+    for (const o of this.objects.objects) {
+      if (o.body.isSleeping() || !o.body.isEnabled()) continue;
+      const v = o.body.linvel();
+      if (Math.hypot(v.x, v.y, v.z) > 0.5) out.push(o.body.translation());
+    }
+    return out;
   }
 
   /** The water nearest to a point, if the level has any. */

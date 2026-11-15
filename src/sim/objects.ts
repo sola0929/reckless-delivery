@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
-import { GROUP, TRUCK, groups } from '../config';
+import { GROUP, PHYSICS, TRUCK, groups } from '../config';
 import { OBJECT_KINDS, POLE_SPACING, type ObjectDesc, type ObjectKind } from '../levels/objects';
 import type { Rigs } from './rigs';
 import type { Truck } from './truck';
@@ -55,7 +55,7 @@ export interface Blast {
   y: number;
   z: number;
   /** What it was, and how hard it went, beside a cylinder of gas. */
-  kind: 'gas' | 'drum' | 'mine' | 'shell' | 'rocket' | 'tank';
+  kind: 'gas' | 'drum' | 'mine' | 'shell' | 'rocket' | 'tank' | 'firework';
   power: number;
   /** How far it reaches, metres, when that is not as far as a cylinder of gas does. */
   radius?: number;
@@ -97,7 +97,6 @@ const LIFT_FULL_MASS = 60;
 const LAND_CHANGE = 3;
 /** And isn't reported again for this long: one landing is several steps of contact. */
 const LAND_HUSH = 0.25;
-const STEP = 1 / 60;
 /** Things on a deck this near one another, metres across, are one stack: the truck coming to one lets go of them all. */
 const STACK_REACH = 0.9;
 const q = new Quaternion();
@@ -268,7 +267,7 @@ export class ObjectSystem {
     this.blasts = [];
     // Firecrackers on the ground: set off by the truck rolling over them, and each sets off those beside it a moment later.
     for (const object of this.objects) {
-      if (object.fallIn !== undefined && (object.fallIn -= STEP) <= 0) this.fall(object, truck);
+      if (object.fallIn !== undefined && (object.fallIn -= PHYSICS.dt) <= 0) this.fall(object, truck);
       if (object.afloat && !object.rolling) this.settle(object);
       // Hens about their doorsteps, while the truck is near enough to see them. Further off they stand still, asleep: every
       // one awake is another body for the physics to keep against the ground, step after step.
@@ -298,7 +297,7 @@ export class ObjectSystem {
       if (!object.kind.trip || object.knocked) continue;
       const p = object.body.translation();
       const t = truck?.body.translation();
-      if (object.tripIn !== undefined && (object.tripIn -= STEP) <= 0) this.trip(object);
+      if (object.tripIn !== undefined && (object.tripIn -= PHYSICS.dt) <= 0) this.trip(object);
       else if (object.tripIn === undefined && t && truck && this.against(truck, p) && Math.abs(p.y - t.y) < 2) this.trip(object);
     }
     if (truck) {
@@ -306,7 +305,7 @@ export class ObjectSystem {
       this.meet(truck);
     }
     for (const object of this.objects) {
-      if (object.fuse >= 0 && (object.fuse -= STEP) < 0) this.explode(object);
+      if (object.fuse >= 0 && (object.fuse -= PHYSICS.dt) < 0) this.explode(object);
       // Something hung up that comes down once the truck is near enough under it: a shop sign hanging by one corner.
       const letGo = object.desc.letGoWithin;
       if (letGo !== undefined && !object.near && truck) {
@@ -419,7 +418,7 @@ export class ObjectSystem {
     const at = object.body.translation();
     const bang = object.kind.bang ?? { kind: 'gas' as const, power: 1 };
     this.blasts.push({ x: at.x, y: at.y, z: at.z, ...bang });
-    this.throwFrom(at, object);
+    this.throwFrom({ x: at.x, y: at.y, z: at.z, radius: bang.radius }, object);
   }
 
   /** Throw everything loose that is within reach of a blast, whatever caused it. `object` is the thing that blew up, if it was one of these. */
@@ -492,10 +491,10 @@ export class ObjectSystem {
     const now = object.body.linvel();
     const was = object.was;
     object.was = { x: now.x, y: now.y, z: now.z };
-    object.hush -= STEP;
+    object.hush -= PHYSICS.dt;
     if (!was || object.hush > 0) return;
     // Gravity alone changes its fall by a little each step; that is not a landing.
-    const change = Math.hypot(now.x - was.x, now.y - was.y + 9.81 * STEP, now.z - was.z);
+    const change = Math.hypot(now.x - was.x, now.y - was.y + 9.81 * PHYSICS.dt, now.z - was.z);
     if (change < LAND_CHANGE) return;
     object.hush = LAND_HUSH;
     this.landings.push({ object, strength: change });
@@ -522,7 +521,7 @@ export class ObjectSystem {
     // Slowly, things are nudged and leant on in the ordinary way.
     if (speed < MEET_SPEED) return;
     const t = truck.body.translation();
-    const ahead = STEP * 2;
+    const ahead = PHYSICS.dt * 2;
     const met: LooseObject[] = [];
     this.world.intersectionsWithShape(
       { x: t.x + tv.x * ahead, y: t.y + AROUND_RISE, z: t.z + tv.z * ahead }, truck.body.rotation(), this.aroundShape,
@@ -608,7 +607,7 @@ export class ObjectSystem {
     }
     for (const object of this.riding) if (!riding.has(object)) object.carried = 0;
     for (const object of riding) {
-      object.carried += STEP;
+      object.carried += PHYSICS.dt;
       if (object.carried > CARRIED_SECONDS) found.add(object);
     }
     this.riding = riding;
@@ -839,8 +838,8 @@ export class ObjectSystem {
     const [hx, hy, hz] = object.desc.pos;
     const w = (object.walk ??= { x: hx, z: hz, yaw: object.desc.rotY ?? 0, tx: hx, tz: hz, pause: this.random() * 2, peck: 0 });
     if (w.pause > 0) {
-      w.pause -= STEP;
-      w.peck += STEP;
+      w.pause -= PHYSICS.dt;
+      w.peck += PHYSICS.dt;
     } else {
       const dx = w.tx - w.x, dz = w.tz - w.z;
       const left = Math.hypot(dx, dz);
@@ -853,8 +852,8 @@ export class ObjectSystem {
         w.peck = 0;
       } else {
         const want = Math.atan2(dx, dz);
-        w.yaw += Math.atan2(Math.sin(want - w.yaw), Math.cos(want - w.yaw)) * Math.min(1, STEP * 6);
-        const pace = Math.min(left, 0.45 * STEP);
+        w.yaw += Math.atan2(Math.sin(want - w.yaw), Math.cos(want - w.yaw)) * Math.min(1, PHYSICS.dt * 6);
+        const pace = Math.min(left, 0.45 * PHYSICS.dt);
         w.x += (dx / left) * pace;
         w.z += (dz / left) * pace;
       }
@@ -1003,7 +1002,7 @@ export class ObjectSystem {
     object.near = true;
     object.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
     const p = object.body.translation();
-    const going = rigs.deckVelocity(object.desc.deck!, p, STEP);
+    const going = rigs.deckVelocity(object.desc.deck!, p, PHYSICS.dt);
     object.body.setLinvel({ x: going.x, y: going.y, z: going.z }, true);
     object.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   }
@@ -1012,7 +1011,7 @@ export class ObjectSystem {
   private velocity(object: LooseObject): { x: number; y: number; z: number } {
     const v = object.body.linvel();
     if (object.desc.deck === undefined || !this.rigs) return v;
-    const going = this.rigs.deckVelocity(object.desc.deck, object.body.translation(), STEP);
+    const going = this.rigs.deckVelocity(object.desc.deck, object.body.translation(), PHYSICS.dt);
     return { x: v.x - going.x, y: v.y - going.y, z: v.z - going.z };
   }
 

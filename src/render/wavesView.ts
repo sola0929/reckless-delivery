@@ -38,7 +38,7 @@ export class WavesView {
       scene.add(frame);
       // The swell: a ridge of water the length of the edge, its back sloping off out to sea, foam on its crest.
       const swell = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(long, 1, 3), new THREE.MeshStandardMaterial({ color: 0x3c5a5c, roughness: 0.3, transparent: true, opacity: 0.92 }));
+      const body = new THREE.Mesh(new THREE.BoxGeometry(long, 1, 3), new THREE.MeshStandardMaterial({ color: wave.desc.tint ?? 0x3c5a5c, roughness: 0.3, transparent: true, opacity: 0.92 }));
       body.position.set(long / 2, 0.5, -1.5);
       const back = new THREE.Mesh(new THREE.BoxGeometry(long, 1, 5), body.material);
       back.position.set(long / 2, 0.25, -5);
@@ -81,7 +81,7 @@ export class WavesView {
       if (coming) {
         const near = 1 - wave.until / WAVE_WARN;
         const tall = (wave.nextBig ? BIG_TALL : TALL) * (0.25 + 0.75 * near * near);
-        swell.position.set(0, SEA, -OUT * (1 - near) - 0.5);
+        swell.position.set(0, wave.desc.sea ?? SEA, -(wave.desc.out ?? OUT) * (1 - near) - 0.5);
         swell.scale.y = tall;
       }
       // Run in over the top: as far as the front has gone, white while it still runs.

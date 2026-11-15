@@ -363,7 +363,11 @@ export class PedestriansView {
         this.placeArm(i * 2 + 1, -0.3, 0.4, 0);
         return;
       }
-      if (p.crowd.dance !== undefined && p.state === 'wait') {
+      if ((p.crowd.motion === 'throw' || p.crowd.motion === 'scoop' || p.crowd.motion === 'claw' || p.crowd.motion === 'clap' || p.crowd.motion === 'beckon') && p.state === 'wait') {
+        this.play(p, i);
+        return;
+      }
+      if (p.crowd.dance !== undefined && p.state === 'wait' && !p.crowd.stand) {
         // Two steps to a bar: sway and step to one side, arms up; then the other.
         const b = Math.sin(this.beat);
         const up = Math.abs(Math.sin(this.beat * 2));
@@ -394,6 +398,61 @@ export class PedestriansView {
       this.place(this.legs, i * 2 + 1, -0.11, 0.72 + lift, 0, -swing);
     });
     for (const mesh of [this.bodies, this.heads, this.legs, this.arms, this.crowns, this.brims, this.bands, this.mics, this.tips, this.flags, this.hoods, this.hems, this.packs, this.boots, this.hands]) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Someone at a fair's games, each on a beat of their own: throwing, scooping for goldfish, at a claw machine, clapping, calling people over. */
+  private play(p: Pedestrian, i: number): void {
+    const t = this.beat + i * 1.7;
+    const crouch = p.crowd.motion === 'scoop';
+    let lean = 0, turn = 0, right: [number, number], left: [number, number], legs: [number, number] = [0, 0];
+    switch (p.crowd.motion) {
+      case 'throw': {
+        // Overarm: the arm back over the shoulder, then over and down at the target, a step into it; a breath between throws.
+        const go = Math.sin(t * 0.55), release = Math.max(0, -go);
+        right = [1.9 + go * 0.95, 0.15];
+        left = [1.0 + release * 0.3, -0.1];
+        lean = release * 0.12 - Math.max(0, go) * 0.05;
+        legs = [0.25, -0.18];
+        break;
+      }
+      case 'scoop': {
+        // Down at the tub, the scoop's paper dipped and drawn through the water, the bowl held in the other hand.
+        right = [0.85 + Math.sin(t * 1.3) * 0.22, 0.2 * Math.sin(t * 0.65)];
+        left = [0.75, -0.15];
+        break;
+      }
+      case 'claw': {
+        // Leant in at the machine: the stick worked this way and that, the button tapped.
+        right = [1.15, 0.18 * Math.sin(t * 2.6)];
+        left = [1.05 + Math.max(0, Math.sin(t * 1.9)) * 0.18, -0.05];
+        lean = 0.1;
+        break;
+      }
+      case 'clap': {
+        // Hands together in front, again and again; now and then both up in a cheer.
+        const cheer = Math.max(0, Math.sin(t * 0.3) - 0.75) * 4;
+        const clap = 0.32 - 0.28 * Math.abs(Math.sin(t * 2.8));
+        right = [1.25 + cheer * 1.6, clap + cheer * 0.3];
+        left = [1.25 + cheer * 1.6, -clap - cheer * 0.3];
+        break;
+      }
+      default: {
+        // Calling people over: one arm up and waving them in, turning to one side and the other of the way.
+        right = [2.3, 0.35 + Math.sin(t * 2.4) * 0.35];
+        left = [0.25, -0.1];
+        turn = Math.sin(t * 0.25) * 0.4;
+      }
+    }
+    this.euler.set(crouch ? 0.3 : lean, p.yaw + turn, 0);
+    this.base.compose(p.pos, this.turn.setFromEuler(this.euler), this.sized(p));
+    if (crouch) this.base.multiply(this.part.makeTranslation(0, -0.35, 0));
+    this.place(this.bodies, i, 0, 1.05, 0, 0);
+    this.place(this.heads, i, 0, 1.62, 0, 0);
+    this.dress(p, i, 1.62);
+    this.place(this.legs, i * 2, 0.11, 0.72, crouch ? 0.15 : 0, crouch ? -1.1 : legs[0]);
+    this.place(this.legs, i * 2 + 1, -0.11, 0.72, crouch ? 0.15 : 0, crouch ? -1.1 : legs[1]);
+    this.placeArm(i * 2, 0.3, right[0], right[1]);
+    this.placeArm(i * 2 + 1, -0.3, left[0], left[1]);
   }
 
   /** A worker's hard hat, on the head put at `head` up the figure, and the bands round the vest under it. */

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { OutageDesc } from '../levels/types';
+import { drawStillTogether } from './merge';
 
 // The power gone off in the market hall: as the truck comes in past the greens' first stalls, the lights flicker and go
 // out, and it is dark, the sides of the aisles all but lost; the truck's headlights come on and show a little way ahead.
@@ -38,12 +39,18 @@ export class OutageView {
   private readonly beams: THREE.SpotLight[] = [];
   private readonly work: THREE.SpotLight;
   private readonly shafts: THREE.MeshBasicMaterial;
-  /** The headlamp's light, kept in the scene and only turned down while it is not wanted: a light coming and going costs a pause. */
+  /** The headlamp's light, turned down while it is not wanted but kept on with the others in the dark. */
   private readonly torch: THREE.SpotLight;
+  /**
+   * The headlights, the work light and the headlamp: taken out of the lighting altogether outside the dark, as even turned
+   * all the way down each costs every lit pixel its share (on a weak graphics chip, half the frame rate). The pictures are
+   * made ready for both, with them and without, before the level starts (`light`), so going in and out is no pause.
+   */
+  private readonly spots: THREE.SpotLight[] = [];
   private readonly torchShaft: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
   /** The glows round the emergency lights and exit signs; the daylight at the doors. */
   /** Each glow, and how strong it is at its darkest. */
-  private readonly halos: { material: THREE.SpriteMaterial; strength: number }[] = [];
+  private readonly halos: { material: THREE.SpriteMaterial; strength: number; sprite: THREE.Sprite }[] = [];
   private readonly daylight: THREE.MeshBasicMaterial[] = [];
   private readonly lenses: THREE.MeshBasicMaterial;
   private readonly heads: THREE.MeshBasicMaterial;
@@ -128,6 +135,8 @@ export class OutageView {
     this.torchShaft = new THREE.Mesh(new THREE.ConeGeometry(TORCH_SHAFT.wide, TORCH_SHAFT.long, 16, 1, true).translate(0, -TORCH_SHAFT.long / 2, 0).rotateX(-Math.PI / 2), shaft);
     this.torchShaft.renderOrder = 2;
     scene.add(this.torchShaft);
+    this.spots.push(...this.beams, this.work, this.torch);
+    this.light(false);
     // At each door out, its shutter part down, the daylight: seen from in the dark, the fog not over it.
     for (const { pos, rotY, wide, high } of desc.daylight) {
       const light = new THREE.MeshBasicMaterial({ color: 0x9aa6b0, transparent: true, opacity: 0, fog: false, depthWrite: false });
@@ -148,6 +157,8 @@ export class OutageView {
     this.heads = new THREE.MeshBasicMaterial({ color: 0x8c8c88 });
     const body = new THREE.MeshStandardMaterial({ color: 0xe8e8e2 }), rod = new THREE.MeshStandardMaterial({ color: 0x55585e });
     const ledOn = new THREE.MeshBasicMaterial({ color: 0x40ff60 });
+    // What never moves in here (the lights, the signs and what they hang from) drawn together once made: a mesh to each material.
+    const still: THREE.Mesh[] = [];
     for (const { pos, rotY } of desc.emergency) {
       const unit = new THREE.Group();
       unit.position.set(...pos);
@@ -167,6 +178,8 @@ export class OutageView {
       unit.add(led);
       unit.add(this.halo(0xfff8ec, 0.9, [0, -0.1, 0.1]));
       scene.add(unit);
+      unit.updateMatrixWorld(true);
+      unit.traverse((o) => { if (o instanceof THREE.Mesh) still.push(o); });
     }
 
     // The exit signs, hung over the aisles, green, a running man and its arrow, alight whether the power is on or off.
@@ -187,17 +200,26 @@ export class OutageView {
       const hang = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 4.5 - pos[1] - 0.27, 4), rod);
       hang.position.set(pos[0], (4.5 + pos[1] + 0.27) / 2, pos[2]);
       scene.add(sign, hang);
+      sign.updateMatrixWorld(true);
+      hang.updateMatrixWorld(true);
+      still.push(sign, hang);
     }
+    drawStillTogether(still, scene);
   }
 
   /** A soft glow, so big, round something alight: seen only in the dark. */
   private halo(color: number, size: number, at: [number, number, number], strength = 0.55): THREE.Sprite {
     const material = new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.halos.push({ material, strength });
     const sprite = new THREE.Sprite(material);
+    this.halos.push({ material, strength, sprite });
     sprite.scale.set(size, size * 0.6, 1);
     sprite.position.set(...at);
     return sprite;
+  }
+
+  /** The spot lights in the lighting or out of it. */
+  light(on: boolean): void {
+    for (const spot of this.spots) spot.visible = on;
   }
 
   private within(x: number, z: number, margin: number, y = -Infinity): boolean {
@@ -239,12 +261,17 @@ export class OutageView {
     for (const { material, color } of this.glowing) material.color.copy(color).multiplyScalar(1 - k * 0.94);
     // The headlights on once it has gone; the emergency lights with them.
     const on = this.out ? 1 : k;
+    this.light(on > 0);
     for (const beam of this.beams) beam.intensity = BEAM.intensity * on;
     this.lenses.color.setHex(on > 0.5 ? 0xfff6e0 : 0x3a3a36);
     this.heads.color.setHex(on > 0.5 ? 0xffffff : 0x8c8c88);
     this.work.intensity = WORK.intensity * on;
     this.shafts.opacity = SHAFT.opacity * on;
-    for (const halo of this.halos) halo.material.opacity = halo.strength * k;
+    for (const halo of this.halos) {
+      halo.material.opacity = halo.strength * k;
+      // Not drawn at all while there is nothing of it to see: in the light, it is two dozen draws for nothing.
+      halo.sprite.visible = halo.material.opacity > 0;
+    }
     // The headlamp, out of the truck in the dark; aimed down the way they face, a little down.
     const torch = lamp ? k : 0;
     this.torch.intensity = TORCH.intensity * torch;

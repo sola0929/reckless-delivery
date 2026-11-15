@@ -41,13 +41,29 @@ function turnedBox(shapes: Shapes, s: RigShape): void {
 }
 function cylinder(shapes: Shapes, s: RigShape, sides = 10): void {
   m4.compose(new THREE.Vector3(...s.pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(s.rot ?? [0, 0, 0]))), new THREE.Vector3(1, 1, 1));
-  const [r, h] = s.half;
-  const rim = (i: number, y: number) => placed([Math.cos((i / sides) * Math.PI * 2) * r, y, Math.sin((i / sides) * Math.PI * 2) * r]);
+  const [r, h, top0] = s.half;
+  // Narrowing or widening to its top, when that is given its own radius.
+  const at = (y: number) => (top0 > 0 && y > 0 ? top0 : r);
+  const rim = (i: number, y: number) => placed([Math.cos((i / sides) * Math.PI * 2) * at(y), y, Math.sin((i / sides) * Math.PI * 2) * at(y)]);
   const top = placed([0, h, 0]), foot = placed([0, -h, 0]);
   for (let i = 0; i < sides; i++) {
     shapes.quad(rim(i + 1, -h), rim(i, -h), rim(i, h), rim(i + 1, h), s.color);
     shapes.tri(top, rim(i + 1, h), rim(i, h), s.color);
     shapes.tri(foot, rim(i, -h), rim(i + 1, -h), s.color);
+  }
+}
+/** A ball, squashed or stretched by its three half sizes, and turned. */
+function orb(shapes: Shapes, s: RigShape, around = 12, rings = 7): void {
+  m4.compose(new THREE.Vector3(...s.pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(s.rot ?? [0, 0, 0]))), new THREE.Vector3(1, 1, 1));
+  const [a, b, c] = s.half;
+  const pt = (i: number, j: number) => {
+    const u = (i / around) * Math.PI * 2, w = (j / rings) * Math.PI;
+    return placed([Math.cos(u) * Math.sin(w) * a, Math.cos(w) * b, Math.sin(u) * Math.sin(w) * c]);
+  };
+  for (let j = 0; j < rings; j++) for (let i = 0; i < around; i++) {
+    if (j === 0) shapes.tri(pt(i, 0), pt(i + 1, 1), pt(i, 1), s.color);
+    else if (j === rings - 1) shapes.tri(pt(i, j), pt(i + 1, j), pt(i, j + 1), s.color);
+    else shapes.quad(pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1), s.color);
   }
 }
 /** A hull: its sides from the outline at its foot up to the one at its top, faced outward; its top closed over. */
@@ -92,6 +108,8 @@ export class RigsView {
   private readonly at = new THREE.Vector3();
   private readonly toward = new THREE.Vector3();
   /** A ship's accommodation and the like: drawn apart from the rest of its part, to be faded; its box in the part's own frame. */
+  /** What turns on its own on a rig: a teacup on its table. */
+  private readonly twirls: { group: THREE.Group; rate: number }[] = [];
   private readonly faders: { group: THREE.Object3D; mesh: THREE.Mesh; material: THREE.MeshStandardMaterial; box: THREE.Box3; opacity: number }[] = [];
   private readonly ray = new THREE.Ray();
   private readonly inverse = new THREE.Matrix4();
@@ -123,12 +141,27 @@ export class RigsView {
         const solid = new Shapes(), fading = new Shapes();
         let fades = false;
         const group = new THREE.Group();
+        const twirled = new Map<string, { at: [number, number, number]; shapes: Shapes }>();
         for (const s of part.shapes) {
           if (s.hidden) continue;
+          if (s.twirl) {
+            const key = s.twirl.join();
+            let own = twirled.get(key);
+            if (!own) twirled.set(key, (own = { at: s.twirl, shapes: new Shapes() }));
+            const moved: RigShape = { ...s, pos: [s.pos[0] - s.twirl[0], s.pos[1], s.pos[2] - s.twirl[1]] };
+            const tx = s.twirl[0], tz = s.twirl[1];
+            if (s.kind === 'loft') loft(own.shapes, { ...s, lo: s.lo?.map(([x, z]) => [x - tx, z - tz]), hi: s.hi?.map(([x, z]) => [x - tx, z - tz]) });
+            else if (s.kind === 'cyl') cylinder(own.shapes, moved);
+            else if (s.kind === 'orb') orb(own.shapes, moved);
+            else if (s.rot) turnedBox(own.shapes, moved);
+            else own.shapes.box(...moved.pos, ...s.half, s.color);
+            continue;
+          }
           const shapes = s.fade ? fading : solid;
           fades ||= !!s.fade;
           if (s.kind === 'loft') loft(shapes, s);
           else if (s.kind === 'cyl') cylinder(shapes, s);
+          else if (s.kind === 'orb') orb(shapes, s);
           else if (s.rot) turnedBox(shapes, s);
           else if (s.kind === 'ball') {
             const ball = new THREE.Mesh(new THREE.SphereGeometry(s.half[0], 18, 12), new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.4, metalness: 0.6 }));
@@ -147,6 +180,16 @@ export class RigsView {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         group.add(mesh);
+        for (const { at, shapes } of twirled.values()) {
+          const spinner = new THREE.Group();
+          spinner.position.set(at[0], 0, at[1]);
+          const own = new THREE.Mesh(shapes.geometry(), material);
+          own.castShadow = true;
+          own.receiveShadow = true;
+          spinner.add(own);
+          group.add(spinner);
+          this.twirls.push({ group: spinner, rate: at[2] });
+        }
         if (fades) {
           const geometry = fading.geometry(), own = material.clone();
           geometry.computeBoundingBox();
@@ -242,6 +285,7 @@ export class RigsView {
       item.mesh.position.lerpVectors(item.was.pos, item.now.pos, alpha);
       item.mesh.quaternion.slerpQuaternions(item.was.rot, item.now.rot, alpha);
     }
+    for (const twirl of this.twirls) twirl.group.rotation.y = twirl.rate * time;
     if (this.ropeMesh) {
       // Each rope between its two ends as they are now, hanging a little in the middle.
       const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { drawMelonRind } from './textures';
 import type { CargoEvent, CargoItem, Debris } from '../sim/cargo';
 import type { PartDesc, Stage } from '../sim/cargo-types';
@@ -403,6 +404,96 @@ interface ItemView {
   ring: THREE.Mesh | null;
   leakLeft: number;
   leakTimer: number;
+  /** The parts still on it, drawn together: one mesh for each look they share. */
+  merged: Merged[];
+  /** A part has come off since they were put together. */
+  dirty: boolean;
+}
+
+/**
+ * Parts still on an item drawn as one, a draw for each look rather than for each part: an octopus is a hundred pieces.
+ * `styled` are the parts' own, which take the damage stage's texture and shade; the rest (a bottle's cap, a skull's teeth)
+ * keep their look. Each part's own mesh stays where it is, unseen, to be shown when it comes off.
+ */
+interface Merged {
+  mesh: THREE.Mesh;
+  material: THREE.MeshStandardMaterial;
+  /** The surface pattern, for the parts' own; undefined for the rest. */
+  styled?: Surface;
+}
+
+const tmpMatrix = new THREE.Matrix4();
+
+/** Put together the item's parts still on it; what was put together before is thrown away. */
+function mergeParts(view: ItemView): void {
+  for (const m of view.merged) {
+    view.group.remove(m.mesh);
+    m.mesh.geometry.dispose();
+    m.material.dispose();
+  }
+  view.merged = [];
+  const sets = new Map<string, { geometries: THREE.BufferGeometry[]; styled?: Surface; source: THREE.MeshStandardMaterial }>();
+  const { type, stage } = view.item;
+  view.meshes.forEach((mesh, i) => {
+    if (!mesh) return;
+    const part = type.parts[i];
+    const own = mesh.material as THREE.MeshStandardMaterial;
+    const visit = (object: THREE.Object3D, matrix: THREE.Matrix4) => {
+      object.updateMatrix();
+      const here = matrix.clone().multiply(object.matrix);
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial && !Array.isArray(object.material)) {
+        const material = object.material;
+        const styled = material === own ? (part.texture ?? 'plain') : undefined;
+        const key = styled !== undefined ? `s|${styled}` : `f|${material.map?.uuid ?? ''}|${material.roughness}`;
+        const geometry = (object.geometry as THREE.BufferGeometry).clone().applyMatrix4(here);
+        // What colour it is goes with each corner, so that parts of different colours can be drawn as one.
+        const color = styled !== undefined ? new THREE.Color(part.color) : material.color;
+        const count = geometry.getAttribute('position').count;
+        const colors = new Float32Array(count * 3);
+        for (let k = 0; k < count; k++) colors.set([color.r, color.g, color.b], k * 3);
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        let set = sets.get(key);
+        if (!set) sets.set(key, (set = { geometries: [], styled, source: material }));
+        set.geometries.push(geometry);
+        material.visible = false;
+      }
+      for (const child of object.children) visit(child, here);
+    };
+    visit(mesh, tmpMatrix.identity().clone());
+  });
+  for (const { geometries, styled, source } of sets.values()) {
+    const geometry = mergeGeometries(geometries);
+    for (const g of geometries) g.dispose();
+    if (!geometry) continue;
+    const material = styled !== undefined
+      ? new THREE.MeshStandardMaterial({ color: new THREE.Color().setScalar(STAGE_SHADE[stage]), map: damageTexture(styled, stage), roughness: 0.85, vertexColors: true })
+      : new THREE.MeshStandardMaterial({ map: source.map, roughness: source.roughness, vertexColors: true });
+    const merged = new THREE.Mesh(geometry, material);
+    merged.castShadow = true;
+    merged.receiveShadow = true;
+    view.group.add(merged);
+    view.merged.push({ mesh: merged, material, styled });
+  }
+  view.dirty = false;
+}
+
+/**
+ * What a mesh and everything on it hold on the graphics card given back: their shapes and materials, but not the pictures
+ * (shared, kept for the next load) nor the markers' shapes and materials (shared by all).
+ */
+function release(object: THREE.Object3D): void {
+  object.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    if (o.geometry !== MARKER_SHAPE && o.geometry !== RING_SHAPE) o.geometry.dispose();
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m !== MARKER_MATERIAL && m !== HIDDEN_MARKER_MATERIAL) m.dispose();
+  });
+}
+
+/** Let a part that has come off be seen again, itself and what is on it. */
+function unhide(mesh: THREE.Mesh): void {
+  mesh.traverse((object) => {
+    if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) object.material.visible = true;
+  });
 }
 
 /** Draws the cargo: parts, damage stages, pieces falling off, and the mess it makes. */
@@ -421,11 +512,19 @@ export class CargoViews {
 
   /** Throw away every mesh and build the load again, e.g. after a reset. */
   rebuild(sim: Sim): void {
+    // And given back to the graphics card: left, every start over would add the whole load's shapes to what it holds.
     for (const view of this.views.values()) {
       this.scene.remove(view.group, view.marker);
-      if (view.ring) this.scene.remove(view.ring);
+      release(view.group);
+      if (view.ring) {
+        this.scene.remove(view.ring);
+        release(view.ring);
+      }
     }
-    for (const piece of this.loose) this.scene.remove(piece.mesh);
+    for (const piece of this.loose) {
+      this.scene.remove(piece.mesh);
+      release(piece.mesh);
+    }
     this.views.clear();
     this.loose.length = 0;
 
@@ -457,10 +556,11 @@ export class CargoViews {
       const view: ItemView = {
         item, group, meshes, marker, ring,
         sync: item.body ? new BodySync(item.body, group) : null,
-        flash: 0, leakLeft: 0, leakTimer: 0,
+        flash: 0, leakLeft: 0, leakTimer: 0, merged: [], dirty: false,
       };
       this.views.set(item, view);
       if (item.stage > 0 && item.body) this.restyle(view);
+      mergeParts(view);
     }
   }
 
@@ -484,6 +584,9 @@ export class CargoViews {
         const mesh = view.meshes[event.part];
         if (!mesh) break;
         view.meshes[event.part] = null;
+        // Taken out of what is drawn together, and seen as itself again.
+        unhide(mesh);
+        view.dirty = true;
         // Re-parent to the scene, keeping its place in the world.
         this.scene.attach(mesh);
         (mesh.material as THREE.MeshStandardMaterial).emissive.setScalar(0);
@@ -531,6 +634,7 @@ export class CargoViews {
     this.time += dt;
     for (const view of this.views.values()) {
       const { item, marker } = view;
+      if (view.dirty && view.sync) mergeParts(view);
       marker.visible = item.fallen && !item.held && !item.thrown && item.body !== null;
       if (view.ring) {
         view.ring.visible = !item.taken;
@@ -543,9 +647,7 @@ export class CargoViews {
       }
       if (view.flash > 0) {
         view.flash = Math.max(0, view.flash - dt * 3.5);
-        for (const mesh of view.meshes) {
-          if (mesh) (mesh.material as THREE.MeshStandardMaterial).emissive.copy(FLASH).multiplyScalar(view.flash * 0.9);
-        }
+        for (const m of view.merged) if (m.styled !== undefined) m.material.emissive.copy(FLASH).multiplyScalar(view.flash * 0.9);
       }
       if (view.leakLeft > 0 && view.sync) {
         view.leakLeft -= dt;
@@ -573,6 +675,11 @@ export class CargoViews {
       material.map = damageTexture(part.texture ?? 'plain', stage);
       material.color.set(part.color).multiplyScalar(STAGE_SHADE[stage]);
     });
+    for (const m of view.merged) {
+      if (m.styled === undefined) continue;
+      m.material.map = damageTexture(m.styled, stage);
+      m.material.color.setScalar(STAGE_SHADE[stage]);
+    }
   }
 }
 

@@ -79,6 +79,8 @@ export interface PropDesc {
   texture?: 'melon';
   /** How it holds what rests on it: 0.8 if not given. Steel planks are slippery under a truck's frame. */
   friction?: number;
+  /** How well the truck's tyres hold on it, 1 as on a road: less on a water slide's wet floor. */
+  grip?: number;
   /** Dynamic when set, static otherwise. */
   mass?: number;
   /** Turns see-through when it comes between the camera and the truck. */
@@ -183,8 +185,20 @@ export interface DropperDesc {
  *   forklift   a forklift going about a floor: round `path` and round again, or (`back`) along it and back; `pos` the floor's
  *              height at the path's start, `period` seconds a round
  */
+/**
+ * Bats in the dark of a mine. As the truck comes within `reach` of `at` they come out from `from` all at once, at the
+ * driver's face and by, and are gone: nothing felt. Once for each time the truck comes to it.
+ */
+export interface FlockDesc {
+  at: Vec3;
+  reach: number;
+  from: Vec3;
+}
+
 export interface RigDesc {
-  kind: 'slew' | 'pile' | 'clamshell' | 'ball' | 'boom' | 'sway' | 'forklift' | 'float' | 'gangway' | 'plate';
+  /** `bumper`: a bumper car with someone in it, driven round its floor as a forklift is round `path`, light, on wheels, its
+   * rubber all round it; `color` its shell's. */
+  kind: 'slew' | 'pile' | 'clamshell' | 'ball' | 'boom' | 'sway' | 'forklift' | 'float' | 'gangway' | 'plate' | 'bumper';
   /** Where it stands: on the ground there. */
   pos: Vec3;
   /** Which way its work lies: radians about Y, 0 = toward +Z. For a slew or a clamshell, the middle of its swing; for a boom, the way it pushes out; for a ball, the way it swings. */
@@ -212,6 +226,8 @@ export interface RigDesc {
   /** How it rolls: 1 smoothly; less, lurching over and hanging there before it lurches back. */
   lurch?: number;
   pitch?: number;
+  /** Turning round about its own upright through pos, radians a second, all the while: a ride's turntable. */
+  spin?: number;
   /** A boat's hull colour. */
   color?: number;
   /**
@@ -248,6 +264,15 @@ export interface RigDesc {
    * down onto the lower deck, whichever that is as they rise and fall.
    */
   ends?: [number, number];
+  /**
+   * Carried round a track, as a ride's train is, on and on: `way` its points a metre apart, the last a metre short of the
+   * first again; `pace` how fast it goes where along it, [metres along, m/s], between them evenly changing; `lead` how far
+   * behind the first of its train this one rides; `stop` where it stands a while each time round, [metres along, seconds].
+   * It stops for nothing in its way. `pos` its track's middle. `ups`: which way is up from the track at each of its points, where it is not simply
+   * up: round a loop. `delay`: how many seconds behind the track's first train this one's runs. `says`: what those riding it cry out, seen as it goes by
+   * near the truck: going up, coming down, on the level.
+   */
+  track?: { way: Vec3[]; ups?: Vec3[]; pace: [number, number][]; lead?: number; delay?: number; stop?: [number, number]; says?: { up: string[]; down: string[]; level: string[] } };
   /** What something afloat is made of, when it is none of the hulls above (`hull: 'vessel'`): in its own frame. */
   parts?: FloatPartDesc[];
   /** A ship's hatch covers' half width, metres, between which and the rail its loose containers slide. */
@@ -260,13 +285,17 @@ export interface RigDesc {
  * or its hull, lofted from an outline at one height to another at another (`lo` at `y0`, `hi` at `y1`, the same number of
  * corners, in order round). Felt if `solid` (a box or a cylinder only); `hidden` ones are felt and not drawn. */
 export interface FloatPartDesc {
-  shape: 'box' | 'cyl' | 'loft';
+  /** An orb is a ball drawn squashed or stretched by its three half sizes, felt as a ball of the first. A cylinder's third half size, if any, is the radius of its top, drawn only. */
+  shape: 'box' | 'cyl' | 'loft' | 'orb';
   half?: Vec3;
   pos?: Vec3;
   rot?: Vec3;
   color: number;
   solid?: boolean;
   hidden?: boolean;
+  /** Drawn turning about an upright through [x, z] of the rig's own, so many radians a second, as well as with the rig: a
+   * teacup on its table. Felt as it stands: only for what is round about that upright. */
+  twirl?: [number, number, number];
   /** Faded, as a building is, while it stands between the camera and the truck: a ship's accommodation over its deck. */
   fade?: boolean;
   lo?: Vec2[];
@@ -318,8 +347,14 @@ export interface CrowdDesc {
   workers?: boolean;
   /** Dancers: in rows across the patch, facing this way (radians about Y), in step; they do not get out of anyone's way until they are knocked down, and then go back to their places. */
   dance?: number;
-  /** What those standing in place do, if not dance: crouch at a fire, feeding it paper; talk to a camera, microphone up, braced against the wind. */
-  motion?: 'toss' | 'carry' | 'cook' | 'perform' | 'report';
+  /** With `dance`: in their rows facing that way, but standing, not dancing: a queue, those waiting at a platform's gates. */
+  stand?: boolean;
+  /**
+   * What those standing in place do, if not dance: crouch at a fire, feeding it paper; talk to a camera, microphone up,
+   * braced against the wind. At the games of a fair: throw overarm at what is to be hit; crouch at a tub, scooping; work a
+   * claw machine's stick and button; clap and cheer someone on; wave people over to a booth.
+   */
+  motion?: 'toss' | 'carry' | 'cook' | 'perform' | 'report' | 'throw' | 'scoop' | 'claw' | 'clap' | 'beckon';
   /** Reporting: the colour of the channel's flag on the microphone. */
   mic?: number;
   /** Dressed for the rain, as a news crew is: a hooded coat to the knee, or a hooded jacket and a pack on the back; boots. */
@@ -380,6 +415,15 @@ export interface RiderLane {
   riders: number;
   /** At the end of it they turn round into this other lane, by its place in the list. Without one they start again from the beginning. */
   turnInto?: number;
+}
+
+/** A clown on a unicycle, riding round and round a loop of their own, juggling balls of fireworks with their fuses lit. */
+export interface ClownDesc {
+  /** The loop, ridden from each point to the next and from the last back to the first. */
+  loop: Vec2[];
+  /** How fast they ride, m/s; how far round the loop they start, metres. */
+  speed: number;
+  start: number;
 }
 
 /** A line across the top of a hill from which things are let go, one after another, to roll down it. */
@@ -457,6 +501,15 @@ export interface WaveDesc {
   wash?: { pos: Vec2; half: Vec2; yaw: number }[];
   /** The height of the top it runs over, where not nought. */
   y?: number;
+  /**
+   * In a wave pool rather than the sea: the swell seen coming is drawn rising out of water at this height (the sea's, if not
+   * given), from so many metres out, in this colour.
+   */
+  sea?: number;
+  out?: number;
+  tint?: number;
+  /** What floats where it runs, it takes with it: let go as it reaches it, not held where it was put. */
+  takes?: boolean;
 }
 
 /**
@@ -525,7 +578,7 @@ export interface SlickDesc {
   /** How much of their usual hold the tyres keep there, 0 to 1. */
   grip: number;
   /** What it is: spilt oil, drawn as dark pools (the default); or gravel spilt from a lorry, or crushed ice, which the level draws itself. */
-  look?: 'oil' | 'gravel' | 'ice';
+  look?: 'oil' | 'gravel' | 'ice' | 'metal';
 }
 
 /** A warning sign beside the road. Drawn large and tilted back, to be read from above. */
@@ -791,6 +844,8 @@ export interface LevelDef {
   cargo: CargoPlacement[];
   traffic: TrafficLane[];
   riders?: RiderLane[];
+  /** Clowns on unicycles juggling fireworks, round loops of their own. */
+  clowns?: ClownDesc[];
   /** Big machines going about a yard as they please. */
   machines?: MachineDesc[];
   /** Rice spread out on tarps to dry, [x, z] middle and half size: whatever wheels go over it throw it up. Only seen, not felt. */
@@ -808,6 +863,8 @@ export interface LevelDef {
   battle?: BattleDesc;
   /** Where water plays: the top of each fountain's jet. */
   fountains?: Vec3[];
+  /** Bats that come out at the truck, seen only: see `FlockDesc`. */
+  flocks?: FlockDesc[];
   /**
    * Where the run begins: the clock starts once the middle of the truck has crossed the
    * line through `pos`, going the way of `dir`. Without one it starts at once.

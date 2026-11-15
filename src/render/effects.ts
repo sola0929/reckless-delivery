@@ -74,9 +74,10 @@ export class Smoke {
 }
 
 interface Bit {
-  /** Where it comes to rest, and whether it flutters rather than falls. */
+  /** Where it comes to rest, and whether it flutters rather than falls, or rises. */
   floor: number;
   flutter: boolean;
+  rise?: boolean;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   scale: THREE.Vector3;
@@ -101,6 +102,8 @@ const BURST_STYLES = {
   bone: { colors: [0xece6d2, 0xcfc7ae], size: [0.03, 0.06], stretch: 2, life: [0.8, 1.3] },
   leaves: { colors: [0x4f8a4a, 0x5d9a52, 0x447d44, 0x7fae5a], size: [0.07, 0.14], stretch: 1.6, life: [1.0, 1.9] },
   sparks: { colors: [0xffe9a0, 0xfff6cf, 0xffc24a], size: [0.03, 0.05], stretch: 3, life: [0.25, 0.55] },
+  // A ball of fireworks going off: stars of every colour, streaking out and lasting a moment.
+  fireworks: { colors: [0xff4a6a, 0xffd23a, 0x4ad8ff, 0x7aff7a, 0xd27aff, 0xffffff], size: [0.05, 0.09], stretch: 3.5, life: [0.6, 1.2] },
   feathers: { colors: [0xf6f3ea, 0xe6dcc6, 0xc98a4a], size: [0.04, 0.08], stretch: 2.6, life: [1.2, 2.2] },
   toys: { colors: [0xe86a9a, 0xf2c12e, 0x5f8fd0, 0x4f9f7a, 0xf2efe6, 0xd85a4a], size: [0.09, 0.16], stretch: 1, life: [1.2, 2.2] },
   // A live wire shorting: thin, bright, blue-white, and gone at once.
@@ -132,6 +135,12 @@ const BURST_STYLES = {
   shell: { colors: [0xc23c26, 0xe0704a, 0xf0d8b8], size: [0.03, 0.07], stretch: 1.6, life: [0.8, 1.4] },
   // Ice: chips of it, white and the palest blue.
   ice: { colors: [0xf2f8fa, 0xd6eaf0, 0xbfdce6], size: [0.04, 0.1], stretch: 1.3, life: [0.7, 1.3] },
+  // Balloons let go: round, bright, and off up into the sky, swaying as they go.
+  balloons: { colors: [0xe8544a, 0xf2c12e, 0x3f7fd0, 0x4fa86a, 0xf08ac0, 0x8a5ac8, 0xffffff], size: [0.22, 0.3], stretch: 1.15, life: [4.5, 6.5] },
+  // Popcorn out of its cart: white and butter yellow, light, and lying where it falls.
+  popcorn: { colors: [0xfff8e6, 0xfff2c8, 0xf6dc8a, 0xffffff], size: [0.05, 0.08], stretch: 1, life: [2.0, 3.2] },
+  // Sugar from a cube burst open: white lumps, a few still square.
+  sugar: { colors: [0xffffff, 0xfbfaf4, 0xf0ece0], size: [0.05, 0.12], stretch: 1, life: [1.2, 2.2] },
   // Gold paper money, square and flat, that flutters down slowly.
   paper: { colors: [0xe8b83a, 0xd9a62e, 0xf2cf5a, 0xc8372d], size: [0.1, 0.16], stretch: 0.12, life: [2.8, 4.2] },
 } as const;
@@ -188,6 +197,8 @@ export class Bursts {
       b.age = 0;
       b.floor = at.y + GROUND;
       b.flutter = style === 'paper';
+      b.rise = style === 'balloons';
+      if (b.rise) b.vel.multiplyScalar(0.35);
       b.life = between(s.life);
       COLOR.set(tint ?? s.colors[Math.floor(Math.random() * s.colors.length)]);
       // A given colour is varied a little from one bit to the next.
@@ -205,7 +216,13 @@ export class Bursts {
         this.mesh.setMatrixAt(i, HIDDEN);
         return;
       }
-      b.vel.y += GRAVITY * dt;
+      if (b.rise) {
+        // A balloon: lifted, not falling, drifting and swaying, quicker as it goes; never turned far from upright.
+        b.vel.y = Math.min(b.vel.y + 2.2 * dt, 3.2);
+        b.vel.x = b.vel.x * 0.98 + Math.sin(b.age * 1.7 + i) * 0.03;
+        b.vel.z = b.vel.z * 0.98 + Math.cos(b.age * 1.3 + i) * 0.03;
+        b.rot.identity();
+      } else b.vel.y += GRAVITY * dt;
       if (b.flutter) {
         // Paper: held up by the air, drifting and swinging as it comes down.
         b.vel.y = Math.max(b.vel.y, -0.7);
@@ -229,6 +246,126 @@ export class Bursts {
   clear(): void {
     this.bits.forEach((b, i) => {
       b.age = b.life;
+      this.mesh.setMatrixAt(i, HIDDEN);
+    });
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+interface Star {
+  /** A shell going up, a star of its burst, or a spark left behind either. */
+  kind: 'shell' | 'star' | 'trail';
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  age: number;
+  life: number;
+  size: number;
+  color: THREE.Color;
+}
+
+const MAX_STARS = 1600;
+/** The colours a shell can burst in; each burst takes one or two of them. */
+const SHELL_COLORS = [0xff3a5a, 0xffd23a, 0x3ad8ff, 0x6aff6a, 0xd27aff, 0xffffff, 0xff8a2a];
+const TRAIL_COLOR = new THREE.Color(0xffd890);
+
+/**
+ * Fireworks: shells going up on a trail of sparks, each bursting high over the place into a ball of glowing stars
+ * that spread, slow, fall and twinkle out. Unlit, added light: they shine whatever the sun is doing.
+ */
+export class Fireworks {
+  readonly mesh: THREE.InstancedMesh;
+  private readonly stars: Star[] = [];
+  private cursor = 0;
+
+  constructor() {
+    const material = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    this.mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), material, MAX_STARS);
+    this.mesh.frustumCulled = false;
+    for (let i = 0; i < MAX_STARS; i++) {
+      this.stars.push({ kind: 'star', pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 1, life: 1, size: 0, color: new THREE.Color() });
+      this.mesh.setMatrixAt(i, HIDDEN);
+      this.mesh.setColorAt(i, COLOR.set(0xffffff));
+    }
+  }
+
+  /** Send `count` shells up from a point, each a little off upright, bursting `height` metres or so up. */
+  launch(at: THREE.Vector3, count: number, height = 14): void {
+    for (let n = 0; n < count; n++) {
+      const up = Math.sqrt(2 * 9.81 * height * (0.75 + Math.random() * 0.5));
+      this.add('shell', at, new THREE.Vector3((Math.random() - 0.5) * 5, up, (Math.random() - 0.5) * 5), up / 9.81, 0.09, TRAIL_COLOR);
+    }
+  }
+
+  private add(kind: Star['kind'], at: THREE.Vector3, vel: THREE.Vector3, life: number, size: number, color: THREE.Color): void {
+    const s = this.stars[this.cursor];
+    this.cursor = (this.cursor + 1) % MAX_STARS;
+    s.kind = kind;
+    s.pos.copy(at);
+    s.vel.copy(vel);
+    s.age = 0;
+    s.life = life;
+    s.size = size;
+    s.color.copy(color);
+  }
+
+  /** A shell at the top: a ball of stars in one or two colours. */
+  private burst(at: THREE.Vector3): void {
+    const a = new THREE.Color(SHELL_COLORS[Math.floor(Math.random() * SHELL_COLORS.length)]);
+    const b = Math.random() < 0.5 ? a : new THREE.Color(SHELL_COLORS[Math.floor(Math.random() * SHELL_COLORS.length)]);
+    const speed = 6 + Math.random() * 3;
+    const dir = new THREE.Vector3();
+    for (let n = 0; n < 70; n++) {
+      dir.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
+      if (dir.lengthSq() > 1 || dir.lengthSq() < 0.01) {
+        n--;
+        continue;
+      }
+      dir.normalize().multiplyScalar(speed * (0.85 + Math.random() * 0.15));
+      this.add('star', at, dir, 1.3 + Math.random() * 0.7, 0.13, n % 2 ? a : b);
+    }
+    // A white flash at the heart of it.
+    for (let n = 0; n < 6; n++) this.add('star', at, dir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5), 0.12, 0.9, new THREE.Color(0xffffff));
+  }
+
+  update(dt: number): void {
+    let coloured = false;
+    this.stars.forEach((s, i) => {
+      if (s.age >= s.life) return;
+      s.age += dt;
+      if (s.kind === 'shell') {
+        s.vel.y -= 9.81 * dt;
+        s.pos.addScaledVector(s.vel, dt);
+        // Its trail: a spark or two left hanging behind it.
+        if (Math.random() < 0.8) this.add('trail', s.pos, new THREE.Vector3((Math.random() - 0.5) * 0.6, -0.5, (Math.random() - 0.5) * 0.6), 0.35 + Math.random() * 0.25, 0.06, TRAIL_COLOR);
+        if (s.age >= s.life) this.burst(s.pos);
+      } else {
+        // Stars slow quickly in the air and drift down; trails just fall.
+        s.vel.multiplyScalar(Math.exp((s.kind === 'star' ? -1.8 : -1) * dt));
+        s.vel.y -= (s.kind === 'star' ? 2.2 : 3) * dt;
+        s.pos.addScaledVector(s.vel, dt);
+      }
+      if (s.age >= s.life) {
+        this.mesh.setMatrixAt(i, HIDDEN);
+        return;
+      }
+      const t = s.age / s.life;
+      // Bright at first, dimming, and flickering out at the end.
+      const twinkle = t > 0.6 && s.kind === 'star' ? (Math.random() < 0.35 ? 0.2 : 1) : 1;
+      const fade = (1 - t * t) * twinkle;
+      COLOR.copy(s.color).multiplyScalar(0.4 + fade * 1.6);
+      this.mesh.setColorAt(i, COLOR);
+      coloured = true;
+      const size = s.size * (s.kind === 'star' ? 0.5 + fade * 0.6 : fade + 0.2);
+      MATRIX.makeScale(size, size, size).setPosition(s.pos);
+      this.mesh.setMatrixAt(i, MATRIX);
+    });
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (coloured) this.mesh.instanceColor!.needsUpdate = true;
+  }
+
+  clear(): void {
+    this.stars.forEach((s, i) => {
+      s.age = s.life;
       this.mesh.setMatrixAt(i, HIDDEN);
     });
     this.mesh.instanceMatrix.needsUpdate = true;

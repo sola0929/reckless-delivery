@@ -159,8 +159,9 @@ export class Waves {
     return out;
   }
 
-  /** Drag a body by the water it is standing in, if any: truck or loose. */
-  push(body: RAPIER.RigidBody, dt: number, truck: boolean): void {
+  /** Drag a body by the water it is standing in, if any: truck or loose. Whether a wave that takes what floats in it has it. */
+  push(body: RAPIER.RigidBody, dt: number, truck: boolean): boolean {
+    let taken = false;
     const p = body.translation();
     for (const wave of this.list) {
       if (wave.strength <= 0) continue;
@@ -179,6 +180,8 @@ export class Waves {
       if (slower <= 0) continue;
       const shove = slower * (truck ? DRAG_TRUCK : DRAG_LOOSE) * body.mass() * dt;
       body.applyImpulse({ x: inland[0] * shove, y: 0, z: inland[1] * shove }, true);
+      if (wave.desc.takes) taken = true;
     }
+    return taken;
   }
 }

@@ -40,6 +40,13 @@ export interface PartDesc {
   cap?: number;
 }
 
+/** A shape collided as in place of some of an item's parts: as heavy as they are together. */
+export interface SolidDesc extends Pick<PartDesc, 'shape' | 'size' | 'pos' | 'rot' | 'flat' | 'scale'> {
+  mass: number;
+  /** The parts it stands in for, all coming off together if at all: it goes when they do. */
+  parts: number[];
+}
+
 export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice' | 'porcelain' | 'paintRed' | 'paintBlue' | 'paintYellow' | 'ice' | 'leaves' | 'grain' | 'shell' | 'ink';
 
 export interface CargoType {
@@ -90,6 +97,12 @@ export interface CargoType {
    * collides on its own, which suits spindly things like a skeleton.
    */
   hull?: Pick<PartDesc, 'shape' | 'size'>;
+  /**
+   * For something drawn in very many parts: fewer, larger shapes to collide as, in place of the parts' own, an octopus's arm
+   * one capsule rather than nine. What is drawn is the parts, untouched. Every part that would have collided is stood in for
+   * by one of these.
+   */
+  solids?: SolidDesc[];
   parts: PartDesc[];
   /** Pieces left behind when destroyed. Defaults to the parts still attached. */
   debris?: PartDesc[];
@@ -1022,6 +1035,38 @@ function limb(a: Vec3, b: Vec3, r: number, color: number, mass: number, detachAt
   };
 }
 
+/** The two ends of a capsule or cone along its own length: where a limb begins and ends, a spike's base and point. */
+function ends(p: PartDesc): [Vec3, Vec3] {
+  // Its own up, turned by its Euler XYZ angles.
+  const [a, b, c] = p.rot ?? [0, 0, 0];
+  let [x, y, z] = [-Math.sin(c), Math.cos(c), 0];
+  [x, z] = [x * Math.cos(b) + z * Math.sin(b), -x * Math.sin(b) + z * Math.cos(b)];
+  [y, z] = [y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+  const reach = p.size[1] + (p.shape === 'capsule' ? p.size[0] : 0);
+  return [[p.pos[0] - x * reach, p.pos[1] - y * reach, p.pos[2] - z * reach], [p.pos[0] + x * reach, p.pos[1] + y * reach, p.pos[2] + z * reach]];
+}
+
+const massOf = (parts: PartDesc[], of: number[]) => of.reduce((m, i) => m + parts[i].mass, 0);
+
+/** A part collided as itself, standing in for others on it as well (a knob, a spine): as heavy as all of them. */
+function keep(parts: PartDesc[], i: number, also: number[] = []): SolidDesc {
+  const { shape, size, pos, rot, flat, scale } = parts[i];
+  return { shape, size, pos, rot, flat, scale, mass: massOf(parts, [i, ...also]), parts: [i, ...also] };
+}
+
+/**
+ * One capsule standing in for a run of limbs end to end, and for what is on them: from the far end of the first to the far end
+ * of the last, as thick as they are on average unless told, as heavy as all of them.
+ */
+function span(parts: PartDesc[], run: number[], also: number[] = [], r?: number): SolidDesc {
+  const first = parts[run[0]], last = parts[run[run.length - 1]];
+  const gap = (p: Vec3, q: Vec3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const far = (p: PartDesc, from: Vec3) => { const [a, b] = ends(p); return gap(a, from) > gap(b, from) ? a : b; };
+  const radius = r ?? run.reduce((s, i) => s + parts[i].size[0], 0) / run.length;
+  const { shape, size, pos, rot } = limb(far(first, last.pos), far(last, first.pos), radius, 0, 0);
+  return { shape, size, pos, rot, mass: massOf(parts, [...run, ...also]), parts: [...run, ...also] };
+}
+
 const TUNA_BACK = 0x1c2a44, TUNA_SIDE = 0xc4ccd4, TUNA_FIN = 0x2a3650, FINLET = 0xe8c020, TUNA_RED = 0xa8242c;
 
 /**
@@ -1130,8 +1175,17 @@ function anchor(): CargoType {
   for (const x of [-0.5, 0.5]) parts.push({ shape: 'sphere', size: [0.065, 0, 0], pos: [x, 0, 0.55], color: IRON_LIGHT, mass: 2 });
   parts.push({ shape: 'sphere', size: [0.06, 0, 0], pos: [0, 0, 0.78], color: IRON, mass: 1 });
   const round = (k: number): Vec3 => [0.14 * Math.cos((k * Math.PI) / 4), 0, 0.94 + 0.14 * Math.sin((k * Math.PI) / 4)];
+  const ringStart = parts.length;
   for (let k = 0; k < 8; k++) parts.push(limb(round(k), round(k + 1), 0.024, IRON_LIGHT, 0.4));
+  // Collided as fewer shapes than it is drawn in: the shank in one length, the knob on each fluke's point with it, the ring as
+  // a disc. The arms, flukes, stock and its balls as they are.
+  const ring = Array.from({ length: 8 }, (_, k) => ringStart + k);
+  const solids: SolidDesc[] = [span(parts, [0, 1]), keep(parts, 2)];
+  for (const arm of [3, 8]) solids.push(keep(parts, arm), keep(parts, arm + 1), keep(parts, arm + 2), keep(parts, arm + 3, [arm + 4]));
+  for (let i = 13; i < ringStart; i++) solids.push(keep(parts, i));
+  solids.push({ shape: 'cylinder', size: [0.164, 0.024, 0], pos: [0, 0, 0.94], mass: massOf(parts, ring), parts: ring });
   return {
+    solids,
     id: 'anchor',
     name: '船錨',
     value: 600,
@@ -1247,8 +1301,14 @@ function kingCrab(): CargoType {
     const y = 0.5 * Math.sqrt(Math.max(0, 0.04 - x * x - (z + 0.01) ** 2));
     parts.push(spike([x, y - 0.005, z], [x * 2, 1, z * 2], 0.016, 0.035, CRAB_SPINE, 0.01));
   }
+  const spines = Array.from({ length: parts.length - 3 }, (_, i) => 3 + i);
   // Its eyes, on short stalks.
+  const eyes = parts.length;
   for (const s of [-1, 1]) parts.push(limb([s * 0.03, 0.06, 0.17], [s * 0.04, 0.1, 0.2], 0.01, CRAB_LIGHT, 0.01), { shape: 'sphere', size: [0.018, 0, 0], pos: [s * 0.04, 0.105, 0.205], color: 0x1a1210, mass: 0.01 });
+  // Collided as fewer shapes than it is drawn in: the spines with the carapace, the eyes with the head; each leg its three
+  // lengths, the knobs at its joints with them and its foot's point the end of the last; each claw the arm to the elbow, and
+  // the rest out to the point of its finger.
+  const solids: SolidDesc[] = [keep(parts, 0, spines), keep(parts, 1, [eyes, eyes + 1, eyes + 2, eyes + 3]), keep(parts, 2)];
   for (const s of [-1, 1]) {
     // Three walking legs a side, each up from the body to its first joint, out to the next, and down to a pointed foot.
     for (const [j, a] of [0.6, 0.1, -0.4].entries()) {
@@ -1258,19 +1318,24 @@ function kingCrab(): CargoType {
       const knee: Vec3 = [base[0] + o[0] * 0.24, 0.14, base[2] + o[2] * 0.24];
       const ankle: Vec3 = [knee[0] + o[0] * 0.2, 0.12, knee[2] + o[2] * 0.2];
       const foot: Vec3 = [ankle[0] + o[0] * 0.13, -0.1, ankle[2] + o[2] * 0.13];
+      const leg = parts.length;
       parts.push(limb(base, knee, 0.045, CRAB, 0.25, off), limb(knee, ankle, 0.038, CRAB, 0.18, off), limb(ankle, foot, 0.028, CRAB, 0.1, off));
       parts.push({ shape: 'sphere', size: [0.05, 0, 0], pos: knee, color: CRAB_LIGHT, mass: 0.03, detachAt: off }, { shape: 'sphere', size: [0.042, 0, 0], pos: ankle, color: CRAB_LIGHT, mass: 0.03, detachAt: off });
       parts.push(spike(foot, [o[0] * 0.4, -1, o[2] * 0.4], 0.024, 0.07, CRAB_SPINE, 0.01, off));
+      solids.push(keep(parts, leg, [leg + 3]), keep(parts, leg + 1, [leg + 4]), span(parts, [leg + 2, leg + 5]));
     }
     // The claws, forward: an arm up to an elbow, the palm, and its two fingers, the right one the bigger.
     const big = s > 0 ? 1.3 : 1, off = s > 0 ? 2 : undefined;
     const shoulder: Vec3 = [s * 0.1, 0.02, 0.16], elbow: Vec3 = [s * 0.2, 0.1, 0.29], wrist: Vec3 = [s * 0.21, 0.06, 0.42];
     const palm: Vec3 = [s * 0.2, 0.06, 0.42 + 0.12 * big];
+    const claw = parts.length;
     parts.push(limb(shoulder, elbow, 0.038, CRAB, 0.15), limb(elbow, wrist, 0.034, CRAB, 0.12, off), { shape: 'sphere', size: [0.042, 0, 0], pos: elbow, color: CRAB_LIGHT, mass: 0.03 });
     parts.push(limb(wrist, palm, 0.05 * big, CRAB, 0.2 * big, off));
     parts.push(spike(palm, [-s * 0.25, -0.1, 1], 0.026 * big, 0.11 * big, CRAB_SPINE, 0.03, off), spike([palm[0], palm[1] + 0.03 * big, palm[2]], [-s * 0.1, 0.45, 1], 0.02 * big, 0.09 * big, CRAB_SPINE, 0.02, off));
+    solids.push(keep(parts, claw, [claw + 2]), span(parts, [claw + 1, claw + 4], [claw + 3, claw + 5], 0.045 * big));
   }
   return {
+    solids,
     id: 'kingCrab',
     name: '帝王蟹',
     value: 800,
@@ -1321,6 +1386,8 @@ function octopus(): CargoType {
     // The head, leaning back from over the eyes.
     ...run([0, 0.03, 0.04], [0, 0.25, -0.24], [[0, 0.12], [0.2, 0.15], [0.45, 0.165], [0.7, 0.15], [0.9, 0.11], [1, 0.06]], 0.25, skin, [1, 3]),
   ];
+  const head = parts.length;
+  const arms: number[] = [];
   // The eyes, each a bulge with a gold eye in it, slit across.
   for (const s of [-1, 1]) {
     parts.push({ shape: 'sphere', size: [0.05, 0, 0], pos: [s * 0.085, 0.07, 0.1], color: WHITE, texture: 'octopus', mass: 0.05, ghost: true });
@@ -1338,6 +1405,7 @@ function octopus(): CargoType {
     };
     const off = k % 2 ? 1 : 2;
     // Torn, an arm loses its end, the last two lengths of it.
+    arms.push(parts.length);
     for (let i = 0; i < 9; i++) parts.push({ ...limb(at(i), at(i + 1), 0.068 - i * 0.0058, WHITE, 0.12, i >= 7 ? off : undefined), texture: 'sucker' });
   }
   const beast: CargoType = {
@@ -1362,7 +1430,15 @@ function octopus(): CargoType {
   // Drawn at a common size and made a third bigger again: a big one, its arms the width of the bed between their tips.
   const k = 1.3;
   const sized = (p: PartDesc): PartDesc => ({ ...p, size: [p.size[0] * k, p.size[1] * k, p.size[2] * k], pos: [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k], mass: p.mass * 1.5 });
-  return { ...beast, parts: beast.parts.map(sized), debris: beast.debris!.map(sized) };
+  const big = beast.parts.map(sized);
+  // Collided as fewer shapes than it is drawn in: the head as the balls of it that always did; each arm two capsules, the
+  // seven lengths that stay on and the two at its end that come off, as thick as those lengths are on average.
+  const solids: SolidDesc[] = [];
+  for (let i = 0; i < head; i++) if (!big[i].ghost) solids.push(keep(big, i));
+  const thick = (from: number, to: number) => { let r = 0; for (let i = from; i <= to; i++) r += big[i].size[0]; return r / (to - from + 1); };
+  const between = (from: number, to: number) => Array.from({ length: Math.max(0, to - from - 1) }, (_, i) => from + 1 + i);
+  for (const at of arms) solids.push(span(big, [at, at + 6], between(at, at + 6), thick(at, at + 6)), span(big, [at + 7, at + 8], [], thick(at + 7, at + 8)));
+  return { ...beast, parts: big, solids, debris: beast.debris!.map(sized) };
 }
 
 const MAHI_GREEN = 0x2f9a6a, MAHI_BLUE = 0x2a5aa8, MAHI_FIN = 0xf0d040, MAHI_BELLY = 0xf2ecc0;

@@ -114,7 +114,7 @@
 .key-guide [hidden], .key-guide-columns>[hidden] { display:none; }
 .pause-pad-art { margin:24px -22px 0; min-height:260px; display:grid; align-items:center; }
 .pause-pad-art svg { display:block; width:100%; height:auto; overflow:visible; font-family:Noto,sans-serif; }
-.pause-setting-group { margin-top:24px; }.pause-setting-group h4 { color:#8c7554; font-size:13px; border-bottom:1px dashed #a3a98d; padding-bottom:9px; margin:0 0 17px; }
+.pause-setting-group { margin-top:14px; }.pause-rate-row { margin-top:10px; }.pause-setting-group h4 { color:#8c7554; font-size:13px; border-bottom:1px dashed #a3a98d; padding-bottom:9px; margin:0 0 12px; }
 .pause-volume { display:grid; grid-template-columns:55px 1fr 52px; gap:15px; align-items:center; margin:20px 0; font-size:15px; font-weight:600; }
 .pause-slider { position:relative; display:block; height:44px; }
 .pause-slider::after { content:''; position:absolute; left:15px; right:15px; bottom:0; height:6px; background:linear-gradient(90deg,#8b9574 1px,transparent 1px) left top / 10% 100% repeat-x; border-right:1px solid #8b9574; pointer-events:none; }
