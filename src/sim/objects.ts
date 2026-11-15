@@ -9,6 +9,8 @@ export interface LooseObject {
   desc: ObjectDesc;
   kind: ObjectKind;
   body: RAPIER.RigidBody;
+  /** Where it comes among them all: the order they are gone through in. */
+  order: number;
   /** Whether the truck has been near it while it was awake: after that, where it has got to is its own affair. */
   near: boolean;
   /** Whether it has been knocked yet. Until then it stands asleep where it was put. */
@@ -190,6 +192,16 @@ function lying(object: LooseObject): boolean {
  */
 export class ObjectSystem {
   readonly objects: LooseObject[] = [];
+  /** Those set down on a deck, in the same order: the only ones the decks' moving is anything to, among thousands. */
+  private readonly decked: LooseObject[] = [];
+  /**
+   * Those there is anything to see to before the truck is met, each step, in the same order: what wanders, flees, trips
+   * or comes down with its neighbours, and what is being carried over the ground. Among thousands, a few.
+   */
+  private readonly lively: LooseObject[] = [];
+  private readonly isLively = new Set<LooseObject>();
+  /** Which of them is being seen to, while they are gone through. */
+  private livelyAt = -1;
   /** Objects knocked during the latest step. */
   fresh: KnockEvent[] = [];
   private landings: LandEvent[] = [];
@@ -232,7 +244,7 @@ export class ObjectSystem {
       );
       const solid = kind.parts.filter((p) => !p.ghost);
       const height = Math.max(...solid.map((p) => p.pos[1] + p.size[1]));
-      const object: LooseObject = { desc, kind, body, near: false, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1, cut: 0, riding: desc.deck !== undefined };
+      const object: LooseObject = { desc, kind, body, order: this.objects.length, near: false, knocked: false, wrecked: false, carried: 0, height, was: null, hush: 0, fuse: -1, cut: 0, riding: desc.deck !== undefined };
       const shares = solid.reduce((sum, p) => sum + (p.weight ?? 1), 0);
       for (const part of solid) {
         const [a, b, c] = part.size;
@@ -257,7 +269,19 @@ export class ObjectSystem {
         this.byCollider.set(collider.handle, object);
       }
       this.objects.push(object);
+      if (desc.deck !== undefined) this.decked.push(object);
+      if (kind.wanders || kind.flee || kind.trip || kind.collapse) this.enlist(object);
     }
+  }
+
+  /** Among the lively from now on, in its place in the order of them all; those after the one being seen to are still to come. */
+  private enlist(object: LooseObject): void {
+    if (this.isLively.has(object)) return;
+    this.isLively.add(object);
+    let at = this.lively.length;
+    while (at > 0 && this.lively[at - 1].order > object.order) at--;
+    this.lively.splice(at, 0, object);
+    if (at <= this.livelyAt) this.livelyAt++;
   }
 
   /** Call once per physics step, after the world has stepped. */
@@ -266,7 +290,8 @@ export class ObjectSystem {
     this.rammed = [];
     this.blasts = [];
     // Firecrackers on the ground: set off by the truck rolling over them, and each sets off those beside it a moment later.
-    for (const object of this.objects) {
+    for (this.livelyAt = 0; this.livelyAt < this.lively.length; this.livelyAt++) {
+      const object = this.lively[this.livelyAt];
       if (object.fallIn !== undefined && (object.fallIn -= PHYSICS.dt) <= 0) this.fall(object, truck);
       if (object.afloat && !object.rolling) this.settle(object);
       // Hens about their doorsteps, while the truck is near enough to see them. Further off they stand still, asleep: every
@@ -300,6 +325,7 @@ export class ObjectSystem {
       if (object.tripIn !== undefined && (object.tripIn -= PHYSICS.dt) <= 0) this.trip(object);
       else if (object.tripIn === undefined && t && truck && this.against(truck, p) && Math.abs(p.y - t.y) < 2) this.trip(object);
     }
+    this.livelyAt = -1;
     if (truck) {
       this.clearBeneath(truck, stalled);
       this.meet(truck);
@@ -712,6 +738,7 @@ export class ObjectSystem {
     // triangles, every step, for every one of them, is what made a hill of coils slow.
     if (!object.afloat) {
       object.afloat = true;
+      this.enlist(object);
       this.setGroups(object, CARRIED);
       object.body.setGravityScale(0, true);
     }
@@ -968,7 +995,7 @@ export class ObjectSystem {
    */
   ride(truck: Truck | undefined, rigs: Rigs): void {
     this.rigs = rigs;
-    for (const object of this.objects) {
+    for (const object of this.decked) {
       if (!object.riding) {
         // Loose on a deck that is moving: kept awake, as the deck going from under it does not wake it.
         if (object.desc.free && object.body.isSleeping() && rigs.list[object.desc.deck!].time > 0) object.body.wakeUp();
@@ -984,7 +1011,7 @@ export class ObjectSystem {
       if (truck && this.against(truck, object.body.translation())) {
         this.disembark(object, rigs);
         if (object.kind.stacked)
-          for (const other of this.objects)
+          for (const other of this.decked)
             if (other.riding && other.desc.deck === deck && Math.hypot(other.desc.pos[0] - x, other.desc.pos[2] - z) < STACK_REACH) this.disembark(other, rigs);
         continue;
       }

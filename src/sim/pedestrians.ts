@@ -285,7 +285,9 @@ export class Pedestrians {
       }
       const nextX = p.pos.x + (dx / left) * pace * dt;
       const nextZ = p.pos.z + (dz / left) * pace * dt;
-      if ((this.ground && Math.abs(this.ground(nextX, nextZ) + (p.crowd.raised ?? 0) - p.pos.y) > 0.6) || this.keepOut.some(([x0, z0, x1, z1]) => nextX > x0 && nextX < x1 && nextZ > z0 && nextZ < z1) || (reach && !inWay && underTruck(nextX, nextZ))) {
+      // How high the ground is where they would step: found once, for whether they can and for standing them on it.
+      const floor = this.ground ? this.ground(nextX, nextZ) + (p.crowd.raised ?? 0) : undefined;
+      if ((floor !== undefined && Math.abs(floor - p.pos.y) > 0.6) || this.keepOut.some(([x0, z0, x1, z1]) => nextX > x0 && nextX < x1 && nextZ > z0 && nextZ < z1) || (reach && !inWay && underTruck(nextX, nextZ))) {
         p.state = 'wait';
         p.timer = 0.6;
         p.speed = 0;
@@ -293,7 +295,7 @@ export class Pedestrians {
       }
       p.pos.x = nextX;
       p.pos.z = nextZ;
-      if (this.ground) p.pos.y = this.ground(p.pos.x, p.pos.z) + (p.crowd.raised ?? 0);
+      if (floor !== undefined) p.pos.y = floor;
       p.yaw = Math.atan2(dx, dz);
       p.speed = pace;
       // In a charge, and this is as far as this one gets: down, thrown forward by his own run.

@@ -43,6 +43,23 @@ interface Fader {
   zone?: boolean;
   /** A room it closes in: while what is followed is inside it, not drawn at all when in the way. */
   room?: THREE.Box3;
+  /**
+   * Plain, its colours in its geometry: while it is not faded at all it is drawn with the one material all such share
+   * (PLAIN), and with its own (`materials`) only while it is see-through. Hundreds drawn one after another with the same
+   * material cost the renderer far less than each with its own.
+   */
+  plain?: boolean;
+}
+
+/** What every plain thing that fades is drawn with while it is not faded: its colours are in its geometry. */
+const PLAIN = new THREE.MeshStandardMaterial({ roughness: 0.8, vertexColors: true });
+
+/** Give a geometry one colour all over, in its vertices. */
+function coloured(geometry: THREE.BufferGeometry, color: THREE.Color): void {
+  const count = geometry.getAttribute('position').count;
+  const colors = new Float32Array(count * 3);
+  for (let k = 0; k < count; k++) colors.set([color.r, color.g, color.b], k * 3);
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
 const LIVERIES = [0xd8483a, 0x2f6fb0, 0xe0a020, 0x3f8f5f, 0x8a4fa0, 0xd06a2a];
@@ -892,19 +909,29 @@ export class LevelView {
       }
       const mesh = desc.building ? buildingMesh(desc, desc.building) : propMesh(desc);
       (lid < 0 ? scene : this.lids[lid].group).add(mesh);
-      this.faders.push(this.fader(mesh, desc));
+      const fader = this.fader(mesh, desc);
+      // A plain one: its colour into its geometry, and drawn with the others' material while it is whole.
+      if (!desc.building && mesh instanceof THREE.Mesh) {
+        const own = mesh.material as THREE.MeshStandardMaterial;
+        coloured(mesh.geometry, own.color);
+        own.color.set(0xffffff);
+        own.vertexColors = true;
+        mesh.material = PLAIN;
+        fader.plain = true;
+      }
+      this.faders.push(fader);
     }
     for (const group of together.values()) {
       const lid = lidOf(group[0]);
-      const fader = group.length === 1 ? null : this.faderOfMany(group);
-      if (fader) {
-        (lid < 0 ? scene : this.lids[lid].group).add(fader.mesh);
-        this.faders.push(fader);
-        continue;
-      }
-      const mesh = propMesh(group[0]);
-      (lid < 0 ? scene : this.lids[lid].group).add(mesh);
-      this.faders.push(this.fader(mesh, group[0]));
+      const fader = this.faderOfMany(group);
+      (lid < 0 ? scene : this.lids[lid].group).add(fader.mesh);
+      this.faders.push(fader);
+    }
+    // The plain ones never move: where each is need not be worked out again each frame.
+    for (const f of this.faders) {
+      if (!f.plain) continue;
+      f.mesh.updateMatrix();
+      f.mesh.matrixAutoUpdate = false;
     }
     for (const prop of sim.props) {
       if (prop.desc.mass === undefined) continue;
@@ -1239,6 +1266,7 @@ export class LevelView {
           material.needsUpdate = true;
         }
       }
+      if (f.plain) (f.mesh as THREE.Mesh).material = transparent ? f.materials[0] : PLAIN;
     }
   }
 
@@ -1247,10 +1275,13 @@ export class LevelView {
    * shaders are made then, not the first time each is faded on the way.
    */
   seeThrough(on: boolean): void {
-    for (const f of this.faders) for (const material of f.materials) {
-      material.transparent = on || f.opacity < 1;
-      material.depthWrite = !material.transparent;
-      material.needsUpdate = true;
+    for (const f of this.faders) {
+      for (const material of f.materials) {
+        material.transparent = on || f.opacity < 1;
+        material.depthWrite = !material.transparent;
+        material.needsUpdate = true;
+      }
+      if (f.plain) (f.mesh as THREE.Mesh).material = on || f.opacity < 1 ? f.materials[0] : PLAIN;
     }
   }
 
@@ -1288,21 +1319,23 @@ export class LevelView {
       boxes.push(this.fader(mesh, desc).box);
       mesh.updateMatrix();
       const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrix);
-      const color = (mesh.material as THREE.MeshStandardMaterial).color;
-      const count = geometry.getAttribute('position').count;
-      const colors = new Float32Array(count * 3);
-      for (let k = 0; k < count; k++) colors.set([color.r, color.g, color.b], k * 3);
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      coloured(geometry, (mesh.material as THREE.MeshStandardMaterial).color);
       geometries.push(geometry);
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();
     }
     const material = new THREE.MeshStandardMaterial({ roughness: 0.8, vertexColors: true });
-    const mesh = new THREE.Mesh(mergeGeometries(geometries), material);
+    const merged = mergeGeometries(geometries);
     for (const g of geometries) g.dispose();
+    // Put where its middle is, as each was when drawn alone: see-through things are drawn in order of how far off they are.
+    merged.computeBoundingBox();
+    const middle = merged.boundingBox!.getCenter(new THREE.Vector3());
+    merged.translate(-middle.x, -middle.y, -middle.z);
+    const mesh = new THREE.Mesh(merged, PLAIN);
+    mesh.position.copy(middle);
     mesh.castShadow = mesh.receiveShadow = true;
     const box = boxes.reduce((all, b) => all.union(b), new THREE.Box3());
-    return { materials: [material], box, boxes, opacity: 1, mesh, overhead: descs[0].overhead };
+    return { materials: [material], box, boxes, opacity: 1, mesh, overhead: descs[0].overhead, plain: true };
   }
 
   private fader(mesh: THREE.Mesh, desc: PropDesc): Fader {

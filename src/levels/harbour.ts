@@ -272,6 +272,8 @@ export function harbour(): LevelDef {
     stillWater: [...ln.stillWater, ...oh.stillWater],
     gusts: [...st.gusts, ...rf.gusts, ...mr.gusts],
     crowds: [...st.crowds, ...mk.crowds, ...oh.crowds, ...news.crowds],
+    // Too long to see from one end to the other: the people at the far end stand still until the truck is nearer.
+    quietBeyond: 160,
     signs: [...st.signs, ...(mk.signs ?? []), ...ln.signs, ...rf.signs, ...mr.signs, ...cn.signs, ...ic.signs, ...oh.signs, ...news.signs],
     lamps: mk.lamps,
     outage: mk.outage,

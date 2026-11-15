@@ -68,6 +68,9 @@ export function drawStillTogether(
     geometry.translate(-middle.x, -middle.y, -middle.z);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(middle);
+    // It never moves: where it is need not be worked out again each frame.
+    mesh.updateMatrix();
+    mesh.matrixAutoUpdate = false;
     mesh.castShadow = castShadow;
     mesh.receiveShadow = receiveShadow;
     mesh.renderOrder = renderOrder;

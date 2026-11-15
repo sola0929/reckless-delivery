@@ -159,6 +159,12 @@ export class Waves {
     return out;
   }
 
+  /** Whether any wave has water running now: with none, nothing is pushed. */
+  get running(): boolean {
+    for (const wave of this.list) if (wave.strength > 0) return true;
+    return false;
+  }
+
   /** Drag a body by the water it is standing in, if any: truck or loose. Whether a wave that takes what floats in it has it. */
   push(body: RAPIER.RigidBody, dt: number, truck: boolean): boolean {
     let taken = false;

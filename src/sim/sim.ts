@@ -474,7 +474,8 @@ export class Sim {
       this.waves.update(PHYSICS.dt);
       this.waves.push(this.truck.body, PHYSICS.dt, true);
       // In a wave pool, what floats is let go by the wave that reaches it, to go with it.
-      for (const object of this.objects.objects) if (object.body.isEnabled() && object.body.isDynamic() && this.waves.push(object.body, PHYSICS.dt, false)) object.near = true;
+      // Asked of every loose thing there is: only while there is water running somewhere to push any of them.
+      if (this.waves.running) for (const object of this.objects.objects) if (object.body.isEnabled() && object.body.isDynamic() && this.waves.push(object.body, PHYSICS.dt, false)) object.near = true;
     }
     if (this.wind.list.length) {
       // Gusts out of the alleys: on what is loose, never on the truck.

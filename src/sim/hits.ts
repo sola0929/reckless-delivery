@@ -56,6 +56,11 @@ export class Hits {
   before(dt: number): void {
     this.time += dt;
     for (const [object, was] of this.tracked) {
+      // Asleep, it is going nowhere: nearly all of them, and asking how fast each goes is the dear part.
+      if (object.body.isSleeping()) {
+        was.vx = was.vy = was.vz = 0;
+        continue;
+      }
       const v = object.body.linvel();
       was.vx = v.x;
       was.vy = v.y;
@@ -65,17 +70,19 @@ export class Hits {
 
   /** After a step: the hardest any of them struck the truck or its load in it, as a jolt to the load (metres a second). */
   struck(world: RAPIER.World, truck: RAPIER.RigidBody, load: Set<number>): number {
-    const tv = truck.linvel();
+    const tv = truck.linvel(), t = truck.translation();
     let worst = this.rammed;
     this.rammed = 0;
     for (const [object, was] of this.tracked) {
-      if (this.time - was.hit < HIT_AGAIN || !object.body.isEnabled()) continue;
+      if (this.time - was.hit < HIT_AGAIN) continue;
       // Once the truck has hit it, it is no longer coming at the truck: what it does now is the truck's doing.
       if (object.knocked && !object.kind.crushes) continue;
-      // Heavy stock by how fast it and the truck meet; anything else by how fast it is going itself.
-      const meeting = object.kind.crushes ? Math.hypot(was.vx - tv.x, was.vy - tv.y, was.vz - tv.z) : Math.hypot(was.vx, was.vy, was.vz);
-      if (meeting < FLYING) continue;
-      const o = object.body.translation(), t = truck.translation();
+      // Heavy stock by how fast it and the truck meet; anything else by how fast it is going itself. Asked of nearly
+      // everything followed, every step, and nearly all of it lying still: the sums before anything is asked of the physics.
+      const dx = object.kind.crushes ? was.vx - tv.x : was.vx, dy = object.kind.crushes ? was.vy - tv.y : was.vy, dz = object.kind.crushes ? was.vz - tv.z : was.vz;
+      if (Math.hypot(dx, dy, dz) < FLYING) continue;
+      if (!object.body.isEnabled()) continue;
+      const o = object.body.translation();
       if (Math.abs(o.x - t.x) > NEAR || Math.abs(o.z - t.z) > NEAR) continue;
       let touching = false;
       for (let k = 0; k < object.body.numColliders() && !touching; k++) {
