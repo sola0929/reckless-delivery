@@ -304,7 +304,19 @@ export class Truck {
   isOnBed(p: { x: number; y: number; z: number }): boolean {
     const t = this.body.translation();
     const r = this.body.rotation();
-    this.v.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(this.q.set(r.x, r.y, r.z, r.w).invert());
+    return this.insideBed(p, t, this.q.set(r.x, r.y, r.z, r.w).invert());
+  }
+
+  /** Test a whole load against one pose. Use only within a synchronous pass, before the truck moves again. */
+  bedTest(): (p: { x: number; y: number; z: number }) => boolean {
+    const t = this.body.translation();
+    const r = this.body.rotation();
+    const inverse = new Quaternion(r.x, r.y, r.z, r.w).invert();
+    return (p) => this.insideBed(p, t, inverse);
+  }
+
+  private insideBed(p: { x: number; y: number; z: number }, t: { x: number; y: number; z: number }, inverse: Quaternion): boolean {
+    this.v.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(inverse);
     const { min, max } = TRUCK.bedZone;
     return (
       this.v.x >= min[0] && this.v.x <= max[0] &&

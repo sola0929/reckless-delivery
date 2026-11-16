@@ -773,7 +773,8 @@ export class Sim {
 
   cargoOnTruck(): number {
     let n = 0;
-    for (const c of this.cargo) if (c.body && !c.held && this.truck.isOnBed(c.body.translation())) n++;
+    const onBedAt = this.truck.bedTest();
+    for (const c of this.cargo) if (c.body && !c.held && onBedAt(c.body.translation())) n++;
     return n;
   }
 
@@ -788,8 +789,9 @@ export class Sim {
   /** What would be handed over if the truck delivered this instant: only what is on the bed. */
   deliverableValue(): number {
     let sum = 0;
+    const onBedAt = this.truck.bedTest();
     for (const c of this.cargo) {
-      if (c.stage === 3 || (c.body && !c.held && this.truck.isOnBed(c.body.translation()))) sum += c.value;
+      if (c.stage === 3 || (c.body && !c.held && onBedAt(c.body.translation()))) sum += c.value;
     }
     return sum;
   }

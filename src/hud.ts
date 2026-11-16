@@ -8,7 +8,9 @@ import { verdict } from './verdict';
 import { CARGO_TYPES, type CargoType } from './sim/cargo-types';
 import type { Failure, Result } from './sim/sim';
 
-export const money = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+// One formatter for every amount: toLocaleString makes a new one each time it is called, many times a frame.
+const DOLLARS = new Intl.NumberFormat('en-US');
+export const money = (n: number) => `$${DOLLARS.format(Math.round(n))}`;
 
 function clock(seconds: number): string {
   const s = Math.floor(seconds);

@@ -45,6 +45,12 @@ export interface SolidDesc extends Pick<PartDesc, 'shape' | 'size' | 'pos' | 'ro
   mass: number;
   /** The parts it stands in for, all coming off together if at all: it goes when they do. */
   parts: number[];
+  /**
+   * Simpler than what it stands in for, it would sit lower or turn more easily than that; so it weighs as these, the
+   * shapes the parts were collided as before (each going, with its weight, when any of its parts comes off), and not as
+   * itself. Its weight may also take in parts that are only drawn, coming off on their own.
+   */
+  weighs?: SolidDesc[];
 }
 
 export type BurstKind = 'splinters' | 'water' | 'bone' | 'sparks' | 'pulp' | 'rice' | 'porcelain' | 'paintRed' | 'paintBlue' | 'paintYellow' | 'ice' | 'leaves' | 'grain' | 'shell' | 'ink';
@@ -1067,6 +1073,15 @@ function span(parts: PartDesc[], run: number[], also: number[] = [], r?: number)
   return { shape, size, pos, rot, mass: massOf(parts, [...run, ...also]), parts: [...run, ...also] };
 }
 
+/** A capsule from `a` to `b`, ends included, standing in for the parts `of`: as heavy as they are, and `more` kilos beside. */
+function rod(a: Vec3, b: Vec3, r: number, parts: PartDesc[], of: number[], weighs?: SolidDesc[]): SolidDesc {
+  const { shape, size, pos, rot } = limb(a, b, r, 0, 0);
+  return { shape, size, pos, rot, mass: massOf(parts, of), parts: of, weighs };
+}
+
+/** `solid`, weighing as `weighs` (see SolidDesc.weighs). */
+const weighing = (solid: SolidDesc, weighs: SolidDesc[]): SolidDesc => ({ ...solid, weighs });
+
 const TUNA_BACK = 0x1c2a44, TUNA_SIDE = 0xc4ccd4, TUNA_FIN = 0x2a3650, FINLET = 0xe8c020, TUNA_RED = 0xa8242c;
 
 /**
@@ -1177,12 +1192,17 @@ function anchor(): CargoType {
   const round = (k: number): Vec3 => [0.14 * Math.cos((k * Math.PI) / 4), 0, 0.94 + 0.14 * Math.sin((k * Math.PI) / 4)];
   const ringStart = parts.length;
   for (let k = 0; k < 8; k++) parts.push(limb(round(k), round(k + 1), 0.024, IRON_LIGHT, 0.4));
-  // Collided as fewer shapes than it is drawn in: the shank in one length, the knob on each fluke's point with it, the ring as
-  // a disc. The arms, flukes, stock and its balls as they are.
+  // Collided as far fewer shapes than it is drawn in, for every one of them touching the bed is a contact to be solved: the
+  // shank in one length, with the crown at its foot and the eye at its head; each arm in two, its first two lengths, and
+  // the fluke with the last length and the knob; the stock with its balls as one rod as thick as they are; the ring as a disc.
+  // Nothing comes off an anchor.
   const ring = Array.from({ length: 8 }, (_, k) => ringStart + k);
-  const solids: SolidDesc[] = [span(parts, [0, 1]), keep(parts, 2)];
-  for (const arm of [3, 8]) solids.push(keep(parts, arm), keep(parts, arm + 1), keep(parts, arm + 2), keep(parts, arm + 3, [arm + 4]));
-  for (let i = 13; i < ringStart; i++) solids.push(keep(parts, i));
+  const solids: SolidDesc[] = [weighing(span(parts, [0, 1], [2, 16]), [span(parts, [0, 1]), keep(parts, 2), keep(parts, 16)])];
+  for (const arm of [3, 8]) {
+    solids.push(weighing(span(parts, [arm, arm + 1]), [keep(parts, arm), keep(parts, arm + 1)]));
+    solids.push(weighing(keep(parts, arm + 3, [arm + 2, arm + 4]), [keep(parts, arm + 2), keep(parts, arm + 3, [arm + 4])]));
+  }
+  solids.push(rod([-0.5, 0, 0.55], [0.5, 0, 0.55], 0.065, parts, [13, 14, 15], [keep(parts, 13), keep(parts, 14), keep(parts, 15)]));
   solids.push({ shape: 'cylinder', size: [0.164, 0.024, 0], pos: [0, 0, 0.94], mass: massOf(parts, ring), parts: ring });
   return {
     solids,
@@ -1305,10 +1325,14 @@ function kingCrab(): CargoType {
   // Its eyes, on short stalks.
   const eyes = parts.length;
   for (const s of [-1, 1]) parts.push(limb([s * 0.03, 0.06, 0.17], [s * 0.04, 0.1, 0.2], 0.01, CRAB_LIGHT, 0.01), { shape: 'sphere', size: [0.018, 0, 0], pos: [s * 0.04, 0.105, 0.205], color: 0x1a1210, mass: 0.01 });
-  // Collided as fewer shapes than it is drawn in: the spines with the carapace, the eyes with the head; each leg its three
-  // lengths, the knobs at its joints with them and its foot's point the end of the last; each claw the arm to the elbow, and
-  // the rest out to the point of its finger.
-  const solids: SolidDesc[] = [keep(parts, 0, spines), keep(parts, 1, [eyes, eyes + 1, eyes + 2, eyes + 3]), keep(parts, 2)];
+  // Collided as far fewer shapes than it is drawn in, for every one of them touching the bed is a contact to be solved: the
+  // carapace, its underside and its spines one drum, from the bottom of the one to the top of the other; the eyes with the
+  // head; each leg, which comes off whole, one length from where it joins the body to the point of its foot; the claw that
+  // stays on one length too, and the one that comes off the arm to the elbow and the rest out to the point of its finger.
+  const solids: SolidDesc[] = [
+    { shape: 'cylinder', size: [0.185, 0.0585, 0], pos: [0, 0.0365, -0.01], mass: massOf(parts, [0, 2, ...spines]), parts: [0, 2, ...spines], weighs: [keep(parts, 0, spines), keep(parts, 2)] },
+    keep(parts, 1, [eyes, eyes + 1, eyes + 2, eyes + 3]),
+  ];
   for (const s of [-1, 1]) {
     // Three walking legs a side, each up from the body to its first joint, out to the next, and down to a pointed foot.
     for (const [j, a] of [0.6, 0.1, -0.4].entries()) {
@@ -1322,7 +1346,11 @@ function kingCrab(): CargoType {
       parts.push(limb(base, knee, 0.045, CRAB, 0.25, off), limb(knee, ankle, 0.038, CRAB, 0.18, off), limb(ankle, foot, 0.028, CRAB, 0.1, off));
       parts.push({ shape: 'sphere', size: [0.05, 0, 0], pos: knee, color: CRAB_LIGHT, mass: 0.03, detachAt: off }, { shape: 'sphere', size: [0.042, 0, 0], pos: ankle, color: CRAB_LIGHT, mass: 0.03, detachAt: off });
       parts.push(spike(foot, [o[0] * 0.4, -1, o[2] * 0.4], 0.024, 0.07, CRAB_SPINE, 0.01, off));
-      solids.push(keep(parts, leg, [leg + 3]), keep(parts, leg + 1, [leg + 4]), span(parts, [leg + 2, leg + 5]));
+      // Its round end as far in from the foot's point as it is thick, so that it stands on its feet where the point did.
+      const d = [o[0] * 0.4, -1, o[2] * 0.4], n = Math.hypot(...d), r = 0.0345;
+      const point: Vec3 = [foot[0] + (d[0] / n) * (0.07 - r), foot[1] + (d[1] / n) * (0.07 - r), foot[2] + (d[2] / n) * (0.07 - r)];
+      const lengths = [keep(parts, leg, [leg + 3]), keep(parts, leg + 1, [leg + 4]), span(parts, [leg + 2, leg + 5])];
+      solids.push(rod(base, point, r, parts, [leg, leg + 1, leg + 2, leg + 3, leg + 4, leg + 5], lengths));
     }
     // The claws, forward: an arm up to an elbow, the palm, and its two fingers, the right one the bigger.
     const big = s > 0 ? 1.3 : 1, off = s > 0 ? 2 : undefined;
@@ -1332,7 +1360,8 @@ function kingCrab(): CargoType {
     parts.push(limb(shoulder, elbow, 0.038, CRAB, 0.15), limb(elbow, wrist, 0.034, CRAB, 0.12, off), { shape: 'sphere', size: [0.042, 0, 0], pos: elbow, color: CRAB_LIGHT, mass: 0.03 });
     parts.push(limb(wrist, palm, 0.05 * big, CRAB, 0.2 * big, off));
     parts.push(spike(palm, [-s * 0.25, -0.1, 1], 0.026 * big, 0.11 * big, CRAB_SPINE, 0.03, off), spike([palm[0], palm[1] + 0.03 * big, palm[2]], [-s * 0.1, 0.45, 1], 0.02 * big, 0.09 * big, CRAB_SPINE, 0.02, off));
-    solids.push(keep(parts, claw, [claw + 2]), span(parts, [claw + 1, claw + 4], [claw + 3, claw + 5], 0.045 * big));
+    if (off) solids.push(keep(parts, claw, [claw + 2]), span(parts, [claw + 1, claw + 4], [claw + 3, claw + 5], 0.045 * big));
+    else solids.push(weighing(span(parts, [claw, claw + 4], [claw + 1, claw + 2, claw + 3, claw + 5], 0.042 * big), [keep(parts, claw, [claw + 2]), span(parts, [claw + 1, claw + 4], [claw + 3, claw + 5], 0.045 * big)]));
   }
   return {
     solids,
@@ -1431,13 +1460,22 @@ function octopus(): CargoType {
   const k = 1.3;
   const sized = (p: PartDesc): PartDesc => ({ ...p, size: [p.size[0] * k, p.size[1] * k, p.size[2] * k], pos: [p.pos[0] * k, p.pos[1] * k, p.pos[2] * k], mass: p.mass * 1.5 });
   const big = beast.parts.map(sized);
-  // Collided as fewer shapes than it is drawn in: the head as the balls of it that always did; each arm two capsules, the
-  // seven lengths that stay on and the two at its end that come off, as thick as those lengths are on average.
+  // Collided as far fewer shapes than it is drawn in, for every one of them touching the bed is a contact to be solved: the
+  // head as the balls of it that always did; each arm and the one across from it, which lie near enough in a line, one
+  // capsule from the end of the seven lengths of the one that stay on to the end of those of the other, as thick as the
+  // last of them, which lie on the floor (the thicker ones in near the body are up off it, under the head). The two at each
+  // arm's end that come off are only drawn; the capsule weighs as both arms did, ends and all, until those come off.
   const solids: SolidDesc[] = [];
   for (let i = 0; i < head; i++) if (!big[i].ghost) solids.push(keep(big, i));
   const thick = (from: number, to: number) => { let r = 0; for (let i = from; i <= to; i++) r += big[i].size[0]; return r / (to - from + 1); };
+  const lengths = (at: number) => Array.from({ length: 7 }, (_, i) => at + i);
   const between = (from: number, to: number) => Array.from({ length: Math.max(0, to - from - 1) }, (_, i) => from + 1 + i);
-  for (const at of arms) solids.push(span(big, [at, at + 6], between(at, at + 6), thick(at, at + 6)), span(big, [at + 7, at + 8], [], thick(at + 7, at + 8)));
+  const was = (at: number) => [span(big, [at, at + 6], between(at, at + 6), thick(at, at + 6)), span(big, [at + 7, at + 8], [], thick(at + 7, at + 8))];
+  const end = (at: number): Vec3 => { const [a, b] = ends(big[at + 6]); const c = big[at].pos; return Math.hypot(a[0] - c[0], a[2] - c[2]) > Math.hypot(b[0] - c[0], b[2] - c[2]) ? a : b; };
+  for (let k = 0; k < 4; k++) {
+    const one = arms[k], other = arms[k + 4];
+    solids.push(rod(end(one), end(other), (thick(one + 5, one + 6) + thick(other + 5, other + 6)) / 2, big, [...lengths(one), ...lengths(other)], [...was(one), ...was(other)]));
+  }
   return { ...beast, parts: big, solids, debris: beast.debris!.map(sized) };
 }
 

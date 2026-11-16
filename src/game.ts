@@ -225,10 +225,16 @@ function squallUpdate(dt: number, indoors: boolean): void {
 /** Whether the level has a building to drive up through, seen in section. */
 const cutaway = sim.level.props.some((p) => p.cutaway);
 const lidded = !!sim.level.lids?.length;
-/** What is on top of a roof over a hall, while the truck or the driver is in under it. */
-function lidHides(p: { x: number; y: number; z: number }): boolean {
+/**
+ * What is on top of a roof over a hall, while the truck or the driver is in under it: asked once a frame, it gives the
+ * test for the roofs they are under, or nothing at all when they are under none.
+ */
+function lidHider(): ((p: { x: number; y: number; z: number }) => boolean) | undefined {
+  if (!lidded) return undefined;
   const at = sim.driver.mode === 'driving' ? sim.truck.body.translation() : sim.driver.pos;
-  return (sim.level.lids ?? []).some(({ area, below }) => at.x > area[0] && at.x < area[2] && at.z > area[1] && at.z < area[3] && at.y < below && p.x > area[0] && p.x < area[2] && p.z > area[1] && p.z < area[3] && p.y > below);
+  const over = sim.level.lids!.filter(({ area, below }) => at.x > area[0] && at.x < area[2] && at.z > area[1] && at.z < area[3] && at.y < below);
+  if (!over.length) return undefined;
+  return (p) => over.some(({ area, below }) => p.x > area[0] && p.x < area[2] && p.z > area[1] && p.z < area[3] && p.y > below);
 }
 /** Testing tools: only when run locally from the dev server. The published build has none of it. */
 const TESTING = import.meta.env.DEV;
@@ -1590,8 +1596,9 @@ function frame(now: number): void {
   cargoViews.update(dt);
   // In a building driven up through, what is on the storeys above the truck is not drawn, as the storeys are not.
   // Under a roof over a hall, what is up on top of it is not drawn either.
-  objectsView.update(cutaway ? sim.truck.body.translation().y + 2.7 : undefined, lidded ? lidHides : undefined);
-  skylightsView?.update(lidded ? lidHides : undefined);
+  const lidHides = lidHider();
+  objectsView.update(cutaway ? sim.truck.body.translation().y + 2.7 : undefined, lidHides);
+  skylightsView?.update(lidHides);
   {
     const t = sim.truck.body.translation();
     rigsView.apply(alpha, now / 1000, view.camera.position, lampTruck.set(t.x, t.y, t.z));

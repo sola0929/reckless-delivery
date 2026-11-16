@@ -131,7 +131,10 @@ export class ObjectsView {
     this.update();
   }
 
-  /** @param ceiling in a building driven up through: things higher than this are on a storey above the truck, and not drawn. */
+  /**
+   * @param ceiling in a building driven up through: things higher than this are on a storey above the truck, and not drawn.
+   * @param hidden what else is not drawn; left out when nothing is.
+   */
   update(ceiling?: number, hidden?: (p: { x: number; y: number; z: number }) => boolean): void {
     let changed = false;
     let recoloured = false;
@@ -149,7 +152,8 @@ export class ObjectsView {
         entry.cut = entry.object.cut;
         entry.settled = false;
       }
-      if (ceiling !== undefined || hidden) {
+      // With neither, nothing is above: only what was hidden needs looking at again.
+      if (ceiling !== undefined || hidden || entry.above) {
         const at = entry.object.body.translation();
         const above = (ceiling !== undefined && at.y > ceiling) || (!!hidden && hidden(at));
         if (above !== !!entry.above) {

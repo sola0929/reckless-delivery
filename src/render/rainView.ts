@@ -25,6 +25,10 @@ export class RainView {
   /** The steady wind it falls slant with, and on top of it a gust's, for now. */
   private readonly steady: THREE.Vector3;
   private readonly gust = new THREE.Vector3();
+  private readonly gustTarget = new THREE.Vector3();
+  private readonly step = new THREE.Vector3();
+  private readonly tail = new THREE.Vector3();
+  private replant = false;
   /** Whether the streaks have been put round the camera yet: they start out round nought. */
   private placed = false;
 
@@ -64,11 +68,12 @@ export class RainView {
 
   /** Shown or not: not under a roof. */
   show(on: boolean): void {
+    if (on && !this.lines.visible) this.replant = true;
     this.lines.visible = on;
   }
 
   blow(x: number, z: number, dt: number): void {
-    this.gust.lerp(new THREE.Vector3(x, 0, z), Math.min(1, dt * 6));
+    this.gust.lerp(this.gustTarget.set(x, 0, z), Math.min(1, dt * 6));
     this.wind.copy(this.steady).add(this.gust);
     // Heavier in a gust, and in a squall.
     const share = STEADY + (1 - STEADY) * Math.max(this.pouring, Math.min(1, this.gust.length() / HEAVIEST));
@@ -77,8 +82,19 @@ export class RainView {
 
   /** Each frame: the streaks moved on, kept round the camera, and laid out as lines along the way they fall. */
   update(dt: number, camera: THREE.Vector3): void {
-    const step = this.wind.clone().multiplyScalar(Math.min(dt, 0.05));
-    const tail = this.wind.clone().normalize().multiplyScalar(-STREAK);
+    if (!this.lines.visible) return;
+    // The camera may have crossed the whole hall while the rain was hidden.
+    if (this.replant) {
+      for (let n = 0; n < DROPS; n++) {
+        this.heads[n * 3] = camera.x + (Math.random() - 0.5) * SPREAD * 2;
+        this.heads[n * 3 + 1] = camera.y + Math.random() * (ABOVE + BELOW) - BELOW;
+        this.heads[n * 3 + 2] = camera.z + (Math.random() - 0.5) * SPREAD * 2;
+      }
+      this.placed = true;
+      this.replant = false;
+    }
+    const step = this.step.copy(this.wind).multiplyScalar(Math.min(dt, 0.05));
+    const tail = this.tail.copy(this.wind).normalize().multiplyScalar(-STREAK);
     const out = this.lines.geometry.getAttribute('position') as THREE.BufferAttribute;
     const at = out.array as Float32Array;
     for (let n = 0; n < DROPS; n++) {
@@ -88,16 +104,19 @@ export class RainView {
       this.heads[k + 2] += step.z;
       // Where they are in the world, so that driving through them they stream past: down past the camera's feet, up top
       // again; left behind or gone ahead across the ground, round to the far side of the box.
-      if (!this.placed) for (const [axis, c] of [[0, camera.x], [1, camera.y], [2, camera.z]] as const) this.heads[k + axis] += c;
+      if (!this.placed) {
+        this.heads[k] += camera.x;
+        this.heads[k + 1] += camera.y;
+        this.heads[k + 2] += camera.z;
+      }
       if (this.heads[k + 1] < camera.y - BELOW) {
         this.heads[k] = camera.x + (Math.random() - 0.5) * SPREAD * 2;
         this.heads[k + 1] = camera.y + ABOVE;
         this.heads[k + 2] = camera.z + (Math.random() - 0.5) * SPREAD * 2;
       } else if (this.heads[k + 1] > camera.y + ABOVE + 4) this.heads[k + 1] = camera.y + Math.random() * ABOVE;
-      for (const [axis, c] of [[0, camera.x], [2, camera.z]] as const) {
-        const rel = this.heads[k + axis] - c;
-        if (Math.abs(rel) > SPREAD) this.heads[k + axis] = c + ((((rel + SPREAD) % (SPREAD * 2)) + SPREAD * 2) % (SPREAD * 2)) - SPREAD;
-      }
+      const relX = this.heads[k] - camera.x, relZ = this.heads[k + 2] - camera.z;
+      if (Math.abs(relX) > SPREAD) this.heads[k] = camera.x + ((((relX + SPREAD) % (SPREAD * 2)) + SPREAD * 2) % (SPREAD * 2)) - SPREAD;
+      if (Math.abs(relZ) > SPREAD) this.heads[k + 2] = camera.z + ((((relZ + SPREAD) % (SPREAD * 2)) + SPREAD * 2) % (SPREAD * 2)) - SPREAD;
       const x = this.heads[k], y = this.heads[k + 1], z = this.heads[k + 2];
       at[n * 6] = x;
       at[n * 6 + 1] = y;

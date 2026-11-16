@@ -573,10 +573,34 @@ export class Relief {
       }
     }
 
+    // Each deck triangle listed, in order, under every square its bounds cover, so that a place is tested only against
+    // those over its own square. The bounds are widened, as `inside` takes a place a hair off an edge to be on it.
+    const SLACK = 0.25;
+    let dMinX = Infinity, dMinZ = Infinity, dMaxX = -Infinity, dMaxZ = -Infinity;
+    for (const top of deckTops) for (const [x, z] of top.poly) {
+      dMinX = Math.min(dMinX, x - SLACK); dMaxX = Math.max(dMaxX, x + SLACK);
+      dMinZ = Math.min(dMinZ, z - SLACK); dMaxZ = Math.max(dMaxZ, z + SLACK);
+    }
+    const dnx = deckTops.length ? Math.floor((dMaxX - dMinX) / cell) + 1 : 0;
+    const dnz = deckTops.length ? Math.floor((dMaxZ - dMinZ) / cell) + 1 : 0;
+    const deckCells: (typeof deckTops)[] = Array.from({ length: dnx * dnz }, () => []);
+    for (const top of deckTops) {
+      const xs = top.poly.map((p) => p[0]);
+      const zs = top.poly.map((p) => p[1]);
+      for (let j = Math.floor((Math.min(...zs) - SLACK - dMinZ) / cell); j <= Math.floor((Math.max(...zs) + SLACK - dMinZ) / cell); j++) {
+        for (let i = Math.floor((Math.min(...xs) - SLACK - dMinX) / cell); i <= Math.floor((Math.max(...xs) + SLACK - dMinX) / cell); i++) deckCells[j * dnx + i].push(top);
+      }
+    }
+    const noDecks: typeof deckTops = [];
+    const decksAt = (x: number, z: number) => {
+      const i = Math.floor((x - dMinX) / cell);
+      const j = Math.floor((z - dMinZ) / cell);
+      return i < 0 || j < 0 || i >= dnx || j >= dnz ? noDecks : deckCells[j * dnx + i];
+    };
     // The highest thing at a place; or, where a height is given, the highest that is not above it: a deck may pass over ground, or over itself.
     const find = (x: number, z: number, below: number): Surface | null => {
       let best: Surface | null = null;
-      for (const top of deckTops) {
+      for (const top of decksAt(x, z)) {
         if (!inside(top.poly, [x, z])) continue;
         const h = at(top.plane, x, z);
         if (h <= below && (!best || h > best.h)) best = { h, tag: top.look.tag };

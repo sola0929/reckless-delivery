@@ -1,5 +1,33 @@
 import * as THREE from 'three';
 
+const ANY_SIDE = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+
+/** The triangles of `mesh` that come within 30 m of `target` (no candidate view is further), in world space. */
+function nearbyPart(mesh: THREE.Mesh, target: THREE.Vector3): THREE.Mesh | null {
+ const position = mesh.geometry.attributes.position, index = mesh.geometry.index;
+ const range = mesh.geometry.drawRange;
+ const count = Math.min(index ? index.count : position.count, range.start + range.count);
+ const reach = 30, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+ const kept: number[] = [];
+ for (let i = range.start - range.start % 3; i + 2 < count; i += 3) {
+  const ia = index ? index.getX(i) : i, ib = index ? index.getX(i + 1) : i + 1, ic = index ? index.getX(i + 2) : i + 2;
+  a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+  b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
+  c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
+  if (Math.max(a.x, b.x, c.x) < target.x - reach || Math.min(a.x, b.x, c.x) > target.x + reach) continue;
+  if (Math.max(a.y, b.y, c.y) < target.y - reach || Math.min(a.y, b.y, c.y) > target.y + reach) continue;
+  if (Math.max(a.z, b.z, c.z) < target.z - reach || Math.min(a.z, b.z, c.z) > target.z + reach) continue;
+  kept.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+ }
+ if (!kept.length) return null;
+ const geometry = new THREE.BufferGeometry();
+ geometry.setAttribute('position', new THREE.Float32BufferAttribute(kept, 3));
+ const near = new THREE.Mesh(geometry, ANY_SIDE);
+ near.layers.mask = mesh.layers.mask;
+ near.matrixAutoUpdate = false; near.updateMatrixWorld(true);
+ return near;
+}
+
 // Score nearby views without rendering them; capture only the best view once per failure.
 export function chooseAccidentCamera(scene: THREE.Scene, gameplayCamera: THREE.PerspectiveCamera, truck: THREE.Object3D) {
  const start = performance.now();
@@ -9,6 +37,7 @@ export function chooseAccidentCamera(scene: THREE.Scene, gameplayCamera: THREE.P
  const target = truckBox.getCenter(new THREE.Vector3());
  const ownMeshes = new Set<THREE.Object3D>(); truck.traverse(object => ownMeshes.add(object));
  const obstacles: THREE.Mesh[] = [];
+ const scratch: THREE.BufferGeometry[] = [];
  const instanceMatrix=new THREE.Matrix4(),worldMatrix=new THREE.Matrix4(),instanceSphere=new THREE.Sphere();
  scene.traverseVisible(object => {
   if (!(object instanceof THREE.Mesh) || ownMeshes.has(object)) return;
@@ -19,7 +48,11 @@ export function chooseAccidentCamera(scene: THREE.Scene, gameplayCamera: THREE.P
   if (!object.geometry.boundingSphere) object.geometry.computeBoundingSphere();
   const sphere = (object instanceof THREE.InstancedMesh ? object.boundingSphere : object.geometry.boundingSphere)!.clone().applyMatrix4(object.matrixWorld);
   if (sphere.center.distanceTo(target) - sphere.radius >= 30) return;
-  if (!(object instanceof THREE.InstancedMesh)) { obstacles.push(object);return; }
+  if (!(object instanceof THREE.InstancedMesh)) {
+   // Level-wide merged meshes would be scanned triangle by triangle for every ray: keep only the part near the truck.
+   if (sphere.radius > 40) { const near = nearbyPart(object, target); if (near) { obstacles.push(near); scratch.push(near.geometry); } return; }
+   obstacles.push(object);return;
+  }
   // InstancedMesh.raycast scans the entire town for every ray. Restrict it once to nearby instances.
   for(let i=0;i<object.count;i++) {
    object.getMatrixAt(i,instanceMatrix);worldMatrix.multiplyMatrices(object.matrixWorld,instanceMatrix);
@@ -42,6 +75,7 @@ export function chooseAccidentCamera(scene: THREE.Scene, gameplayCamera: THREE.P
  const corners=[];
  for(const x of [truckBox.min.x,truckBox.max.x]) for(const y of [truckBox.min.y,truckBox.max.y]) for(const z of [truckBox.min.z,truckBox.max.z]) corners.push(new THREE.Vector3(x,y,z));
  const ray = new THREE.Raycaster();
+ const hits: THREE.Intersection[] = [];
  const choices: { camera: THREE.PerspectiveCamera; preference: number; height: number; turn: number; blocked: number; samples: number; score?: number }[] = [];
  try {
   for (const [height,radius] of [[6,13],[10,13],[15,10],[9,4],[5,5]]) for (const turn of [-.8,.8,-1.6,1.6,-2.4,2.4,0,Math.PI]) {
@@ -66,12 +100,13 @@ export function chooseAccidentCamera(scene: THREE.Scene, gameplayCamera: THREE.P
     if(!surface)continue;
     choice.samples++;
     ray.far=surface.distance-.06;
-    if(ray.intersectObjects(obstacles,false).length)choice.blocked++;
+    // Any one hit is enough to call the sample blocked.
+    for(const obstacle of obstacles) { if(!obstacle.layers.test(ray.layers))continue;hits.length=0;obstacle.raycast(ray,hits);if(hits.length){choice.blocked++;break;} }
    }
    choice.score=(choice.samples ? choice.blocked/choice.samples : 1)*1000+choice.preference;
    if(choice.blocked===0 && choice.samples>=5)break;
   }
- } finally { for(const [material,side] of sides) material.side=side; }
+ } finally { for(const [material,side] of sides) material.side=side; scratch.forEach(geometry=>geometry.dispose()); }
  const evaluated=choices.filter(choice=>choice.score!==undefined).sort((a,b)=>a.score!-b.score!);
  const selected=evaluated[0];
  return { camera:selected.camera, target, metrics:{ candidates:choices.length,evaluated: evaluated.length, blockedSamples:selected.blocked, sampleCount:selected.samples, height:selected.height, turn:selected.turn, selectionMs:performance.now()-start, fallbackNeeded:selected.blocked>0 } };

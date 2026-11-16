@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { GROUP, PHYSICS, TRUCK, groups, type Vec3 } from '../config';
-import { CARGO_TYPES, hitDamage, stageForHp, type CargoType, type CargoTypeId, type PartDesc, type Stage } from './cargo-types';
+import { CARGO_TYPES, hitDamage, stageForHp, type CargoType, type CargoTypeId, type PartDesc, type SolidDesc, type Stage } from './cargo-types';
 import type { Truck } from './truck';
 
 export interface CargoPlacement {
@@ -64,6 +64,8 @@ const LOAD_FOLLOW = 0.3;
 const GRACE_SECONDS = 0.75;
 /** Seconds off the truck before an item counts as fallen. */
 const FALLEN_SECONDS = 2.5;
+/** Rapier stores damping as float32; compare the same value before writing it again. */
+const GROUND_SPIN_DRAG = Math.fround(1.8);
 /** After a thrown item lands in the bed, how long it and everything it landed on are spared. */
 const LANDING_GRACE = 0.8;
 /** Loose pieces further than this from the truck, metres, are left where they lie. */
@@ -88,6 +90,51 @@ const UP = new Vector3(0, 1, 0);
 function partRotation(part: Pick<PartDesc, 'rot'>, target: Quaternion): Quaternion {
   const [x, y, z] = part.rot ?? [0, 0, 0];
   return target.setFromEuler(e.set(x, y, z));
+}
+
+/** How heavy a solid is, where its weight centres and how hard it is to turn, in its own frame. */
+interface Heft {
+  mass: number;
+  com: RAPIER.Vector;
+  inertia: RAPIER.Vector;
+  frame: RAPIER.Rotation;
+}
+
+/** Per solid that weighs as other shapes, what it weighs as with each set of them still on (see SolidDesc.weighs). */
+const hefts = new WeakMap<SolidDesc, Map<string, Heft | null>>();
+/** An empty world, to weigh shapes in. */
+let scales: RAPIER.World | null = null;
+
+/** What `solid` weighs as with those of the shapes it weighs as that are `on`; null with none. Worked out once, by Rapier. */
+function heft(solid: SolidDesc, on: boolean[]): Heft | null {
+  const key = on.map(Number).join('');
+  let known = hefts.get(solid);
+  if (!known) hefts.set(solid, (known = new Map()));
+  if (known.has(key)) return known.get(key)!;
+  scales ??= new RAPIER.World({ x: 0, y: 0, z: 0 });
+  const body = scales.createRigidBody(RAPIER.RigidBodyDesc.dynamic());
+  solid.weighs!.forEach((shape, k) => {
+    if (!on[k]) return;
+    partRotation(shape, q);
+    const desc = shapeCollider(shape.shape, shape.size, shape.flat, shape.scale)
+      .setTranslation(...shape.pos)
+      .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+      .setMass(shape.mass);
+    scales!.createCollider(desc, body);
+  });
+  let found: Heft | null = null;
+  if (body.numColliders()) {
+    body.recomputeMassPropertiesFromColliders();
+    const c = body.localCom(), i = body.principalInertia(), f = body.principalInertiaLocalFrame();
+    // From the item's frame into the solid's own.
+    partRotation(solid, q).invert();
+    v.set(c.x - solid.pos[0], c.y - solid.pos[1], c.z - solid.pos[2]).applyQuaternion(q);
+    q2.set(f.x, f.y, f.z, f.w).premultiply(q);
+    found = { mass: body.mass(), com: { x: v.x, y: v.y, z: v.z }, inertia: { x: i.x, y: i.y, z: i.z }, frame: { x: q2.x, y: q2.y, z: q2.z, w: q2.w } };
+  }
+  scales.removeRigidBody(body);
+  known.set(key, found);
+  return found;
 }
 
 function shapeCollider(shape: PartDesc['shape'], size: Vec3, flat = 1, scale?: Vec3): RAPIER.ColliderDesc {
@@ -138,6 +185,8 @@ export class CargoItem {
   readonly attached: boolean[];
   /** Per-part colliders, for items without a hull. */
   readonly partColliders: (RAPIER.Collider | null)[];
+  /** The colliders that weigh as other shapes, and which of those are still on (see SolidDesc.weighs). */
+  readonly weighed = new Map<RAPIER.Collider, { solid: SolidDesc; on: boolean[] }>();
   /** Last known position, kept after the body is gone. */
   readonly lastPos = new Vector3();
   /** Strongest impact so far, m/s. For tuning. */
@@ -236,9 +285,10 @@ export class CargoSystem {
       item.lastPos.set(at.x, at.y, at.z);
       if (place.found) item.bonus = item.fallen = true;
 
-      const add = (desc: RAPIER.ColliderDesc, mass: number): RAPIER.Collider => {
+      const add = (desc: RAPIER.ColliderDesc, mass: number | Heft): RAPIER.Collider => {
+        if (typeof mass === 'number') desc.setMass(mass);
+        else desc.setMassProperties(mass.mass, mass.com, mass.inertia, mass.frame);
         desc
-          .setMass(mass)
           .setFriction(type.friction)
           .setFrictionCombineRule(type.slick ? RAPIER.CoefficientCombineRule.Min : RAPIER.CoefficientCombineRule.Average)
           .setRestitution(0.1)
@@ -257,7 +307,9 @@ export class CargoSystem {
           const desc = shapeCollider(solid.shape, solid.size, solid.flat, solid.scale)
             .setTranslation(...solid.pos)
             .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
-          const collider = add(desc, solid.mass);
+          const on = solid.weighs?.map(() => true);
+          const collider = add(desc, (on && heft(solid, on)) || solid.mass);
+          if (on) item.weighed.set(collider, { solid, on });
           for (const i of solid.parts) item.partColliders[i] = collider;
         }
       } else {
@@ -295,10 +347,11 @@ export class CargoSystem {
     this.age += dt;
     this.bedCalm -= dt;
     this.leaveBehind(truck);
+    const onBedAt = truck.bedTest();
     for (const item of this.items) {
       const body = item.body;
       if (!body) {
-        this.countScrap(item, truck, dt);
+        this.countScrap(item, onBedAt, dt);
         continue;
       }
       const t = body.translation();
@@ -307,7 +360,7 @@ export class CargoSystem {
         this.quiet(item, body);
         continue;
       }
-      const onBed = truck.isOnBed(t);
+      const onBed = onBedAt(t);
       this.roll(item, body, truck, onBed, dt);
 
       // A thrown item that comes down in the bed lands for free, and so does whatever it
@@ -426,7 +479,9 @@ export class CargoSystem {
   private settle(item: CargoItem, onBed: boolean, dt: number): void {
     item.offTruckTime = onBed ? 0 : item.offTruckTime + dt;
     // On the road a jar or a melon doesn't roll on for ever. On the bed it is left free to.
-    item.body?.setAngularDamping(onBed ? 0 : 1.8);
+    const damping = onBed ? 0 : GROUND_SPIN_DRAG;
+    // Water/buoyancy also sets damping: read the actual value instead of caching bed state.
+    if (item.body && item.body.angularDamping() !== damping) item.body.setAngularDamping(damping);
     if (!item.fallen && item.offTruckTime > FALLEN_SECONDS) {
       item.fallen = true;
       // Extra items found along the way were never part of the load, so losing one costs nothing.
@@ -672,12 +727,25 @@ export class CargoSystem {
   /** A part come off: what it collided as goes, and with it whatever else that stood for (see CargoType.solids). */
   private dropCollider(item: CargoItem, part: number): void {
     const collider = item.partColliders[part];
-    if (!collider) return;
-    this.byCollider.delete(collider.handle);
-    this.world.removeCollider(collider, true);
-    item.partColliders.forEach((c, i) => {
-      if (c === collider) item.partColliders[i] = null;
-    });
+    if (collider) {
+      this.byCollider.delete(collider.handle);
+      item.weighed.delete(collider);
+      this.world.removeCollider(collider, true);
+      item.partColliders.forEach((c, i) => {
+        if (c === collider) item.partColliders[i] = null;
+      });
+    }
+    // What stays may have weighed as it too, and weighs that much less.
+    let lighter = false;
+    for (const [c, w] of item.weighed) {
+      const gone = w.solid.weighs!.map((shape, k) => w.on[k] && shape.parts.includes(part));
+      if (!gone.some(Boolean)) continue;
+      gone.forEach((g, k) => g && (w.on[k] = false));
+      const h = heft(w.solid, w.on);
+      if (h) c.setMassProperties(h.mass, h.com, h.inertia, h.frame);
+      lighter ||= !!h;
+    }
+    if (lighter) item.body?.recomputeMassPropertiesFromColliders();
   }
 
   /** Take an item's body out of the world: lost, or broken up. */
@@ -721,7 +789,7 @@ export class CargoSystem {
   }
 
   /** For a destroyed item, keep count of how much of its wreckage is still on the truck. */
-  private countScrap(item: CargoItem, truck: Truck, dt: number): void {
+  private countScrap(item: CargoItem, onBedAt: (p: RAPIER.Vector) => boolean, dt: number): void {
     // Twice a second is plenty, and keeps a piece bouncing on the wall from flickering the total.
     item.scrapCheck -= dt;
     if (item.scrapCheck > 0 || !item.pieces.length) return;
@@ -731,7 +799,7 @@ export class CargoSystem {
     v.set(0, 0, 0);
     for (const piece of item.pieces) {
       const p = piece.body.translation();
-      if (truck.isOnBed(p)) aboard++;
+      if (onBedAt(p)) aboard++;
       v.x += p.x;
       v.y += p.y;
       v.z += p.z;
