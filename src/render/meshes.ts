@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import type RAPIER from '@dimforge/rapier3d-compat';
+import type { MirrorBody } from '../sim/mirror';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TRUCK, type Vec3 } from '../config';
 import type { PropDesc } from '../levels/types';
-import type { Truck } from '../sim/truck';
+import type { MirrorTruck as Truck } from '../sim/mirror';
 
 /** Copies a physics body's transform onto a mesh, interpolating between fixed steps. */
 export class BodySync {
@@ -12,7 +12,7 @@ export class BodySync {
   private readonly currPos = new THREE.Vector3();
   private readonly currRot = new THREE.Quaternion();
 
-  constructor(readonly body: RAPIER.RigidBody, readonly object: THREE.Object3D) {
+  constructor(readonly body: MirrorBody, readonly object: THREE.Object3D) {
     this.snap();
   }
 

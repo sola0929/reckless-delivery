@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DRIVER } from '../config';
-import type { Driver } from '../sim/driver';
+import type { MirrorDriver as Driver } from '../sim/mirror';
 
 const ARC_POINTS = 22;
 const GRAVITY = new THREE.Vector3(0, -9.81, 0);

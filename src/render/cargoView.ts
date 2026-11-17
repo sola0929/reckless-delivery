@@ -1,9 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { drawMelonRind } from './textures';
-import type { CargoEvent, CargoItem, Debris } from '../sim/cargo';
+import type { MirrorCargoEvent as CargoEvent, MirrorCargoItem as CargoItem, MirrorDebris as Debris, MirrorSim as Sim } from '../sim/mirror';
 import type { PartDesc, Stage } from '../sim/cargo-types';
-import type { Sim } from '../sim/sim';
 import type { Bursts } from './effects';
 import { BodySync } from './meshes';
 

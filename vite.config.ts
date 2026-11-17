@@ -25,5 +25,7 @@ function gameChunk(): Plugin {
 export default defineConfig(({ command }) => ({
   base: './',
   plugins: [gameChunk()],
+  // The simulation's worker is a module of its own, split into pieces like the page's own script.
+  worker: { format: 'es' },
   define: command === 'serve' ? { __GAME_CHUNK__: 'null' } : {},
 }));

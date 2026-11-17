@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Slab } from '../levels/types';
-import type { Shard, Skylight, Skylights } from '../sim/skylights';
+import type { MirrorShard as Shard, MirrorSkylight as Skylight, MirrorSim } from '../sim/mirror';
+type Skylights = MirrorSim['skylights'];
 import { Shapes } from './shapes';
 import { signSheet } from './signs';
 

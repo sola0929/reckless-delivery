@@ -27,6 +27,44 @@ export function saveRate(rate: number): void {
   }
 }
 
+/** Where the physics is worked out: on its own core, in a worker; with everything else, on the page's own thread; or on automatic. */
+export type ThreadChoice = 'auto' | 'worker' | 'main';
+const THREAD_KEY = 'cargo-physics-thread';
+
+export function loadThread(): ThreadChoice {
+  try {
+    const saved = localStorage.getItem(THREAD_KEY);
+    if (saved === 'worker' || saved === 'main') return saved;
+  } catch {
+    // Nothing saved, or nothing readable.
+  }
+  return 'auto';
+}
+
+/** Choose it: in force from the next level started. */
+export function saveThread(choice: ThreadChoice): void {
+  try {
+    localStorage.setItem(THREAD_KEY, choice);
+  } catch {
+    // Not kept.
+  }
+}
+
+/** Whether the physics goes in a worker: as chosen, or on automatic where the machine has four cores or more to spare one. */
+export function physicsInWorker(choice: ThreadChoice = loadThread()): boolean {
+  if (workerBroke()) return false;
+  return choice === 'worker' || (choice === 'auto' && (navigator.hardwareConcurrency ?? 1) >= 4);
+}
+
+const WORKER_BROKE_KEY = 'cargo-physics-worker-broke';
+/** Whether the worker failed earlier in this visit: then the physics stays here until the browser tab is closed. */
+export function workerBroke(): boolean {
+  try { return sessionStorage.getItem(WORKER_BROKE_KEY) === '1'; } catch { return false; }
+}
+export function markWorkerBroke(): void {
+  try { sessionStorage.setItem(WORKER_BROKE_KEY, '1'); } catch { /* not kept: it is tried again next time */ }
+}
+
 export const PHYSICS = {
   dt: 1 / loadRate(),
   gravity: -9.81,

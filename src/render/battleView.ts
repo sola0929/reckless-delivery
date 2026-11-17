@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { BankDesc, BattleDesc } from '../levels/types';
-import { BANK_HALF, BANK_OVER, GUNNER_COVER, TANK_HALF, type Battle, SHELL_RING } from '../sim/battle';
+import { BANK_HALF, BANK_OVER, GUNNER_COVER, TANK_HALF, SHELL_RING } from '../sim/battle';
+import type { MirrorBattle as Battle } from '../sim/mirror';
 import { Shapes } from './shapes';
 
 // What a battle looks like: the circle where a shell is about to land and the mark it

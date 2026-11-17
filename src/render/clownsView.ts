@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { JUGGLED, juggled, type Clown } from '../sim/clowns';
+import { JUGGLED, juggled } from '../sim/clowns';
+import type { MirrorClown as Clown } from '../sim/mirror';
 
 /** Each one's suit, ruff, hat and hair. */
 const COSTUMES: [number, number, number, number][] = [

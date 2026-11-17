@@ -1,5 +1,5 @@
 import { type LevelDef, savesOf } from './levels/types';
-import type { TrafficCar } from './sim/traffic';
+import type { MirrorTrafficCar as TrafficCar } from './sim/mirror';
 import { TRAIN_HALF } from './sim/trains';
 
 /** Pixels per metre of the pre-drawn map, and of the map as shown. */

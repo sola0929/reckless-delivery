@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { GUST_WARN, type GustState } from '../sim/wind';
+import { GUST_WARN } from '../sim/wind';
+import type { MirrorGust as GustState } from '../sim/mirror';
 
 // The banners at an alley's mouth, the warning of its gusts: a shop's tall cloth banners on bamboo poles, the kind put out
 // along every street here. Between gusts they hang and stir; as a gust comes they swing round to stand out straight the
@@ -25,7 +26,7 @@ export class WindView {
   private readonly banners: Banner[] = [];
   private time = 0;
 
-  constructor(scene: THREE.Scene, gusts: GustState[]) {
+  constructor(scene: THREE.Scene, gusts: readonly GustState[]) {
     let n = 0;
     for (const gust of gusts) {
       const { desc } = gust;

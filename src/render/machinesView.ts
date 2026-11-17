@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Machine } from '../sim/machines';
+import type { MirrorMachine as Machine } from '../sim/mirror';
 import { Shapes } from './shapes';
 
 // The quarry's machines, in their yellow, each drawn where the physics has it, part of the way between its last two places.

@@ -382,6 +382,16 @@ export class Sim {
     return this.cargoSystem.items;
   }
 
+  /** Whether the driver, on foot, has something in reach to lift. */
+  get reachable(): boolean {
+    return !!this.driver.withinReach(this.truck, this.cargoSystem);
+  }
+
+  /** Whether the driver, on foot, is by the cab door. */
+  get atDoor(): boolean {
+    return this.driver.nearDoor(this.truck);
+  }
+
   /**
    * Advance one fixed step of PHYSICS.dt. The truck only answers its controls while the
    * driver is in it and the run isn't over; otherwise it sits with the handbrake on.
@@ -798,12 +808,14 @@ export class Sim {
 
   /** Count the load by the state each item is in right now. */
   trip(): Trip {
-    const set = this.level.objects?.length ?? 0;
+    const set = Math.min(this.level.objects?.length ?? 0, this.objects.objects.length);
     const before = this.tripBefore;
+    let things = 0;
+    for (let i = 0; i < set; i++) if (this.objects.objects[i].knocked) things++;
     return {
       people: this.pedestrians.hits + this.riders.hits + (before?.people ?? 0),
       cars: this.traffic.hits + (before?.cars ?? 0),
-      things: this.objects.objects.slice(0, set).filter((o) => o.knocked).length + (before?.things ?? 0),
+      things: things + (before?.things ?? 0),
     };
   }
 

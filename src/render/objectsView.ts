@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import type { ObjectPart } from '../levels/objects';
-import type { LooseObject } from '../sim/objects';
-import type { Pedestrian } from '../sim/pedestrians';
+import type { MirrorObject as LooseObject, MirrorPedestrian as Pedestrian } from '../sim/mirror';
 import { surfaceTexture } from './textures';
 
 type Shape = ObjectPart['shape'];

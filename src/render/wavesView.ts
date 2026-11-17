@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { WAVE_WARN, openStretches, sheltered, type WaveState } from '../sim/waves';
+import { WAVE_WARN, openStretches, sheltered } from '../sim/waves';
+import type { MirrorWave as WaveState } from '../sim/mirror';
 
 // Waves seen: each coming in out on the water for a few seconds before it breaks, a long dark ridge rising as it nears,
 // white along its crest, a big one taller; then, once it has broken, a sheet of white water across the top as far in as

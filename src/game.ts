@@ -1,7 +1,7 @@
 import { captureAccidentPhoto } from './ui/accident-photo';
 import { RouteProgress } from './ui/route-progress';
 import { Plane, Quaternion, Raycaster, SpotLight, Vector2, Vector3, type Object3D } from 'three';
-import { DRIVER, PHYSICS, TRUCK, loadRate, saveRate } from './config';
+import { DRIVER, PHYSICS, TRUCK, loadRate, markWorkerBroke, physicsInWorker, saveRate, workerBroke } from './config';
 import { Graphics, type QualityChoice } from './graphics';
 import { Hud, money } from './hud';
 import { bumpControls } from './controls';
@@ -40,10 +40,10 @@ import { Wreckage } from './render/wreckage';
 import { aimSun, createView } from './render/scene';
 import { heightAt } from './levels/terrain';
 import { OBJECT_KINDS, type ObjectKind } from './levels/objects';
-import type { CargoEvent, CargoItem } from './sim/cargo';
-import type { FootInput } from './sim/driver';
-import type { KnockEvent } from './sim/objects';
+import type { MirrorCargoEvent as CargoEvent, MirrorCargoItem as CargoItem, MirrorKnockEvent as KnockEvent, MirrorSim } from './sim/mirror';
+import { NO_FOOT_INPUT, type FootInput } from './sim/driver';
 import { Sim } from './sim/sim';
+import { Replica } from './replica';
 import { TRAIN_HALF } from './sim/trains';
 import type { DriveInput } from './sim/truck';
 
@@ -54,7 +54,50 @@ const level = (LEVELS[levelId] ?? LEVELS[FIRST_LEVEL])();
 // The loading screen is moved on between the long pieces of setting up.
 setStage(1, 0.5);
 await settle();
-const sim = await Sim.create(level);
+/**
+ * Where the simulation runs: in a worker, on a core of its own, or here with everything else. ?thread=worker or ?thread=main
+ * in the address says which, whatever is chosen; ?thread=mirror runs it here but sees it only through a replica of it, as
+ * from a worker, for checking. A level with a battle keeps it here: its battle is not copied across.
+ */
+// Driven by a script (the checks in dev/), here unless the address says otherwise: they reach into the simulation itself.
+const askedThread = new URLSearchParams(location.search).get('thread');
+const thread = askedThread && !(askedThread === 'worker' && workerBroke()) ? askedThread : !navigator.webdriver && physicsInWorker() ? 'worker' : 'main';
+// A worker that cannot start: the level is made here instead, and the worker left alone for the rest of this visit.
+const threaded = thread === 'worker' && !level.battle
+  ? await waitingOnWorker(Replica.inWorker(LEVELS[levelId] ? levelId : FIRST_LEVEL, level)).catch((e: unknown) => {
+    console.error('simulation worker could not start; running it here', e);
+    markWorkerBroke();
+    return null;
+  })
+  : null;
+const real = threaded ? null : await Sim.create(level);
+/** The simulation, as everything here sees it: read, never reached into. */
+const sim: MirrorSim = threaded ?? (thread === 'mirror' ? Replica.local(real!) : real!);
+/**
+ * A worker that says nothing: not failed, but not answering. Nothing is decided for the player (a slow machine can take
+ * long to make a level): after a while they are asked whether to start again with the physics here, or go on waiting.
+ */
+function askToLeaveWorker(): boolean {
+  if (!confirm('物理執行緒很久沒有回應。\n按「確定」改用主執行緒重新載入這一關；按「取消」繼續等待。')) return false;
+  markWorkerBroke();
+  location.reload();
+  return true;
+}
+function waitingOnWorker<T>(start: Promise<T>): Promise<T> {
+  let timer = 0;
+  const ask = () => { if (!askToLeaveWorker()) timer = window.setTimeout(ask, 30000); };
+  timer = window.setTimeout(ask, 30000);
+  return start.finally(() => clearTimeout(timer));
+}
+/** When the worker, stuck in a run, is next to be asked about: ms since it was sent the batch it has not answered. */
+let stallAskAt = 10000;
+// One that breaks in the middle of a run cannot be carried on from here (the replica is not the whole world): the level
+// is started again with the physics here.
+threaded?.onFail(() => {
+  markWorkerBroke();
+  alert('物理執行緒出了問題，這一關會改用主執行緒重新開始。');
+  location.reload();
+});
 setStage(2);
 await settle();
 const view = createView(canvas, level);
@@ -93,6 +136,7 @@ const showRate = () => rateButtons.forEach((button) => button.classList.toggle('
 for (const button of rateButtons) {
   button.addEventListener('click', () => {
     saveRate(Number(button.dataset.rate));
+    if (sim instanceof Replica) sim.tellRate(PHYSICS.dt);
     showRate();
   });
 }
@@ -278,7 +322,7 @@ playMusic('level');
 let knockedWeight = -1;
 /** Where each frame's time goes, added up until a script reads and clears it: physics, everything else, drawing. */
 const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0 };
-const debug = { sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input, levelView, storm, squall: () => { squall.next = squall.t; } };
+const debug = { sim: real ?? sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input, levelView, storm, squall: () => { squall.next = squall.t; } };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
 let last = performance.now();
@@ -1144,6 +1188,12 @@ hud.onBackToSave = () => {
   backAsked = true;
 };
 
+/** What is to be done once the simulation has done what it was just told: at once here, or when a worker says it has. */
+function afterSim(then: () => void): void {
+  if (sim.after) sim.after(then);
+  else then();
+}
+
 /** Put everything back as it was at the start of the run; or, `toSave`, as it was at the save point. */
 function resetRun(toSave = false): void {
   captureAt = Infinity;
@@ -1158,40 +1208,43 @@ function resetRun(toSave = false): void {
     sim.reset();
     hud.showHelp(15);
   }
-  hud.saveAvailable = sim.hasSave;
-  levelView.snap();
-  ridersView.snap();
-  machinesView.snap();
-  rigsView.snap();
-  truckSync.snap();
-  hud.hideResult();
-  resultShown = false;
-  const at = sim.truck.body.translation();
-  routeProgress.reset(at.x, at.z);
-  cargoViews.rebuild(sim);
-  objectsView.refresh();
-  wreckage.clear();
-  geysers.length = 0;
-  crackles.length = 0;
-  arcs.length = 0;
-  truckMesh.wash();
-  truckSync.apply(1);
-  chase.snap(truckMesh.root.position, truckHeading());
-  smoke.clear();
-  storm?.clear();
-  thunders.length = 0;
-  engineSmoke.clear();
-  wreckSmoke.clear();
-  bursts.clear();
-  fireworks.clear();
-  pendingLoss.clear();
-  hud.clearPopups();
-  if (!toSave) {
-    Object.assign(said, { start: false, below60: false, below30: false, near: false, hits: 0, still: 0 });
-    said.places.clear();
-  }
-  chat?.clear(!toSave);
-  accumulator = 0;
+  // Once it is done: in a worker, by the time its record is back.
+  afterSim(() => {
+    hud.saveAvailable = sim.hasSave;
+    levelView.snap();
+    ridersView.snap();
+    machinesView.snap();
+    rigsView.snap();
+    truckSync.snap();
+    hud.hideResult();
+    resultShown = false;
+    const at = sim.truck.body.translation();
+    routeProgress.reset(at.x, at.z);
+    cargoViews.rebuild(sim);
+    objectsView.refresh();
+    wreckage.clear();
+    geysers.length = 0;
+    crackles.length = 0;
+    arcs.length = 0;
+    truckMesh.wash();
+    truckSync.apply(1);
+    chase.snap(truckMesh.root.position, truckHeading());
+    smoke.clear();
+    storm?.clear();
+    thunders.length = 0;
+    engineSmoke.clear();
+    wreckSmoke.clear();
+    bursts.clear();
+    fireworks.clear();
+    pendingLoss.clear();
+    hud.clearPopups();
+    if (!toSave) {
+      Object.assign(said, { start: false, below60: false, below30: false, near: false, hits: 0, still: 0 });
+      said.places.clear();
+    }
+    chat?.clear(!toSave);
+    accumulator = 0;
+  });
 }
 /** A tutorial mishap being shown before the truck is put back: seconds left, and where it goes. */
 let mishapLeft = 0;
@@ -1268,7 +1321,7 @@ const key = (keys: string, pad: string) => (input.usingPad ? padText(pad) : keys
 
 /** The one-line hint about what the nearest action is. */
 function updatePrompt(): void {
-  const { driver, truck, cargoSystem } = sim;
+  const { driver, truck } = sim;
   if (sim.result) return hud.setPrompt('');
   if (driver.mode === 'driving') {
     if (sim.level.wet && sim.wetAt(truck.body.translation())) return hud.setPrompt('水泥還沒乾，開不快', true);
@@ -1289,8 +1342,8 @@ function updatePrompt(): void {
   if (driver.tooHeavyLeft > 0) return hud.setPrompt('太重了，跳不起來', true);
   if (driver.charge > 0) return hud.setPrompt(`放開${key('左鍵', ' RT ')}拋出　<b>${key('右鍵', 'LT')}</b> 取消`);
   if (driver.held) return hud.setPrompt(`<b>按住${key('左鍵', ' RT')}</b> 蓄力拋出　<b>${key('F', 'B')}</b> 放下`);
-  if (driver.withinReach(truck, cargoSystem)) return hud.setPrompt(`<b>${key('F', 'B')}</b> 舉起`);
-  if (driver.nearDoor(truck)) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車`);
+  if (sim.reachable) return hud.setPrompt(`<b>${key('F', 'B')}</b> 舉起`);
+  if (sim.atDoor) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車`);
   hud.setPrompt('');
 }
 
@@ -1358,6 +1411,19 @@ function frame(now: number): void {
     requestAnimationFrame(frame);
     return;
   }
+  // A worker that has gone quiet in the middle of a run.
+  const stalled = sim.stalledFor?.() ?? 0;
+  if (stalled > stallAskAt) {
+    if (askToLeaveWorker()) return;
+    stallAskAt = stalled + 10000;
+  } else if (stalled === 0) stallAskAt = 10000;
+  // The simulation in a worker, still putting the run back or the truck somewhere else: nothing goes on until it is done.
+  if (sim.busy?.()) {
+    accumulator = 0;
+    view.renderer.render(view.scene, view.camera);
+    requestAnimationFrame(frame);
+    return;
+  }
 
   // For testing: a number key puts the truck down just before that part of the level.
   if (TESTING && sim.driver.mode === 'driving') {
@@ -1365,11 +1431,13 @@ function frame(now: number): void {
     spots.forEach((spot, k) => {
       if (k > 9 || !input.take(`Digit${(k + 1) % 10}` as `Digit${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`)) return;
       sim.teleport(spot.pos[0], spot.pos[1], spot.yaw, spot.y);
-      truckSync.snap();
-      // Moved with it, not made again: what has been wrecked on the way has no body to be made from.
-      cargoViews.snap();
-      truckSync.apply(1);
-      chase.snap(truckMesh.root.position, truckHeading());
+      afterSim(() => {
+        truckSync.snap();
+        // Moved with it, not made again: what has been wrecked on the way has no body to be made from.
+        cargoViews.snap();
+        truckSync.apply(1);
+        chase.snap(truckMesh.root.position, truckHeading());
+      });
       hud.popup(`跳到：${spot.name}`, window.innerWidth / 2, window.innerHeight * 0.3, 'big');
     });
   }
@@ -1415,10 +1483,12 @@ function frame(now: number): void {
       resetRun();
       if (retrySpot) {
         sim.teleport(retrySpot.pos[0], retrySpot.pos[1], retrySpot.yaw);
-        truckSync.snap();
-        cargoViews.snap();
-        truckSync.apply(1);
-        chase.snap(truckMesh.root.position, truckHeading());
+        afterSim(() => {
+          truckSync.snap();
+          cargoViews.snap();
+          truckSync.apply(1);
+          chase.snap(truckMesh.root.position, truckHeading());
+        });
       }
       document.getElementById('fade')!.classList.remove('on');
     }
@@ -1437,9 +1507,17 @@ function frame(now: number): void {
   // One crash is spread over several steps: it is heard once, as hard as its hardest.
   let hardestBump = 0;
   let steps = 0;
-  while (accumulator >= PHYSICS.dt && steps < PHYSICS.maxStepsPerFrame) {
+  // With the simulation in a worker, the steps this frame's time is worth are asked for now, with the controls as they are;
+  // they come back by the next frame. Those that have come back are taken now, each as if stepped here.
+  if (sim.threaded) {
+    const asked = Math.min(Math.floor(accumulator / PHYSICS.dt), PHYSICS.maxStepsPerFrame);
+    if (asked > 0) sim.ask!(asked, drive, footInput(true), footInput(false));
+    accumulator -= asked * PHYSICS.dt;
+  }
+  while (sim.threaded ? sim.ready!() : accumulator >= PHYSICS.dt && steps < PHYSICS.maxStepsPerFrame) {
     const stepBegan = performance.now();
-    sim.step(drive, footInput(steps === 0));
+    // In a worker, the controls went with the asking.
+    sim.step(drive, sim.threaded ? NO_FOOT_INPUT : footInput(steps === 0));
     timing.physics += performance.now() - stepBegan;
     for (const event of sim.drainEvents()) {
       cargoViews.handle(event);
@@ -1580,13 +1658,14 @@ function frame(now: number): void {
     worksite();
     truckSync.capture();
     cargoViews.capture();
-    accumulator -= PHYSICS.dt;
+    if (!sim.threaded) accumulator -= PHYSICS.dt;
     steps++;
   }
   // Drop the backlog rather than spiral if the frame rate can't keep up.
   if (accumulator >= PHYSICS.dt) accumulator = 0;
 
-  const alpha = accumulator / PHYSICS.dt;
+  // From a worker, a frame that took no step shows the last one as it is: between the two before it would go back.
+  const alpha = sim.threaded && steps === 0 ? 1 : accumulator / PHYSICS.dt;
   levelView.apply(alpha);
   ridersView.apply(alpha);
   clownsView?.update();

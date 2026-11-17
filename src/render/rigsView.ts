@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { Hole, Rock } from '../sim/droppers';
-import type { Rig, RigShape } from '../sim/rigs';
+import type { MirrorHole as Hole, MirrorRock as Rock, MirrorRig as Rig } from '../sim/mirror';
+import type { RigShape } from '../sim/rigs';
 import { Shapes } from './shapes';
 
 // Machines at work and the rocks falling off the conveyors: each part drawn where the physics has it, part of the

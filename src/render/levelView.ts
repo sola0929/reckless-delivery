@@ -5,7 +5,7 @@ import { surfaceTexture } from './textures';
 import { mulberry32 } from '../levels/sandbox';
 import { heightAt } from '../levels/terrain';
 import { type GateDesc, type PropDesc, type SignDesc, type SlickDesc, savesOf } from '../levels/types';
-import type { Sim } from '../sim/sim';
+import type { MirrorSim as Sim } from '../sim/mirror';
 import { TRAIN_HALF } from '../sim/trains';
 import { Birds } from './birdsView';
 import { buildingMesh } from './buildings';

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OBJECT_KINDS, type ObjectPart } from '../levels/objects';
-import type { Rider } from '../sim/riders';
+import type { MirrorRider as Rider } from '../sim/mirror';
 
 type Drawn = Exclude<ObjectPart['shape'], 'sphere'>;
 

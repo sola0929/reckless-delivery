@@ -5,7 +5,7 @@ import { bumpControls, drawControls } from './controls';
 import { STARS } from './levels/types';
 import { namePadKeys, Pad, padNavigate, stepFocus } from './gamepad';
 import { setStage, startLoading } from './loading';
-import { loadRate, saveRate } from './config';
+import { loadRate, loadThread, saveRate, saveThread, type ThreadChoice } from './config';
 import { loadChoice, saveChoice, type QualityChoice } from './graphics-choice';
 import { playMusic, soundButtons, uiSound, wakeMusic } from './jukebox';
 import { soundSettings } from './sound-settings';
@@ -347,6 +347,15 @@ function showMenu(): void {
     });
   }
   showRate();
+  const threads = [...menu.querySelectorAll<HTMLButtonElement>('#set-thread button')];
+  const showThread = () => threads.forEach((button) => button.classList.toggle('on', button.dataset.thread === loadThread()));
+  for (const button of threads) {
+    button.addEventListener('click', () => {
+      saveThread(button.dataset.thread as ThreadChoice);
+      showThread();
+    });
+  }
+  showThread();
 
   // "Start", the first time, offers the tutorial first to whoever has not done it.
   document.getElementById('menu-start')!.addEventListener('click', () => {

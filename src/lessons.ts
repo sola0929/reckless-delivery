@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { LessonDesc, Vec2 } from './levels/types';
 import { padText } from './gamepad';
-import type { Sim } from './sim/sim';
+import type { MirrorSim as Sim } from './sim/mirror';
 
 /** Seconds at one lesson before the fuller help is said as well. */
 const HELP_AFTER = 12;
