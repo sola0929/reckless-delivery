@@ -54,8 +54,8 @@ export function saveBest(levelId: string, result: { stars: number; seconds: numb
   if (result.failure || result.stars === 0) return { value: false, time: false, before };
   // A hair's difference is no record.
   const value = !before || result.fraction > before.fraction + 0.0005;
-  // A run that went back to its save point is no time to beat: the clock was put back with it.
-  const time = !result.retries && (before?.seconds == null || result.seconds < before.seconds - 0.05);
+  // A run that went back to its save point counts too: its clock ran on through the going back.
+  const time = (before?.seconds == null || result.seconds < before.seconds - 0.05);
   const stars = Math.max(before?.stars ?? 0, result.stars);
   const found = Math.max(before?.found ?? 0, result.hidden?.found ?? 0);
   const items = [...new Set([...(before?.items ?? []), ...(result.hidden?.items ?? [])])];

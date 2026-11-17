@@ -598,19 +598,19 @@ export class Sim {
 
   /**
    * Back to the save point: everything along the way as it was at the start, the truck where the save was made with what
-   * was aboard it then, as hurt as it was then; the clock as it read. Cargo bodies are rebuilt, so views must be too.
+   * was aboard it then, as hurt as it was then. The clock runs on: going back costs the time it took. Cargo bodies are rebuilt, so views must be too.
    */
   backToSave(): void {
     const saved = this.saved, save = saved && savesOf(this.level)[saved.at];
     if (!saved || !save) return;
-    const retries = this.retries + 1;
+    const retries = this.retries + 1, time = this.time;
     this.reset();
     this.saved = saved;
     this.retries = retries;
     this.tripBefore = saved.trip;
     this.teleport(save.pos[0], save.pos[1], save.yaw, save.y);
     this.cargoSystem.restore(saved.items, this.truck);
-    this.time = saved.time;
+    this.time = time;
     this.started = true;
   }
 

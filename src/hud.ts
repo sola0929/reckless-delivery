@@ -463,7 +463,7 @@ export class Hud {
         line('最短時間', clock(result.seconds), before?.seconds != null ? clock(before.seconds) : null, records.time)
       : '';
     if (result.retries > 0) {
-      el('result-record').innerHTML += `<div class="record"><span>接關</span><b>${result.retries} 次</b><i>有接關，不列入最短時間</i></div>`;
+      el('result-record').innerHTML += `<div class="record"><span>接關</span><b>${result.retries} 次</b><i>接關的時間照算</i></div>`;
     }
     // After a failure past the save point, going back to it comes first.
     const back = failed && this.saveAvailable;
