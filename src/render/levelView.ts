@@ -1104,7 +1104,9 @@ export class LevelView {
         down.set(from.set(x, save.y + 4, z), new THREE.Vector3(0, -1, 0));
         down.far = 9;
         const hit = down.intersectObjects(solid, true).find((h) => h.object instanceof THREE.Mesh && !(h.object.material as THREE.Material).transparent);
-        return hit ? hit.point.y : save.y;
+        // A roof that fades is not found by the ray (its material is see-through): what is found far under it is the ground
+        // inside, not where the frame goes, so it goes at the save point's own height.
+        return hit && hit.point.y > save.y - 1 ? hit.point.y : save.y;
       };
       const dash = new THREE.BoxGeometry(1.4, 0.08, 0.55);
       // Up on a hall's roof, it goes with the roof: not seen from inside the hall, where the roof is not drawn.

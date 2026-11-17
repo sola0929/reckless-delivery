@@ -305,10 +305,11 @@ export function harbour(): LevelDef {
       { name: '5 浮動碼頭', pos: [OUTER_SPOTS.pontoon[0], OUTER_SPOTS.pontoon[1]], yaw: OUTER_SPOTS.pontoon[2], y: OUTER_SPOTS.pontoon[3] },
       { name: '6 運搬船', pos: [OUTER_SPOTS.ship[0], OUTER_SPOTS.ship[1]], yaw: OUTER_SPOTS.ship[2], y: OUTER_SPOTS.ship[3] },
     ],
-    // Halfway, as the way goes: off the end of the fallen billboard onto the market roof, before its skylights. The zone is
-    // on the roof's first slope in from its east eaves, where the truck comes down off the billboard and turns west, in the
-    // bay between the first crest's rooflights; up there only, not in the market under it; back to the roof's first crest.
-    save: { zone: [34.2, 355.2, 39.8, 362.3], pos: [MARKET_ROOF_SPOTS.ridges[0], MARKET_ROOF_SPOTS.ridges[1]], yaw: MARKET_ROOF_SPOTS.ridges[2], y: MARKET_ROOF_SPOTS.ridges[3] },
+    // Up off the lane onto the roofs (moved here from the market roof at the user's word, 2026-11-17): from the carport's
+    // top, where its slope comes level with the roofs, across the turn west onto house ①'s roof, as big as the other
+    // levels' save points; kept in from the net store's eaves, clear of ①'s water drum and solar heaters. Up there only,
+    // not in the yard under it; back to the carport's top, facing on along the roofs.
+    save: { zone: [95, SHED.top + 0.2, SHED.x1 - 1.5, 377], pos: [ROOF_SPOTS.top[0], ROOF_SPOTS.top[1]], yaw: ROOF_SPOTS.top[2], y: ROW.h },
     // On the ship's fore deck, in the square under her crane.
     finish: { pos: FINISH.pos, half: FINISH.half, above: SHIP.y - 1 },
     stars: STARS,

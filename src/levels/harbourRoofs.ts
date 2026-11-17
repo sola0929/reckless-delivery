@@ -233,7 +233,7 @@ export function roofs(): RoofParts {
   for (const [hx, hz] of [[98.9, 377.6], [96.6, 378.7]]) object('solarHeater', hx, hz, Math.PI + (hx - 98) * 0.08);
   object('tvAntenna', 93, INTO_2.z - 0.4, 0.35);
   props.push({ shape: 'cylinder', size: [0.04, 0.6, 0], pos: [91.75, TOP + 0.6, INTO_2.z - 3.3], color: 0x8e9499 });
-  for (const [px, pz, kind] of [[99.6, 367.4, 'flowerPotTall'], [99.8, 368.3, 'flowerPotJar'], [99.5, 369.3, 'flowerPotLow'], [96, 366.4, 'waterDrum']] as [number, number, ObjectKindId][]) object(kind, px, pz);
+  // (Its pots and water drum, inside the turn, went to make room for the save point's frame.)
   // Its front half, open to the lane: its stands of plants against the parapet, the pots too big to take in, its dish.
   object('plantStand', 96.5, ROW.z0 + 0.6);
   object('plantStand', 93.4, ROW.z0 + 0.6);
