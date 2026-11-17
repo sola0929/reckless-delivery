@@ -3,6 +3,12 @@ import { DRIVER } from '../config';
 import type { MirrorDriver as Driver } from '../sim/mirror';
 
 const ARC_POINTS = 22;
+/** A shove let go: seconds to thrust forward, to stay there, and to come back to standing. */
+const SHOVE_IN = 0.15, SHOVE_HOLD = 0.15, SHOVE_BACK = 0.3;
+/** Height of the hips, where the legs hang from and the body bends; and from there to the soles. */
+const HIP = 0.6, LEG = 0.5;
+/** Their shape seen through what hides them: a pale yellow, the colour of the game's aiming aids, not the red truck's. */
+const SILHOUETTE = 0xffd98a;
 const GRAVITY = new THREE.Vector3(0, -9.81, 0);
 /** How much of its own colour the figure shows in the dark, without any light on it. */
 const DARK_GLOW = 0.28;
@@ -38,6 +44,11 @@ export class DriverView {
   private phase = 0;
   private lift = 0;
   private tuck = 0;
+  /** Squared up to the truck to shove it, 0 to 1; how far drawn back, 0 to 1; seconds since the last shove; shoves seen so far. */
+  private brace = 0;
+  private drawn = 0;
+  private sinceShove = 99;
+  private shoveCount = 0;
 
   constructor(scene: THREE.Scene) {
     const skin = new THREE.MeshStandardMaterial({ color: 0xe9e9e6, roughness: 0.55 });
@@ -87,6 +98,21 @@ export class DriverView {
     this.root.add(this.figure);
     this.root.visible = false;
     scene.add(this.root);
+
+    // Behind the truck, or anything else solid, they are still seen: their shape in one flat colour through it. Each part
+    // is drawn twice. The second, flat, only where something already drawn is nearer, and drawn after the world and before
+    // the figure itself, so that the figure does not show through its own arms and legs, only through what is in front.
+    const seen = new THREE.MeshBasicMaterial({ color: SILHOUETTE, depthFunc: THREE.GreaterDepth, depthWrite: false });
+    const parts: THREE.Mesh[] = [];
+    this.root.traverse((o) => {
+      if (o instanceof THREE.Mesh) parts.push(o);
+    });
+    for (const part of parts) {
+      part.renderOrder = 2;
+      const shape = new THREE.Mesh(part.geometry, seen);
+      shape.renderOrder = 1;
+      part.add(shape);
+    }
 
     // The path of the throw, as a string of dots.
     this.arc = new THREE.InstancedMesh(
@@ -170,6 +196,40 @@ export class DriverView {
     // Leaning back as a throw is wound up.
     const wound = Math.min(1, driver.charge / 1.5);
     this.torso.rotation.x = -0.3 * wound;
+    // Shoving the truck. Wound up: leaning back, both arms raised level and drawn back along their sides, further the longer
+    // it is held, trembling once it is as hard as it goes. Let go: all at once forward, arms thrust out; a moment there; back.
+    if (driver.shoves !== this.shoveCount) {
+      if (driver.shoves > this.shoveCount) this.sinceShove = 0;
+      this.shoveCount = driver.shoves;
+    }
+    this.sinceShove += dt;
+    const s = this.sinceShove;
+    const thrust = s < SHOVE_IN ? 1 - (1 - s / SHOVE_IN) ** 3 : s < SHOVE_IN + SHOVE_HOLD ? 1 : Math.max(0, 1 - (s - SHOVE_IN - SHOVE_HOLD) / SHOVE_BACK);
+    const pulled = driver.shove ? Math.min(1, (driver.shove.power - DRIVER.shoveLeast) / (1 - DRIVER.shoveLeast)) : 0;
+    this.brace += ((driver.shove ? 1 : 0) - this.brace) * (1 - Math.exp(-14 * dt));
+    this.drawn += (pulled - this.drawn) * (1 - Math.exp(-14 * dt));
+    const level = Math.max(this.brace, thrust);
+    const shake = driver.shove && pulled >= 1 ? (Math.random() - 0.5) * 0.06 : 0;
+    for (const arm of this.arms) {
+      arm.rotation.x += (-Math.PI / 2 - arm.rotation.x) * level;
+      arm.position.z = -0.3 * this.drawn * this.brace * (1 - thrust) + 0.22 * thrust;
+    }
+    this.torso.position.set(0, 0, 0);
+    if (level > 0.01) {
+      const back = this.drawn * this.brace * (1 - thrust);
+      const lean = -0.4 * back + 0.5 * thrust + shake;
+      // Bent at the hips, not at the feet: the body stays over the legs as it leans.
+      this.torso.rotation.x = lean;
+      this.torso.position.set(0, HIP * (1 - Math.cos(lean)), -HIP * Math.sin(lean));
+      // And the feet set to it: one ahead and one braced behind while drawing back, a long lunge as it goes.
+      const ahead = -0.3 * back - 0.55 * thrust, behind = 0.5 * back + 0.65 * thrust;
+      this.legs[0].rotation.x += (ahead - this.legs[0].rotation.x) * level;
+      this.legs[1].rotation.x += (behind - this.legs[1].rotation.x) * level;
+      // Feet apart, the hips come down, so that both stay on the ground.
+      const a = this.legs[0].rotation.x, b = this.legs[1].rotation.x;
+      this.figure.position.y -= LEG * (2 - Math.cos(a) - Math.cos(b)) / 2;
+    }
+    this.torso.rotation.z = shake * 0.6;
 
     const plan = driver.plan;
     if (!plan) return;

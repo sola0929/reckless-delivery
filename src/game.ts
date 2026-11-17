@@ -1335,20 +1335,36 @@ function updatePrompt(): void {
     // Something found lying along the way is only worth getting out for once it is close.
     const t = truck.body.translation();
     const toFetch = sim.cargo.some((c) => c.fallen && c.body && (!c.bonus || (level.practice && Math.hypot(c.body.translation().x - t.x, c.body.translation().z - t.z) < 20)));
+    if (stuckSaid > 0) return hud.setPrompt(`卡住了？<b>${key('C', 'Y')}</b> 下車，貼著車身<b>按住${key('左鍵', ' RT')}</b>推一把`);
     return hud.setPrompt(slow && toFetch ? `<b>${key('C', 'Y')}</b> 下車撿貨` : '');
   }
   if (driver.mode === 'down') return hud.setPrompt('被撞倒了…', true);
   if (driver.atLeash) return hud.setPrompt('離貨車太遠了', true);
   if (driver.tooHeavyLeft > 0) return hud.setPrompt('太重了，跳不起來', true);
+  if (driver.shove) return hud.setPrompt(`放開${key('左鍵', ' RT ')}推車　<b>${key('右鍵', 'LT')}</b> 取消`);
   if (driver.charge > 0) return hud.setPrompt(`放開${key('左鍵', ' RT ')}拋出　<b>${key('右鍵', 'LT')}</b> 取消`);
   if (driver.held) return hud.setPrompt(`<b>按住${key('左鍵', ' RT')}</b> 蓄力拋出　<b>${key('F', 'B')}</b> 放下`);
   if (sim.reachable) return hud.setPrompt(`<b>${key('F', 'B')}</b> 舉起`);
-  if (sim.atDoor) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車`);
+  const push = driver.canShove ? `<b>按住${key('左鍵', ' RT')}</b> 推車` : '';
+  if (sim.atDoor) return hud.setPrompt(`<b>${key('C', 'Y')}</b> 上車${push ? '　' + push : ''}`);
+  if (push) return hud.setPrompt(push);
   hud.setPrompt('');
 }
 
 /** Whether the driver was down last frame, to feel them go down once. */
 let wasDown = false;
+/** Shoves at the truck heard so far; and how long it has been driven at without going anywhere, to suggest one. */
+let shovesSeen = 0;
+let stuckFor = 0;
+const STUCK_HINT = 1.5;
+/**
+ * Stuck is not getting anywhere with the pedal down, though it may rock to and fro on the spot: still within STUCK_REACH m
+ * of where it was when it last got somewhere. Once said, it stays said STUCK_KEEP s, through letting go of the pedal to get out.
+ */
+const STUCK_REACH = 1.2, STUCK_KEEP = 4;
+const stuckAt = new Vector3();
+let stuckSaid = 0;
+const shoveAt = new Vector3();
 
 /** Work the buttons of a page shown over the game with the controller. */
 function padMenu(page: HTMLElement, back?: () => void): void {
@@ -1737,6 +1753,21 @@ function frame(now: number): void {
   // Felt through the controller: the truck's knocks by how hard, the hardest crashes hardest.
   if (sim.driver.mode === 'down' && !wasDown && input.usingPad) input.pad.rumble(0.8, 350);
   wasDown = sim.driver.mode === 'down';
+  // A shove landing on the truck: a thud, dust off it and off their feet, a kick through the controller.
+  if (driver.shoves > shovesSeen && driver.lastShove) {
+    const { x, y, z, power } = driver.lastShove;
+    audio.bump(3 + 6 * power);
+    bursts.emit(shoveAt.set(x, y - 0.4, z), 'dust', Math.round(6 + 10 * power), 1.5 + 2 * power);
+    smoke.emit(shoveAt.set(driver.pos.x, driver.pos.y, driver.pos.z), NO_DRIFT);
+    if (input.usingPad) input.pad.rumble(0.4 + 0.5 * power, 180);
+  }
+  shovesSeen = driver.shoves;
+  const stuckNow = sim.truck.body.translation();
+  if (onFoot || sim.result || Math.hypot(stuckNow.x - stuckAt.x, stuckNow.z - stuckAt.z) > STUCK_REACH) {
+    stuckAt.set(stuckNow.x, stuckNow.y, stuckNow.z);
+    stuckFor = stuckSaid = 0;
+  } else stuckFor = Math.abs(drive.throttle) > 0.3 ? stuckFor + dt : Math.max(0, Math.min(stuckFor, STUCK_HINT) - dt);
+  stuckSaid = stuckFor > STUCK_HINT ? STUCK_KEEP : Math.max(0, stuckSaid - dt);
   if (hardestBump > 0 && input.usingPad) input.pad.rumble(Math.min(1, hardestBump / 14), 120 + Math.min(1, hardestBump / 14) * 180);
   if (hardestBump > 0) audio.bump(knockedWeight < 0 ? hardestBump : hardestBump * (0.45 + 0.55 * knockedWeight));
   knockedWeight = -1;

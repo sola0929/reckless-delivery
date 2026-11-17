@@ -20,7 +20,7 @@ const KEYBOARD: Group[] = [
   ['下車', [
     ['C', '上下車'],
     ['F', '舉起、放下貨物'],
-    ['左鍵', '按住蓄力', '放開拋出，右鍵取消'],
+    ['左鍵', '按住蓄力', '放開拋出；空手貼著車身是推車'],
     ['空白鍵', '跳躍', '拿重物時不能跳'],
   ]],
   ['其他', [
@@ -42,8 +42,8 @@ const PAD: Record<'drive' | 'foot', Partial<Record<Part, string>>> = {
     RT: '油門', RB: '手煞車', Y: '下車', X: '急加速', RS: '轉視角', Start: '暫停',
   },
   foot: {
-    LT: '取消拋出', LB: '向左轉視角', LS: '移動',
-    RT: '按住蓄力，放開拋出', RB: '向右轉視角', Y: '上車', X: '奔跑', B: '舉起、放下', A: '跳躍', RS: '轉視角；拿著時瞄準', Start: '暫停',
+    LT: '取消', LB: '向左轉視角', LS: '移動',
+    RT: '按住蓄力，放開拋出或推車', RB: '向右轉視角', Y: '上車', X: '奔跑', B: '舉起、放下', A: '跳躍', RS: '轉視角；拿著時瞄準', Start: '暫停',
   },
 };
 
@@ -65,7 +65,7 @@ const FACE: Record<PadKind, Record<'A' | 'B' | 'X' | 'Y', string>> = {
 };
 
 /** What each part does in few words, where the drawing is small and its words large. */
-const SHORT: Partial<Record<string, string>> = { '↑↓ 拉近、拉遠': '縮放', '按住蓄力，放開拋出': '蓄力拋出', '轉視角；拿著時瞄準': '轉視角／瞄準', '向左轉視角': '左轉視角', '向右轉視角': '右轉視角' };
+const SHORT: Partial<Record<string, string>> = { '↑↓ 拉近、拉遠': '縮放', '按住蓄力，放開拋出或推車': '蓄力拋出／推車', '轉視角；拿著時瞄準': '轉視角／瞄準', '向左轉視角': '左轉視角', '向右轉視角': '右轉視角' };
 
 /**
  * The controller drawn, with what each part does said beside it, for driving or on foot. Compact, for a narrow box, the
@@ -172,7 +172,7 @@ export function drawControls(host: HTMLElement, compact = false): (set: ControlS
     for(const button of host.querySelectorAll<HTMLElement>('[data-keys]'))button.setAttribute('aria-selected',String(button.dataset.keys===shown));
     for(const panel of host.querySelectorAll<HTMLElement>('[data-set]'))panel.hidden=panel.dataset.set!==shown;
     const driving: Control[]=[...KEYBOARD[0][1],['C','下車']];
-    const foot: Control[]=[['WASD','移動'],['Shift','奔跑'],['C','上車'],['F','舉起、放下貨物'],['左鍵','按住蓄力，放開拋出','移動滑鼠瞄準'],['右鍵','取消拋出'],['空白鍵','跳躍','拿重物時不能跳']];
+    const foot: Control[]=[['WASD','移動'],['Shift','奔跑'],['C','上車'],['F','舉起、放下貨物'],['左鍵','按住蓄力，放開拋出','空手貼著車身是推車；滑鼠瞄準'],['右鍵','取消拋出、推車'],['空白鍵','跳躍','拿重物時不能跳']];
     const common=KEYBOARD[2][1].filter(([key])=>mode==='drive'||key!=='右鍵拖曳');
     host.querySelector('[data-set="keyboard"]')!.innerHTML='<div class="key-guide-columns"><section class="key-guide"><h4>'+(mode==='drive'?'開車配送':'下車搬貨')+'</h4>'+keys(mode==='drive'?driving:foot)+'</section><section class="key-guide key-guide-common"><h4>視角與其他</h4>'+keys(common)+'</section></div>';
     if(shown!=='pad')return;

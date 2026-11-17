@@ -76,6 +76,7 @@ export const KINDS: Record<KindName, KindSpec> = {
     fields: [
       f('mode', 's'), f('pos', 'v'), f('yaw', 'n'), f('speed', 'n'), f('held', 'ref:cargo'), f('charge', 'n'), f('plan', 'j'),
       f('airborne', 'b'), f('tooHeavyLeft', 'n'), f('atLeash', 'b'), f('sinking', 'n'),
+      f('canShove', 'b'), f('shove', 'j'), f('shoves', 'n'), f('lastShove', 'j'),
     ],
   },
   cargo: {

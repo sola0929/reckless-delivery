@@ -32,6 +32,14 @@ export const NO_FOOT_INPUT: FootInput = {
   moveX: 0, moveZ: 0, run: false, vehiclePressed: false, grabPressed: false, jumpPressed: false, aim: null, charging: false, cancelPressed: false,
 };
 
+/** A shove at the truck: where it lands on it, and how hard, 0 to 1. */
+export interface Shove {
+  x: number;
+  y: number;
+  z: number;
+  power: number;
+}
+
 /** A throw as it would go if released now. */
 export interface ThrowPlan {
   start: Vector3;
@@ -86,6 +94,14 @@ export class Driver {
   charge = 0;
   /** The throw that would happen on release, while one is being wound up. */
   plan: ThrowPlan | null = null;
+  /** Empty-handed and up against a truck slow enough to shove. */
+  canShove = false;
+  /** The shove that would land if released now, while one is being wound up. */
+  shove: Shove | null = null;
+  /** How many shoves have landed, and the last of them: the game hears one land by the count going up. */
+  shoves = 0;
+  lastShove: Shove | null = null;
+  private shoveRest = 0;
   /** Off the ground: jumping or falling. */
   airborne = false;
   /** Whether a drop costs what they carry: see LevelDef.carryFalls. */
@@ -139,6 +155,8 @@ export class Driver {
   /** Call once per physics step, before the world steps. `canAct` is false once the level is over. */
   update(dt: number, input: FootInput, truck: Truck, cargo: CargoSystem, traffic: Traffic, riders: Riders, trains: Trains, canAct: boolean): void {
     this.plan = null;
+    this.shove = null;
+    this.canShove = false;
     this.atLeash = false;
     if (this.mode === 'driving') {
       if (input.vehiclePressed && canAct) this.getOut(truck);
@@ -186,6 +204,11 @@ export class Driver {
     this.held = null;
     this.charge = 0;
     this.plan = null;
+    this.shove = null;
+    this.canShove = false;
+    this.shoves = 0;
+    this.lastShove = null;
+    this.shoveRest = 0;
     this.downLeft = 0;
     this.safeLeft = 0;
     this.speed = 0;
@@ -491,6 +514,8 @@ export class Driver {
     if (!item) return;
     cargo.hold(item);
     this.held = item;
+    // A shove being wound up is not a throw.
+    this.charge = 0;
   }
 
   /** Put the load down gently at their feet. */
@@ -510,6 +535,11 @@ export class Driver {
       this.cancelled = true;
       this.charge = 0;
     }
+    this.shoveRest -= dt;
+    if (!this.held) {
+      this.windShove(dt, input, truck);
+      return;
+    }
     const winding = input.charging && this.held !== null && !this.cancelled;
     if (winding) {
       this.charge += dt;
@@ -521,6 +551,76 @@ export class Driver {
       this.charge = 0;
     } else this.charge = 0;
     this.wasCharging = winding;
+  }
+
+  /** Empty-handed: build up, cancel or let go a shove at the truck. */
+  private windShove(dt: number, input: FootInput, truck: Truck): void {
+    const touch = this.touching(truck);
+    this.canShove = touch !== null;
+    const winding = input.charging && !this.cancelled && touch !== null;
+    if (winding) {
+      this.charge += dt;
+      this.shove = { ...touch, power: this.shovePower() };
+      this.aimShove(dt, input, touch);
+    } else if (this.wasCharging && touch && this.charge > 0 && !input.charging) {
+      this.push(truck, touch);
+      this.charge = 0;
+    } else this.charge = 0;
+    this.wasCharging = winding;
+  }
+
+  /**
+   * Which way the shove goes is which way they face: toward where the player points, as with a throw, but never more than
+   * shoveAim off straight at the truck. Pointing nowhere, straight at it.
+   */
+  private aimShove(dt: number, input: FootInput, touch: { x: number; z: number }): void {
+    const straight = Math.atan2(touch.x - this.pos.x, touch.z - this.pos.z);
+    const off = (a: number) => Math.atan2(Math.sin(a - straight), Math.cos(a - straight));
+    const want = input.aim ? straight + Math.max(-DRIVER.shoveAim, Math.min(DRIVER.shoveAim, off(Math.atan2(input.aim.x - this.pos.x, input.aim.z - this.pos.z)))) : straight;
+    // With the stick, turned round to it no faster than so much a second; with the cursor, at once.
+    const turn = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+    const most = input.aimByStick ? DRIVER.aimTurnRate * dt : Infinity;
+    this.yaw += Math.max(-most, Math.min(most, turn));
+    // Wherever they had been facing as they began, kept within reach of straight at it.
+    this.yaw = straight + Math.max(-DRIVER.shoveAim, Math.min(DRIVER.shoveAim, off(this.yaw)));
+  }
+
+  private shovePower(): number {
+    return DRIVER.shoveLeast + (1 - DRIVER.shoveLeast) * Math.min(1, this.charge / DRIVER.shoveFull);
+  }
+
+  /** Where on the truck they would put their hands, if it is within reach, slow enough and they are in a state to: else null. */
+  private touching(truck: Truck): { x: number; y: number; z: number } | null {
+    if (this.shoveRest > 0 || this.airborne || truck.isOverBed(this.pos.x, this.pos.z)) return null;
+    const lv = truck.body.linvel();
+    if (Math.hypot(lv.x, lv.y, lv.z) > DRIVER.shoveBelow) return null;
+    const chest = { x: this.pos.x, y: this.pos.y + DRIVER.shoveHeight, z: this.pos.z };
+    let best: { x: number; y: number; z: number } | null = null;
+    let nearest = DRIVER.radius + DRIVER.shoveReach;
+    for (let i = 0; i < truck.body.numColliders(); i++) {
+      const hit = truck.body.collider(i).projectPoint(chest, true);
+      if (!hit || hit.isInside) continue;
+      const d = Math.hypot(hit.point.x - chest.x, hit.point.y - chest.y, hit.point.z - chest.z);
+      // Hands on it, not feet on it: what is under them is stood on, not shoved.
+      if (d < nearest && hit.point.y > this.pos.y + 0.3) {
+        nearest = d;
+        best = { x: hit.point.x, y: hit.point.y, z: hit.point.z };
+      }
+    }
+    return best;
+  }
+
+  /** Let go the shove: the truck is pushed the way they face, and up, from where their hands are; they are thrown back a step. */
+  private push(truck: Truck, at: { x: number; y: number; z: number }): void {
+    const power = this.shovePower();
+    const dx = Math.sin(this.yaw), dz = Math.cos(this.yaw);
+    const m = truck.body.mass();
+    const push = m * DRIVER.shovePush * power, lift = m * DRIVER.shoveLift * power;
+    truck.body.applyImpulseAtPoint({ x: dx * push, y: lift, z: dz * push }, at, true);
+    this.shoves++;
+    this.lastShove = { ...at, power };
+    this.shoveRest = DRIVER.shoveRest;
+    this.move(-dx * 0.35 * power, 0, -dz * 0.35 * power);
   }
 
   /** Work out the throw for the current wind-up: a 45 degree lob that comes down at the chosen range. */

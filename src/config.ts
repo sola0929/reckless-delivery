@@ -208,6 +208,27 @@ export const DRIVER = {
   /** Seconds on the ground after being run down, and of safety after getting up. */
   downSeconds: 1.8,
   safeSeconds: 1,
+  /**
+   * Shoving the truck, empty-handed, to free it when a wheel has gone over an edge: hold the throw button against it and let
+   * go. The shove lands where they touch it, so from the side it rolls the truck as well as moving it, and can turn it over.
+   * As changes of the truck's speed, m/s, so they hold whatever it weighs: shovePush along the ground away from them and
+   * shoveLift upward, at full strength; a tap gives shoveLeast of that, full strength takes shoveFull seconds.
+   */
+  // Measured on a 0.8 m ledge with the wheels of one side over it: 2.4 never freed it; 3.5 does in two full shoves; 4.2
+  // at the user's word, a little harder. Lift 1.8 rolls it to 43° from the side on flat ground and 2.5 to 90°, so it
+  // stays at 1.6, where the most is 28°.
+  shovePush: 4.2,
+  shoveLift: 1.6,
+  shoveLeast: 0.3,
+  shoveFull: 1.2,
+  /** How far from their body the truck may be to be shoved, and the height above the feet they push at. */
+  shoveReach: 0.7,
+  shoveHeight: 1.05,
+  /** Only a truck going slower than this, m/s, can be shoved: no pushing it along, or after it. And a breath between shoves. */
+  shoveBelow: 1,
+  shoveRest: 1,
+  /** How far, radians, the shove can be aimed away from straight at the truck, to either side: not so far it becomes a pull. */
+  shoveAim: Math.PI / 3,
 };
 
 export const CAMERA = {

@@ -56,7 +56,7 @@ export type MirrorTruck = MirrorWith<Truck, 'body' | 'boosting' | 'brakeLevel' |
   /** Of its wheels, how each is: on the ground, its spring, steered, turned. */
   readonly controller: Pick<RAPIER.DynamicRayCastVehicleController, 'wheelIsInContact' | 'wheelSuspensionLength' | 'wheelSteering' | 'wheelRotation'>;
 }>;
-export type MirrorDriver = MirrorWith<Driver, 'airborne' | 'atLeash' | 'charge' | 'held' | 'mode' | 'plan' | 'pos' | 'sinking' | 'speed' | 'tooHeavyLeft' | 'yaw', { readonly held: MirrorCargoItem | null }>;
+export type MirrorDriver = MirrorWith<Driver, 'airborne' | 'atLeash' | 'canShove' | 'charge' | 'held' | 'lastShove' | 'mode' | 'plan' | 'pos' | 'shove' | 'shoves' | 'sinking' | 'speed' | 'tooHeavyLeft' | 'yaw', { readonly held: MirrorCargoItem | null }>;
 export type MirrorProp = Mirror<PropInstance, 'body' | 'desc'>;
 export type MirrorTrafficCar = Mirror<TrafficCar, 'body' | 'braking' | 'color' | 'kind' | 'knocked' | 'lane' | 's'>;
 export type MirrorTrain = Mirror<Train, 'body' | 'track' | 'x' | 'z'>;

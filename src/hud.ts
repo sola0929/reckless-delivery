@@ -29,12 +29,12 @@ const FAILURES: Record<Failure, [string, string]> = {
 const HELP_DRIVING =
   '<b>W</b> 前進　<b>Shift</b> 急加速　<b>S</b> 煞車（按住越久越重）、倒車　<b>A / D</b> 轉向　<b>空白鍵</b> 手煞車　<b>H</b> 喇叭　<b>C</b> 下車　<b>Esc</b> 暫停　<b>滾輪</b> 縮放　<b>Q / E</b> 或 <b>右鍵拖曳</b> 轉視角';
 const HELP_ON_FOOT =
-  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>F</b> 舉起、放下　<b>Q / E</b> 轉視角　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 蓄力拋出　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
+  '<b>WASD</b> 移動　<b>Shift</b> 奔跑　<b>空白鍵</b> 跳躍　<b>F</b> 舉起、放下　<b>Q / E</b> 轉視角　<b>滑鼠</b> 瞄準　<b>按住左鍵</b> 拋出／推車　<b>右鍵</b> 取消　<b>C</b> 上車　<b>Esc</b> 暫停';
 
 const PAD_DRIVING =
   '<b>RT</b> 油門　<b>X</b> 急加速　<b>LT</b> 煞車、倒車　<b>左搖桿</b> 轉向　<b>RB</b> 手煞車　<b>LB</b> 喇叭　<b>Y</b> 下車　<b>Start</b> 暫停　<b>右搖桿</b> 轉視角　<b>十字鍵 ↑↓</b> 縮放';
 const PAD_ON_FOOT =
-  '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 蓄力拋出　<b>LT</b> 取消　<b>Y</b> 上車　<b>Start</b> 暫停';
+  '<b>左搖桿</b> 移動　<b>X</b> 奔跑　<b>A</b> 跳躍　<b>B</b> 舉起、放下　<b>右搖桿</b> 瞄準　<b>按住 RT</b> 拋出／推車　<b>LT</b> 取消　<b>Y</b> 上車　<b>Start</b> 暫停';
 
 export class Hud {
   /** The pause menu's page of the controls: which set it shows. */
