@@ -44,6 +44,7 @@ import type { MirrorCargoEvent as CargoEvent, MirrorCargoItem as CargoItem, Mirr
 import { NO_FOOT_INPUT, type FootInput } from './sim/driver';
 import { Sim } from './sim/sim';
 import { Replica } from './replica';
+import { Diagnostics } from './diag';
 import { TRAIN_HALF } from './sim/trains';
 import type { DriveInput } from './sim/truck';
 
@@ -321,7 +322,17 @@ playMusic('level');
 /** How heavy the heaviest thing the truck sent flying this frame was, 0 to 1; below 0 if it hit nothing. */
 let knockedWeight = -1;
 /** Where each frame's time goes, added up until a script reads and clears it: physics, everything else, drawing. */
-const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0 };
+const timing = { frames: 0, physics: 0, logic: 0, render: 0, worst: 0, steps: 0 };
+// F3: where each frame's time goes, for a machine that is slow somewhere else.
+const diag = new Diagnostics({
+  renderer: view.renderer,
+  timing,
+  level: levelId,
+  quality: () => ({ choice: graphics.choice, quality: graphics.quality }),
+  physicsDt: () => PHYSICS.dt,
+  threaded: () => !!sim.threaded,
+  worker: () => (sim instanceof Replica && sim.threaded ? sim.workerBusy : null),
+});
 const debug = { sim: real ?? sim, camera: view.camera, scene: view.scene, renderer: view.renderer, freeze: false, audio, timing, input, levelView, storm, squall: () => { squall.next = squall.t; } };
 if (import.meta.env.DEV) Object.assign(window, { game: debug });
 
@@ -1423,6 +1434,7 @@ function frame(now: number): void {
     // Nothing moves; the picture stays as it was.
     accumulator = 0;
     graphics.rest();
+    diag.rest();
     view.renderer.render(view.scene, view.camera);
     requestAnimationFrame(frame);
     return;
@@ -1868,7 +1880,9 @@ function frame(now: number): void {
   showPopups(dt);
 
   const drawBegan = performance.now();
+  diag.beginDraw();
   view.renderer.render(view.scene, view.camera);
+  diag.endDraw();
   // Keep just one clear thumbnail near water, where the truck can disappear before failure is declared.
   // No readbacks on ordinary roads; at most one attempt per 750 ms near a river edge.
   const waterAt = truckMesh.root.position;
@@ -1907,10 +1921,14 @@ function frame(now: number): void {
   timing.render += drawn - drawBegan;
   timing.logic += drawBegan - began;
   timing.frames++;
+  timing.steps += steps;
   timing.worst = Math.max(timing.worst, drawn - began);
+  diag.frame(now);
   // A tab in the background is hardly drawn at all: that is not the machine being slow.
-  if (document.hidden) graphics.rest();
-  else graphics.frame((now - before) / 1000);
+  if (document.hidden) {
+    graphics.rest();
+    diag.rest();
+  } else graphics.frame((now - before) / 1000);
   requestAnimationFrame(frame);
 }
 

@@ -338,6 +338,8 @@ export class Replica implements MirrorSim {
   tellRate(dt: number): void { this.link?.rate(dt); }
   /** How long the worker took over its last batch of steps, milliseconds. */
   get workerTook(): number { return this.link?.took ?? 0; }
+  /** All the worker has spent on its batches so far, ms, and how many batches: for the diagnostics panel. */
+  get workerBusy(): { ms: number; batches: number } { return { ms: this.link?.spent ?? 0, batches: this.link?.batches ?? 0 }; }
   /** How long the worker has been without answering, ms. */
   stalledFor(): number { return this.link?.stalledFor() ?? 0; }
   /** What to do if the worker fails once it is going: told once. */
@@ -380,6 +382,9 @@ class WorkerLink implements SimSource {
   private waiting = 0;
   private thens: (() => void)[] = [];
   took = 0;
+  /** Summed over every batch: what the diagnostics panel reads. */
+  spent = 0;
+  batches = 0;
   /** Controls on foot with something pressed once in them (get out, lift, jump, give up a throw), asked for when the worker had no room: each kept for a step of its own, in order. */
   private presses: FootInput[] = [];
   private started: ((record: StepRecord) => void) | null = null;
@@ -501,6 +506,8 @@ class WorkerLink implements SimSource {
     const ops = (this.flight ?? []).filter((op) => RECORDED.has(op.op));
     this.flight = null;
     this.took = data.took;
+    this.spent += data.took;
+    this.batches++;
     // Up to the last thing waited on, everything is put into effect at once, with what was still to be taken before it.
     const lastWaited = ops.map((op) => WAITED.has(op.op)).lastIndexOf(true);
     if (lastWaited >= 0) {
