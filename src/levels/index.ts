@@ -56,7 +56,8 @@ export const LEVEL_LIST: LevelEntry[] = [
   { id: 'uptown', name: '山城快遞', badge: '2', note: '穿過山城：走樓梯、繞廟埕、衝上鋼捲大坡，再沿髮夾彎下山', ready: true, previews: ['走樓梯', '廟埕', '鋼捲大坡', '下山髮夾彎'], load: [19, 2500], hidden: ['stockpot', 'riceCooker', 'lightbox'], grade: 3 },
   { id: 'quarry', name: '砂石場', badge: '3', note: '穿過砂石場、閃過堤道機具、渡河過便橋，衝上工地頂樓卸貨', ready: true, previews: ['裝料區落石', '堤道機具', '渡河', '工地頂樓'], load: [17, 3000], hidden: ['megaphone', 'toolbox', 'radio'], grade: 4 },
   { id: 'harbour', name: '風雨漁港', badge: '4', note: '颱風天的漁港：繞過翻覆的漁船、穿過停電的市場、翻上屋頂，從製冰廠出港，跳過並排的漁船，送上冷凍運搬船', ready: true, previews: ['颱風天的老街', '停電的市場', '市場屋頂', '並排的漁船'], hidden: ['captainCap', 'telescope', 'shipBell'], grade: 2 },
-  { id: 'park', name: '幸福島樂園', badge: '5', note: '開幕日的遊樂園：排隊入園、過咖啡杯轉盤、開上雲霄飛車軌道、沿湖到造浪池、坐大滑水道下來，穿過海盜船送到餐廳後門', ready: true },
+  // Still being made: played here while it is, shown as 開發中 and not to be chosen on the site.
+  { id: 'park', name: '幸福島樂園', badge: '5', note: '開幕日的遊樂園：排隊入園、過咖啡杯轉盤、開上雲霄飛車軌道、沿湖到造浪池、坐大滑水道下來，穿過海盜船送到餐廳後門', ready: DEV },
 ];
 
 /** The tutorial: before the deliveries, never in the way of them. */

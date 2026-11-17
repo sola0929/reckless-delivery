@@ -142,7 +142,7 @@ function showMenu(): void {
   // shows it in the preview to the right of them; going is the preview's own button, Enter, or a second click. With no room
   // for the preview, a card goes straight in, as it used to.
   const list = document.getElementById('menu-level-list')!;
-  const LABEL = { done: '已完成', open: '可挑戰', locked: '未解鎖', soon: '待更新' };
+  const LABEL = { done: '已完成', open: '可挑戰', locked: '未解鎖', soon: '開發中' };
   const LOCK = '<svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3h2v11H5V10zm2 0h6V7a3 3 0 0 0-6 0z"/></svg>';
   const rows = new Map<string, HTMLButtonElement>();
   const entries = [TUTORIAL, ...LEVEL_LIST];
@@ -176,7 +176,7 @@ function showMenu(): void {
       state === 'done' ? `<span>最高送達 <b>${Math.floor(best!.fraction * 100)}%</b></span><span>最快 <b>${best!.seconds != null ? clock(best!.seconds) : '－'}</b></span>`
       : state === 'open' ? '還沒有紀錄'
       : state === 'locked' ? '完成上一關後開放'
-      : '製作中，敬請期待';
+      : '開發中，敬請期待';
     // Beside the stars, the things hidden along the way: a blue crate and how many have been brought in, gold when one run
     // brought them all.
     const hidden = hiddenTally(LEVEL_LIST[i].hidden, best);
@@ -197,7 +197,7 @@ function showMenu(): void {
     hook(id, card);
     list.append(card);
   });
-  document.getElementById('menu-level-stars')!.textContent = `${earned} / ${LEVEL_LIST.length * 3}`;
+  document.getElementById('menu-level-stars')!.textContent = `${earned} / ${LEVEL_LIST.filter((level) => level.ready).length * 3}`;
   // Free play, in development only, goes straight in: there is nothing to preview.
   const free = document.getElementById('menu-free')!;
   for (const { id, name, badge, note } of FREE_PLAY) {
@@ -296,7 +296,7 @@ function showMenu(): void {
     // the way to each star, gold past all of the load.
     const share = best ? Math.floor(best.fraction * 100) : 0;
     preview.querySelector('.preview-record')!.innerHTML = tutorial ? ''
-      : state === 'locked' || state === 'soon' ? `<div class="pr-title">最佳紀錄</div><div class="pr-none">${state === 'locked' ? '完成上一關後開放' : '製作中，敬請期待'}</div>`
+      : state === 'locked' || state === 'soon' ? `<div class="pr-title">最佳紀錄</div><div class="pr-none">${state === 'locked' ? '完成上一關後開放' : '開發中，敬請期待'}</div>`
       : `<div class="pr-title">最佳紀錄</div>` +
         `<div class="pr-stats"><div><span>送達</span><b>${best ? `${share}%` : '－'}</b></div><div><span>最快</span><b>${best?.seconds != null ? clock(best.seconds) : '－'}</b></div></div>` +
         `<div class="pr-bar${share > 100 ? ' over' : ''}"><i style="width:${Math.min(100, share)}%"></i>${STARS.slice(1).map((at, n) => `<s style="left:${at * 100}%"${share >= at * 100 ? ' class="on"' : ''}><em>${'★'.repeat(n + 2)}<u> ${at * 100}%</u></em></s>`).join('')}</div>` +
@@ -315,7 +315,7 @@ function showMenu(): void {
     const where = `第 ${entry.badge} 關　${entry.name}`;
     document.getElementById('menu-start-note')!.innerHTML =
       (all ? `全部送達！從第 ${entry.badge} 關再跑一次` : played ? `繼續：${where}` : `從${where}開始`) +
-      (played ? `<span>★ ${earned} / ${LEVEL_LIST.length * 3}</span>` : '');
+      (played ? `<span>★ ${earned} / ${LEVEL_LIST.filter((level) => level.ready).length * 3}</span>` : '');
   }
   // Settings: the volumes and the picture quality, the same ones the pause menu has.
   const sfx = document.getElementById('set-sfx') as HTMLInputElement;
