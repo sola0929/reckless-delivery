@@ -186,11 +186,13 @@ function showMenu(): void {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = `level-card ${state}`;
+    // Five to a row, the card is only a name: what the level is, is told in the preview beside it, and on hover.
+    card.title = note;
     card.disabled = state === 'locked' || state === 'soon';
     card.innerHTML =
       `<div class="level-thumb ${id}"><span>${badge}</span>${state === 'locked' ? LOCK : ''}</div>` +
       `<div class="level-state">${LABEL[state]}</div>` +
-      `<div class="level-name">${name}${gradeTag(grade)}</div><div class="level-note">${note}</div>` +
+      `<div class="level-name">${name}</div><div class="level-grade-line">${gradeTag(grade)}</div>` +
       `<div class="level-marks"><div class="level-stars">${stars}</div>${slots}</div><div class="level-best">${record}</div>`;
     hook(id, card);
     list.append(card);
