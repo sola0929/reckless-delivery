@@ -392,6 +392,8 @@ function partMesh(part: PartDesc, stage: Stage): THREE.Mesh {
 
 interface ItemView {
   item: CargoItem;
+  /** When it is drawn: with the driver while they hold it. */
+  order?: number;
   group: THREE.Group;
   sync: BodySync | null;
   /** One per part; null once that part has come off. */
@@ -633,7 +635,14 @@ export class CargoViews {
     this.time += dt;
     for (const view of this.views.values()) {
       const { item, marker } = view;
-      if (view.dirty && view.sync) mergeParts(view);
+      const remade = view.dirty && !!view.sync;
+      if (remade) mergeParts(view);
+      // Held overhead, it is drawn with the driver, after their silhouette: drawn before it, their head would show through it.
+      const order = item.held ? 2 : 0;
+      if (remade || (view.order ?? 0) !== order) {
+        view.group.traverse((o) => (o.renderOrder = order));
+        view.order = order;
+      }
       marker.visible = item.fallen && !item.held && !item.thrown && item.body !== null;
       if (view.ring) {
         view.ring.visible = !item.taken;
